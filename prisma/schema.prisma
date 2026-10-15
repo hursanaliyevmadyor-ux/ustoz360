@@ -266,3 +266,16 @@ model AiMessage {
   createdAt DateTime @default(now())
   @@index([chatId, createdAt])
 }
+
+/// Emailga yuboriladigan bir martalik kodlar: ro'yxatdan o'tishni tasdiqlash ("verify") va parolni tiklash ("reset"). Kodning o'zi emas, xeshi saqlanadi.
+model EmailCode {
+  id        String    @id @default(cuid())
+  email     String
+  purpose   String
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([email, purpose, createdAt])
+}

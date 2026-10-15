@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ApiError, emailSignupOpen, register } from "@/server/auth";
+import { emailSignupOpen, register } from "@/server/auth";
+import { startRegistration } from "@/server/emailauth";
 import { handle } from "@/server/http";
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,12 @@ const body = z.object({
 });
 
 export const POST = (req: Request) => handle(async () => {
-  if (!emailSignupOpen()) throw new ApiError(403, "Email va parol bilan ro'yxatdan o'tish yopilgan. Google yoki Telegram orqali kiring.");
   const b = body.parse(await req.json());
-  const u = await register(b.email, b.password, b.name);
-  return { ok: true, user: { id: u.id, name: u.name, email: u.email } };
+  // ALLOW_EMAIL_SIGNUP=1 (faqat testlar): kodsiz, darhol ro'yxatdan o'tish. Aks holda email kodi bilan tasdiqlanadi.
+  if (emailSignupOpen()) {
+    const u = await register(b.email, b.password, b.name);
+    return { ok: true, user: { id: u.id, name: u.name, email: u.email } };
+  }
+  const r = await startRegistration(b.email, b.password);
+  return { ok: true, verify: true, email: r.email };
 });
