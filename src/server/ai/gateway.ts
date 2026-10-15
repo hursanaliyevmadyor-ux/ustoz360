@@ -73,7 +73,13 @@ export const lessonSchema = {
 };
 
 // ---- Bepul AI: OpenAI-mos endpoint (masalan, o'zingiz joylagan FreeLLMAPI yoki boshqa shlyuz) ----
-export const freeConfigured = () => Boolean(process.env.FREE_LLM_BASE_URL && process.env.FREE_LLM_API_KEY);
+/** Bir nechta bepul xizmat: FREE_LLM_*, FREE_LLM2_*, FREE_LLM3_*. Birinchisi xato bersa yoki limitga yetsa, keyingisi sinaladi. */
+type FreeProvider = { base: string; key: string; model: string };
+const freeProviders = (): FreeProvider[] => ["", "2", "3"].flatMap((n) => {
+  const base = process.env[`FREE_LLM${n}_BASE_URL`], key = process.env[`FREE_LLM${n}_API_KEY`];
+  return base && key ? [{ base: base.replace(/\/+$/, ""), key, model: process.env[`FREE_LLM${n}_MODEL`] || "auto" }] : [];
+});
+export const freeConfigured = () => freeProviders().length > 0;
 export const freeLimit = () => Math.max(1, Number(process.env.AI_FREE_DAILY_LIMIT) || 50);
 
 export async function freeUsageToday(userId: string) {
@@ -86,25 +92,31 @@ export async function runFreeAi(userId: string, messages: { role: "user" | "assi
   if (!freeConfigured()) throw new ApiError(503, "Bepul AI hali sozlanmagan (FREE_LLM_BASE_URL va FREE_LLM_API_KEY yo'q).");
   await requireVerified(userId);
   const u = await freeUsageToday(userId);
-  const model = process.env.FREE_LLM_MODEL || "auto";
+  const providers = freeProviders();
+  const model = providers[0].model;
   if (u.remaining <= 0) {
     await db.aiRequest.create({ data: { userId, feature: "free-chat", model, status: "blocked" } });
     throw new ApiError(429, `Bugungi bepul AI limiti tugadi (${u.limit} ta). Ertaga qayta urinib ko'ring.`);
   }
   let status = "ok", input = 0, output = 0, used = model;
   try {
-    const base = process.env.FREE_LLM_BASE_URL!.replace(/\/+$/, "");
-    const res = await fetch(`${base}/chat/completions`, {
-      method: "POST", signal: AbortSignal.timeout(60_000),
-      headers: { "content-type": "application/json", authorization: `Bearer ${process.env.FREE_LLM_API_KEY}` },
-      body: JSON.stringify({ model, max_tokens: 1200, messages: [{ role: "system", content: SYSTEM }, ...messages] }),
-    });
-    if (!res.ok) { status = "error"; throw new ApiError(res.status === 429 ? 503 : 502, "Bepul AI hozir javob bermadi. Birozdan so'ng urinib ko'ring."); }
-    const d = await res.json();
-    input = d.usage?.prompt_tokens ?? 0; output = d.usage?.completion_tokens ?? 0; used = d.model ?? model;
-    const text = String(d.choices?.[0]?.message?.content ?? "").trim();
-    if (!text) { status = "empty"; throw new ApiError(502, "Bepul AI bo'sh javob qaytardi. Qayta urinib ko'ring."); }
-    return { text, model: used };
+    for (const p of providers) {
+      try {
+        const res = await fetch(`${p.base}/chat/completions`, {
+          method: "POST", signal: AbortSignal.timeout(45_000),
+          headers: { "content-type": "application/json", authorization: `Bearer ${p.key}` },
+          body: JSON.stringify({ model: p.model, max_tokens: 1200, messages: [{ role: "system", content: SYSTEM }, ...messages] }),
+        });
+        if (!res.ok) { console.error("Free AI provider failed", new URL(p.base).host, res.status); continue; }
+        const d = await res.json();
+        const text = String(d.choices?.[0]?.message?.content ?? "").trim();
+        if (!text) { console.error("Free AI provider empty", new URL(p.base).host); continue; }
+        input = d.usage?.prompt_tokens ?? 0; output = d.usage?.completion_tokens ?? 0; used = d.model ?? p.model;
+        return { text, model: used };
+      } catch (e) { console.error("Free AI provider error", new URL(p.base).host, (e as Error).message); }
+    }
+    status = "error";
+    throw new ApiError(503, "Bepul AI hozir band yoki limitga yetgan. Birozdan so'ng urinib ko'ring.");
   } catch (e) {
     if (e instanceof ApiError) throw e;
     status = "error"; console.error("Free AI error", (e as Error).message);
