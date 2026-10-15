@@ -35,6 +35,17 @@ export function verifyPassword(password: string, stored: string | null) {
 
 export const normalizeEmail = (e: string) => e.trim().toLowerCase();
 
+/** Email+parol bilan ro'yxatdan o'tish odatda yopiq (bepul limitni ko'p akkaunt bilan aylanib o'tmaslik uchun). Testlar uchun ALLOW_EMAIL_SIGNUP=1. */
+export const emailSignupOpen = () => process.env.ALLOW_EMAIL_SIGNUP === "1";
+
+/** Bepul AI limitlari faqat tasdiqlangan akkauntga beriladi: Google (tasdiqlangan email), Telegram, Yandex yoki admin. */
+export async function requireVerified(userId: string) {
+  if (emailSignupOpen()) return;
+  const u = await db.user.findUnique({ where: { id: userId }, select: { emailVerifiedAt: true, googleSub: true, yandexId: true, telegramId: true, roles: { select: { role: true } } } });
+  const verified = !!u && (!!u.emailVerifiedAt || !!u.googleSub || !!u.yandexId || !!u.telegramId || u.roles.some((r) => r.role === "ADMIN" || r.role === "SUPERADMIN"));
+  if (!verified) throw new ApiError(403, "AI dan foydalanish uchun Google yoki Telegram orqali kirib, akkauntingizni tasdiqlang.");
+}
+
 async function startSession(userId: string) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
