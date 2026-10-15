@@ -279,3 +279,22 @@ model EmailCode {
   createdAt DateTime  @default(now())
   @@index([email, purpose, createdAt])
 }
+
+/// Telegram bot orqali saytga kirish: sayt havola yaratadi, foydalanuvchi botda Start bosadi, sayt kutib turib kiradi. Maxfiy kalit (pollHash) faqat brauzerda.
+model TelegramLogin {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  pollHash    String
+  userId      String?
+  confirmedAt DateTime?
+  consumedAt  DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  @@index([createdAt])
+}
+
+/// Telegram webhook yangilanishlarini takrorlamaslik uchun (Telegram javob kechiksa qayta yuboradi).
+model TelegramUpdate {
+  id        String   @id
+  createdAt DateTime @default(now())
+}

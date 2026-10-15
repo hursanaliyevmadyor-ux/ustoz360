@@ -127,16 +127,26 @@ export const signInWithGoogle = (g: { sub: string; email: string; name: string |
 export const signInWithYandex = (y: OAuthIdentity) => signInOAuth("yandex", y);
 
 /** Telegram orqali kirish (imzo oldindan oauth.verifyTelegramAuth bilan tekshirilgan bo'lishi shart). */
-export async function signInWithTelegram(t: { id: string; first_name?: string; last_name?: string; username?: string }) {
+type TelegramIdentity = { id: string; first_name?: string; last_name?: string; username?: string };
+
+/** Telegram foydalanuvchisini topadi yoki ochadi (sessiya ochmaydi: bot webhook'i shuni ishlatadi). */
+export async function upsertTelegramUser(t: TelegramIdentity) {
   let user = await db.user.findUnique({ where: { telegramId: t.id } });
+  let isNew = false;
   if (!user) {
     const name = [t.first_name, t.last_name].filter(Boolean).join(" ").trim() || t.username || null;
     user = await db.user.create({ data: { telegramId: t.id, telegramUsername: t.username ?? null, name, roles: { create: { role: "TEACHER" } }, profile: { create: {} } } });
     await db.auditLog.create({ data: { userId: user.id, action: "auth.register_telegram" } });
+    isNew = true;
   } else if (t.username && user.telegramUsername !== t.username) {
     user = await db.user.update({ where: { id: user.id }, data: { telegramUsername: t.username } });
   }
   if (user.deletedAt) throw new ApiError(403, "Akkaunt o'chirilgan.");
+  return { user, isNew };
+}
+
+export async function signInWithTelegram(t: TelegramIdentity) {
+  const { user } = await upsertTelegramUser(t);
   await startSession(user.id);
   await db.auditLog.create({ data: { userId: user.id, action: "auth.login_telegram" } });
   return user;
