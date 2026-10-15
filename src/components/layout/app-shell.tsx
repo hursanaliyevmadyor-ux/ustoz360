@@ -45,6 +45,7 @@ function Sidebar() {
       <Logo className="px-2 pb-5 pt-1" />
       <nav aria-label="Asosiy menyu" className="flex-1 space-y-1 overflow-y-auto">
         <NavLink href={dashboardItem.href} icon={dashboardItem.icon} label={dashboardItem.name} active={path === "/dashboard"} />
+        <NavLink href="/ai" icon={Sparkles} label="AI chat" active={false} />
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Modullar</p>
         {modules.map((m) => <NavLink key={m.key} href={m.href} icon={m.icon} label={m.name} accent={m} active={findAny(path)?.key === m.key} />)}
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Boshqaruv</p>
