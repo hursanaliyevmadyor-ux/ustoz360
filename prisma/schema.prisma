@@ -285,6 +285,8 @@ model TelegramLogin {
   id          String    @id @default(cuid())
   code        String    @unique
   pollHash    String
+  /// Botda Start bosgan, lekin hali telefon raqamini tasdiqlamagan Telegram foydalanuvchisi.
+  telegramId  String?
   userId      String?
   confirmedAt DateTime?
   consumedAt  DateTime?

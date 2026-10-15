@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
   db: {
     user: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
     auditLog: { create: vi.fn() },
-    telegramLogin: { count: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
+    telegramLogin: { count: vi.fn(), create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
     telegramUpdate: { create: vi.fn(), deleteMany: vi.fn() },
     aiChat: { findFirst: vi.fn(), update: vi.fn() },
   },
@@ -38,8 +38,11 @@ beforeEach(() => {
 });
 
 const msg = (text: string, extra: Record<string, unknown> = {}) => ({ update_id: Math.floor(Math.random() * 1e9), message: { chat: { id: 77, type: "private" }, from: { id: 5, first_name: "Ali", username: "ali" }, text, ...extra } });
-const newUser = () => { db.user.findUnique.mockResolvedValue(null); db.user.create.mockResolvedValue({ id: "u1", name: "Ali", deletedAt: null, telegramUsername: "ali" }); };
-const oldUser = () => db.user.findUnique.mockResolvedValue({ id: "u1", name: "Ali", deletedAt: null, telegramUsername: "ali" });
+const contactMsg = (userId: number, phone = "+998 90 123-45-67") => ({ update_id: Math.floor(Math.random() * 1e9), message: { chat: { id: 77, type: "private" }, from: { id: 5, first_name: "Ali", username: "ali" }, contact: { phone_number: phone, user_id: userId } } });
+const PHONE = "+998901234567";
+const registeredUser = () => db.user.findUnique.mockResolvedValue({ id: "u1", name: "Ali", phone: PHONE, deletedAt: null, telegramUsername: "ali" });
+const lastMarkup = () => { const m = calls.filter((c) => c.method === "sendMessage"); return m.at(-1)?.body.reply_markup as { keyboard?: { request_contact?: boolean }[][]; remove_keyboard?: boolean } | undefined; };
+const liveRow = (extra: Record<string, unknown> = {}) => ({ id: "L1", code: "abc", consumedAt: null, confirmedAt: null, expiresAt: new Date(Date.now() + 60_000), ...extra });
 
 describe("saytdan Telegram orqali kirish", () => {
   it("havola va maxfiy kalit beradi, webhook'ni o'zi ulaydi", async () => {
@@ -77,27 +80,56 @@ describe("saytdan Telegram orqali kirish", () => {
   });
 });
 
-describe("bot", () => {
-  it("/start l_... : yangi foydalanuvchi ro'yxatdan o'tadi va tabrik oladi", async () => {
-    newUser();
-    db.telegramLogin.findUnique.mockResolvedValue({ id: "L1", code: "abc", consumedAt: null, confirmedAt: null, expiresAt: new Date(Date.now() + 60_000) });
+describe("bot: telefon raqami bilan ro'yxatdan o'tish", () => {
+  it("/start l_... yangi foydalanuvchi: raqam tugmasi chiqadi, hali kirish tasdiqlanmaydi va akkaunt ochilmaydi", async () => {
+    db.user.findUnique.mockResolvedValue(null);
+    db.telegramLogin.findUnique.mockResolvedValue(liveRow());
     await handleUpdate(msg("/start l_abc"), "https://site.example");
-    expect(db.telegramLogin.update).toHaveBeenCalledWith({ where: { id: "L1" }, data: expect.objectContaining({ userId: "u1" }) });
-    expect(sent()[0]).toContain("Tabriklaymiz");
-    expect(sent()[0]).toContain("saytga qaytishingiz mumkin");
+    expect(db.telegramLogin.update).toHaveBeenCalledWith({ where: { id: "L1" }, data: { telegramId: "5" } });
+    expect(db.user.create).not.toHaveBeenCalled();
+    expect(lastMarkup()?.keyboard?.[0][0].request_contact).toBe(true);
+    expect(sent()[0]).toContain("Telefon raqamni yuborish");
   });
 
-  it("/start l_... : mavjud foydalanuvchi xush kelibsiz xabarini oladi", async () => {
-    oldUser();
-    db.telegramLogin.findUnique.mockResolvedValue({ id: "L1", code: "abc", consumedAt: null, confirmedAt: null, expiresAt: new Date(Date.now() + 60_000) });
+  it("raqam yuborilsa: akkaunt ochiladi, raqam saqlanadi, kirish tasdiqlanadi va tabrik keladi", async () => {
+    db.user.findUnique.mockResolvedValue(null);
+    db.user.create.mockResolvedValue({ id: "u1", name: "Ali", phone: null, deletedAt: null, telegramUsername: "ali" });
+    db.user.update.mockResolvedValue({});
+    db.telegramLogin.findFirst.mockResolvedValue(liveRow({ telegramId: "5" }));
+    await handleUpdate(contactMsg(5), "https://site.example");
+    expect(db.user.update).toHaveBeenCalledWith({ where: { id: "u1" }, data: { phone: PHONE } });
+    expect(db.telegramLogin.update).toHaveBeenCalledWith({ where: { id: "L1" }, data: expect.objectContaining({ userId: "u1" }) });
+    expect(sent().join("\n")).toContain("Tabriklaymiz, ro'yxatdan o'tdingiz");
+    expect(sent().join("\n")).toContain("saytga qaytishingiz mumkin");
+  });
+
+  it("boshqa odamning kontakti qabul qilinmaydi", async () => {
+    await handleUpdate(contactMsg(9), "https://site.example");
+    expect(db.user.create).not.toHaveBeenCalled();
+    expect(db.user.update).not.toHaveBeenCalled();
+    expect(lastMarkup()?.keyboard?.[0][0].request_contact).toBe(true);
+  });
+
+  it("raqam boshqa akkauntga bog'langan bo'lsa ro'yxatdan o'tkazilmaydi", async () => {
+    registeredUser();
+    db.user.findUnique.mockResolvedValue({ id: "u1", name: "Ali", phone: null, deletedAt: null, telegramUsername: "ali" });
+    db.user.update.mockRejectedValue(Object.assign(new Error("dup"), { code: "P2002" }));
+    await handleUpdate(contactMsg(5), "https://site.example");
+    expect(sent()[0]).toContain("boshqa akkauntga");
+    expect(db.telegramLogin.update).not.toHaveBeenCalled();
+  });
+
+  it("raqami bor foydalanuvchi /start l_... bossa kirish darhol tasdiqlanadi", async () => {
+    registeredUser();
+    db.telegramLogin.findUnique.mockResolvedValue(liveRow());
     await handleUpdate(msg("/start l_abc"), "https://site.example");
+    expect(db.telegramLogin.update).toHaveBeenCalledWith({ where: { id: "L1" }, data: expect.objectContaining({ userId: "u1" }) });
     expect(sent()[0]).toContain("Xush kelibsiz");
-    expect(sent()[0]).not.toContain("Tabriklaymiz");
   });
 
   it("eskirgan havolada tasdiqlanmaydi", async () => {
-    oldUser();
-    db.telegramLogin.findUnique.mockResolvedValue({ id: "L1", code: "abc", consumedAt: null, confirmedAt: null, expiresAt: new Date(Date.now() - 1000) });
+    registeredUser();
+    db.telegramLogin.findUnique.mockResolvedValue(liveRow({ expiresAt: new Date(Date.now() - 1000) }));
     await handleUpdate(msg("/start l_abc"), "https://site.example");
     expect(db.telegramLogin.update).not.toHaveBeenCalled();
     expect(sent()[0]).toContain("eskirgan");
@@ -115,9 +147,11 @@ describe("bot", () => {
     await handleUpdate(msg("salom", { from: { id: 9, is_bot: true } }), "https://site.example");
     expect(sent()).toHaveLength(0);
   });
+});
 
+describe("bot: AI suhbat", () => {
   it("oddiy savol AI'ga yuboriladi, javob botga va chat tarixiga yoziladi", async () => {
-    oldUser();
+    registeredUser();
     db.aiChat.findFirst.mockResolvedValue({ id: "C1", messages: [{ role: "assistant", content: "javob2" }, { role: "user", content: "savol1" }] });
     h.runFreeAi.mockResolvedValue({ text: "AI javobi", model: "m" });
     await handleUpdate(msg("Dars rejasi tuz"), "https://site.example");
@@ -125,6 +159,13 @@ describe("bot", () => {
     expect(sentMessages.map((m: { content: string }) => m.content)).toEqual(["savol1", "javob2", "Dars rejasi tuz"]);
     expect(h.saveExchange).toHaveBeenCalledWith("u1", "C1", "telegram", "Dars rejasi tuz", "AI javobi");
     expect(sent()).toEqual(["AI javobi"]);
+  });
+
+  it("raqamini tasdiqlamagan foydalanuvchi AI'dan foydalana olmaydi, raqam so'raladi", async () => {
+    db.user.findUnique.mockResolvedValue({ id: "u1", name: "Ali", phone: null, deletedAt: null });
+    await handleUpdate(msg("salom"), "https://site.example");
+    expect(h.runFreeAi).not.toHaveBeenCalled();
+    expect(lastMarkup()?.keyboard?.[0][0].request_contact).toBe(true);
   });
 
   it("/start bosmagan foydalanuvchiga boshlashni aytadi va AI chaqirilmaydi", async () => {
@@ -135,7 +176,7 @@ describe("bot", () => {
   });
 
   it("/limit qolgan so'rovlarni ko'rsatadi", async () => {
-    oldUser(); h.freeUsageToday.mockResolvedValue({ used: 3, limit: 50, remaining: 47 });
+    registeredUser(); h.freeUsageToday.mockResolvedValue({ used: 3, limit: 50, remaining: 47 });
     await handleUpdate(msg("/limit"), "https://site.example");
     expect(sent()[0]).toContain("47 / 50");
   });
