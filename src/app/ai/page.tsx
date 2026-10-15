@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 type Role = "user" | "assistant";
 type Msg = { role: Role; content: string; error?: boolean };
-type Chat = { id: string; title: string; model: ModelKey; messages: Msg[]; updated: number };
+type Chat = { id: string; title: string; model: string };
 type ModelKey = "free" | "claude";
 type Status = { configured: boolean; remaining: number; limit: number; free: { configured: boolean; remaining: number; limit: number } };
 type Me = { id: string; name: string | null; email: string | null } | null;
@@ -32,8 +32,6 @@ const SUGGEST = [
   { t: "Mavzuni soddalashtirish", d: "O'quvchi tushunadigan tilda", p: "Fotosintez jarayonini 6-sinf o'quvchisiga oddiy tilda, misollar bilan tushuntirib ber." },
   { t: "Faol o'qitish usullari", d: "Darsni qiziqarli qilish", p: "Dars jarayonini qiziqarli qiladigan 5 ta faol o'qitish usulini misollar bilan ayt." },
 ];
-
-const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 /** Kichik, xavfsiz markdown ko'rsatuvchi: kod bloklari, sarlavha, ro'yxat, **qalin**, `kod`. HTML kiritilmaydi. */
 function Inline({ text }: { text: string }) {
@@ -83,7 +81,8 @@ export default function Page() {
   const [input, setInput] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [drawer, setDrawer] = React.useState(false);
-  const [loaded, setLoaded] = React.useState(false);
+  const [messages, setMessages] = React.useState<Msg[]>([]);
+  const [saveOk, setSaveOk] = React.useState(true);
   const endRef = React.useRef<HTMLDivElement>(null);
   const taRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -95,22 +94,16 @@ export default function Page() {
     loadStatus();
   }, [loadStatus]);
 
-  const key = me ? `u360-ai-chats:${me.id}` : null;
-  React.useEffect(() => {
-    if (!key) return;
-    try { const raw = localStorage.getItem(key); const list: Chat[] = raw ? JSON.parse(raw) : []; setChats(list); } catch { setChats([]); }
-    setLoaded(true);
-  }, [key]);
-  React.useEffect(() => {
-    if (!key || !loaded) return;
-    try { localStorage.setItem(key, JSON.stringify(chats.slice(0, 50))); } catch {}
-  }, [chats, key, loaded]);
+  const loadChats = React.useCallback(() => {
+    fetch("/api/ai/chats").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setChats(d.chats); setSaveOk(d.available); } }).catch(() => {});
+  }, []);
+  React.useEffect(() => { if (me) loadChats(); }, [me, loadChats]);
 
   React.useEffect(() => {
     if (!status) return;
     if (!status.free.configured && status.configured) setModel("claude");
   }, [status]);
-  React.useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [chats, activeId, busy]);
+  React.useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, busy]);
   React.useEffect(() => {
     const ta = taRef.current; if (!ta) return; ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
   }, [input]);
@@ -120,31 +113,35 @@ export default function Page() {
   const remaining = status ? (model === "free" ? status.free.remaining : status.remaining) : null;
   const limit = status ? (model === "free" ? status.free.limit : status.limit) : null;
 
-  const newChat = () => { setActiveId(null); setInput(""); setDrawer(false); taRef.current?.focus(); };
-  const openChat = (c: Chat) => { setActiveId(c.id); setModel(c.model); setDrawer(false); };
-  const removeChat = (id: string) => { setChats((s) => s.filter((c) => c.id !== id)); if (activeId === id) setActiveId(null); };
-  const useTemplate = (p: string) => { setActiveId(null); setInput(p); setDrawer(false); setTimeout(() => taRef.current?.focus(), 0); };
+  const newChat = () => { setActiveId(null); setMessages([]); setInput(""); setDrawer(false); taRef.current?.focus(); };
+  const openChat = async (c: Chat) => {
+    setDrawer(false);
+    try {
+      const r = await fetch(`/api/ai/chats/${c.id}`); if (!r.ok) return;
+      const d = await r.json();
+      setMessages(d.messages as Msg[]); setActiveId(c.id); setModel(d.model === "claude" ? "claude" : "free");
+    } catch {}
+  };
+  const removeChat = async (id: string) => {
+    try { const r = await fetch(`/api/ai/chats/${id}`, { method: "DELETE" }); if (!r.ok) return; } catch { return; }
+    setChats((s) => s.filter((c) => c.id !== id));
+    if (activeId === id) { setActiveId(null); setMessages([]); }
+  };
+  const useTemplate = (p: string) => { setActiveId(null); setMessages([]); setInput(p); setDrawer(false); setTimeout(() => taRef.current?.focus(), 0); };
 
   const send = async (text: string) => {
     const t = text.trim(); if (!t || busy) return;
-    const id = active?.id ?? uid();
-    const prev = active?.messages ?? [];
-    const history: Msg[] = [...prev.filter((m) => !m.error), { role: "user", content: t }];
-    setChats((s) => {
-      const base = s.find((c) => c.id === id);
-      const next: Chat = { id, title: base?.title ?? t.slice(0, 48), model, messages: history, updated: Date.now() };
-      return [next, ...s.filter((c) => c.id !== id)];
-    });
-    setActiveId(id); setInput(""); setBusy(true);
-    const append = (m: Msg) => setChats((s) => s.map((c) => (c.id === id ? { ...c, messages: [...c.messages, m], updated: Date.now() } : c)));
+    const history: Msg[] = [...messages.filter((m) => !m.error), { role: "user", content: t }];
+    setMessages(history); setInput(""); setBusy(true);
+    const append = (m: Msg) => setMessages((s) => [...s, m]);
     try {
       const r = await fetch(model === "free" ? "/api/ai/free-chat" : "/api/ai/chat", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: history.slice(-20).map((m) => ({ role: m.role, content: m.content.slice(0, 4000) })) }),
+        body: JSON.stringify({ messages: history.slice(-20).map((m) => ({ role: m.role, content: m.content.slice(0, 4000) })), save: true, chatId: activeId ?? undefined }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) append({ role: "assistant", error: true, content: r.status === 401 ? "Davom etish uchun tizimga kiring." : d.error ?? "Xatolik yuz berdi. Qayta urinib ko'ring." });
-      else append({ role: "assistant", content: d.reply });
+      else { append({ role: "assistant", content: d.reply }); if (d.chatId) { setActiveId(d.chatId); loadChats(); } }
     } catch { append({ role: "assistant", error: true, content: "Server bilan aloqa yo'q. Internetni tekshirib, qayta urinib ko'ring." }); }
     setBusy(false); loadStatus();
   };
@@ -169,6 +166,7 @@ export default function Page() {
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-label="AI bo'limlari">
         <p className={sec}>Mening chatlarim</p>
         {chats.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">Hali chat yo'q. Birinchi savolingizni bering.</p>}
+        {!saveOk && <p className="mx-3 mb-1 rounded-lg bg-amber/15 p-2 text-xs">Chatlarni saqlash hozircha o'chiq (baza yangilanmagan). Javoblar ishlaydi, lekin tarix saqlanmaydi.</p>}
         <ul className="space-y-0.5">
           {chats.map((c) => (
             <li key={c.id} className="group relative">
@@ -212,8 +210,6 @@ export default function Page() {
       </div>
     </div>
   );
-
-  const messages = active?.messages ?? [];
 
   return (
     <div className="flex h-[100dvh] bg-background">
