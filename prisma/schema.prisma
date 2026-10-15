@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleKey {
+  TEACHER
+  COURSE_AUTHOR
+  ORG_MANAGER
+  METHODIST
+  ADMIN
+  SUPERADMIN
+}
+
+enum QuestionStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum TestMode {
+  DIAGNOSTIC
+  PRACTICE
+  TIMED
+  TOPIC
+  MIXED
+  ERRORS
+  SIMULATION
+}
+
+enum SessionStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EXPIRED
+}
+
+enum Confidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// ---------- Accounts ----------
+model User {
+  id         String      @id @default(cuid())
+  /// Kirish: email + parol. Telefon ixtiyoriy (keyin SMS/profil uchun).
+  email        String?     @unique
+  passwordHash String?
+  /// Email tasdiqlangan vaqti (Google orqali kirganda to'ldiriladi). Parol bilan ro'yxatdan o'tishda bo'sh.
+  emailVerifiedAt DateTime?
+  googleSub    String?     @unique
+  telegramId   String?     @unique
+  telegramUsername String?
+  phone      String?     @unique
+  name       String?
+  createdAt  DateTime    @default(now())
+  deletedAt  DateTime?
+  profile    Profile?
+  roles      UserRole[]
+  sessions   AuthSession[]
+  testSessions TestSession[]
+  mastery    TopicMastery[]
+  errorCards ErrorCard[]
+  auditLogs  AuditLog[]
+  aiRequests AiRequest[]
+}
+
+model Profile {
+  userId        String    @id
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectFocus  String?
+  grades        String?
+  experience    Int?
+  category      String?
+  targetExam    String?
+  examDate      DateTime?
+  dailyMinutes  Int?
+}
+
+model UserRole {
+  id             String  @id @default(cuid())
+  userId         String
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           RoleKey
+  organizationId String?
+  @@unique([userId, role, organizationId])
+  @@index([userId])
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId])
+}
+
+// ---------- Learning ----------
+model Subject {
+  id     String  @id @default(cuid())
+  slug   String  @unique
+  name   String
+  topics Topic[]
+}
+
+model Topic {
+  id        String     @id @default(cuid())
+  subjectId String
+  subject   Subject    @relation(fields: [subjectId], references: [id])
+  slug      String     @unique
+  name      String
+  questions Question[]
+  mastery   TopicMastery[]
+}
+
+model Question {
+  id         String         @id @default(cuid())
+  topicId    String
+  topic      Topic          @relation(fields: [topicId], references: [id])
+  text       String
+  explanation String
+  difficulty Difficulty
+  status     QuestionStatus @default(DRAFT)
+  /// true bo'lsa: namunaviy savol, ekspert tekshirmagan. UI'da DEMO deb ko'rsatiladi.
+  isDemo     Boolean        @default(false)
+  options    AnswerOption[]
+  answers    UserAnswer[]
+  errorCards ErrorCard[]
+  createdAt  DateTime       @default(now())
+  @@index([status, topicId])
+}
+
+model AnswerOption {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean  @default(false)
+  position   Int
+  @@index([questionId])
+}
+
+model TestSession {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mode        TestMode
+  status      SessionStatus @default(IN_PROGRESS)
+  /// Sessiyaga kiritilgan savollar tartibi (JSON: questionId[]). Javob kaliti bu yerda saqlanmaydi.
+  questionIds Json
+  startedAt   DateTime      @default(now())
+  expiresAt   DateTime
+  submittedAt DateTime?
+  score       Int?
+  total       Int?
+  answers     UserAnswer[]
+  @@index([userId, startedAt])
+}
+
+model UserAnswer {
+  id         String      @id @default(cuid())
+  sessionId  String
+  session    TestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question    @relation(fields: [questionId], references: [id])
+  optionId   String?
+  isCorrect  Boolean
+  @@unique([sessionId, questionId])
+}
+
+model TopicMastery {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topicId    String
+  topic      Topic      @relation(fields: [topicId], references: [id])
+  correct    Int        @default(0)
+  total      Int        @default(0)
+  confidence Confidence @default(LOW)
+  updatedAt  DateTime   @updatedAt
+  @@unique([userId, topicId])
+}
+
+model ErrorCard {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  mistakes   Int      @default(1)
+  mastered   Boolean  @default(false)
+  /// Oraliqli takrorlash: keyingi takrorlash vaqti va interval (kun)
+  nextReviewAt DateTime
+  intervalDays Int    @default(1)
+  lastMistakeAt DateTime @default(now())
+  @@unique([userId, questionId])
+  @@index([userId, nextReviewAt])
+}
+
+// ---------- System ----------
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+  @@index([action, createdAt])
+}
+
+/// AI so'rovlari jurnali: faqat metadata (matn saqlanmaydi, shaxsiy ma'lumot uchun). Kunlik limit va sarfni nazorat qilish uchun.
+model AiRequest {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature      String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  status       String
+  createdAt    DateTime @default(now())
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}

@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --navy: 212 61% 18%;          /* #122B49 */
+  --primary: 221 83% 53%;       /* #2563EB */
+  --teal: 175 84% 32%;          /* #0D9488 */
+  --amber: 38 92% 50%;          /* #F59E0B */
+  --background: 222 40% 97%;    /* #F5F7FB */
+  --card: 0 0% 100%;
+  --foreground: 212 61% 18%;
+  --muted: 220 30% 95%;
+  --muted-foreground: 215 20% 40%;
+  --border: 218 30% 90%;
+  --success: 158 64% 32%;
+  --danger: 0 70% 48%;
+}
+.dark {
+  --navy: 212 40% 92%;
+  --background: 216 45% 8%;
+  --card: 214 40% 12%;
+  --foreground: 210 40% 96%;
+  --muted: 214 33% 17%;
+  --muted-foreground: 214 20% 70%;
+  --border: 214 28% 22%;
+  --primary: 217 91% 62%;
+  --teal: 173 70% 45%;
+  --amber: 38 92% 56%;
+  --success: 152 55% 50%;
+  --danger: 0 80% 66%;
+}
+html { -webkit-text-size-adjust: 100%; }
+body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+.skeleton { background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--border)) 50%, hsl(var(--muted)) 75%); background-size: 200% 100%; animation: sk 1.4s infinite; }
+@keyframes sk { to { background-position: -200% 0; } }
