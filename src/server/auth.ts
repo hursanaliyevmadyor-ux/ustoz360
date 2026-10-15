@@ -11,9 +11,12 @@ function secret() {
   return s;
 }
 const hmac = (v: string) => createHmac("sha256", secret()).update(v).digest("hex");
+/** Boshqa modullar (email kodlari) uchun: AUTH_SECRET bilan imzolangan xesh. */
+export const signValue = hmac;
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  /** `code` — frontend xabar matniga tayanmasdan holatni ajratishi uchun (masalan "unverified"). */
+  constructor(public status: number, message: string, public code?: string) { super(message); }
 }
 
 const MAX_FAILED_LOGINS = 5;          // har email uchun 15 daqiqada
@@ -46,7 +49,7 @@ export async function requireVerified(userId: string) {
   if (!verified) throw new ApiError(403, "AI dan foydalanish uchun Google yoki Telegram orqali kirib, akkauntingizni tasdiqlang.");
 }
 
-async function startSession(userId: string) {
+export async function startSession(userId: string) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
   await db.authSession.create({ data: { tokenHash: hmac(token), userId, expiresAt } });
@@ -80,6 +83,8 @@ export async function login(rawEmail: string, password: string) {
     await db.auditLog.create({ data: { userId: user?.id ?? null, action: "auth.login_failed", meta: { email } } });
     throw new ApiError(401, "Email yoki parol noto'g'ri."); // qaysi biri xato ekani aytilmaydi
   }
+  // Kod bilan tasdiqlanmagan yangi akkaunt kira olmaydi (eski akkauntlar SQL bilan tasdiqlangan deb belgilangan).
+  if (!user.emailVerifiedAt && !emailSignupOpen()) throw new ApiError(403, "Emailingiz hali tasdiqlanmagan. Ro'yxatdan o'tishni qayta bosib, emailga kelgan kodni kiriting.", "unverified");
   await startSession(user.id);
   await db.auditLog.create({ data: { userId: user.id, action: "auth.login" } });
   return user;
