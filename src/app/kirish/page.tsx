@@ -26,19 +26,13 @@ function GoogleIcon() {
   );
 }
 
-/** Telegram Login Widget: rasmiy skript tugmani o'zi chizadi, ma'lumotni serverga GET bilan yuboradi. */
-function TelegramButton({ bot }: { bot: string }) {
-  const ref = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => {
-    const host = ref.current; if (!host) return;
-    host.innerHTML = "";
-    const s = document.createElement("script");
-    s.src = "https://telegram.org/js/telegram-widget.js?22"; s.async = true;
-    s.setAttribute("data-telegram-login", bot); s.setAttribute("data-size", "large"); s.setAttribute("data-radius", "12");
-    s.setAttribute("data-auth-url", `${location.origin}/api/auth/telegram/callback`); s.setAttribute("data-request-access", "write");
-    host.appendChild(s);
-  }, [bot]);
-  return <div ref={ref} className="flex h-11 items-center justify-center overflow-hidden" aria-label="Telegram orqali kirish" />;
+function TelegramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+      <circle cx="12" cy="12" r="12" fill="#27A7E7" />
+      <path fill="#fff" d="M5.4 11.8l11.5-4.4c.5-.2 1 .1.8.9l-2 9.1c-.1.7-.6.8-1.1.5l-3-2.2-1.4 1.4c-.2.2-.3.3-.6.3l.2-3.1 5.6-5c.2-.2 0-.3-.4-.1L8.5 13.4l-3-.9c-.7-.2-.7-.7.1-.7z" />
+    </svg>
+  );
 }
 
 function Brand({ light }: { light?: boolean }) {
@@ -113,9 +107,37 @@ export default function Page() {
   const post = async (url: string, body: unknown) => {
     const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
-    return { ok: r.ok, d } as { ok: boolean; d: { error?: string; code?: string; verify?: boolean } };
+    return { ok: r.ok, d } as { ok: boolean; d: { error?: string; code?: string; verify?: boolean; url?: string; pollKey?: string; status?: string; next?: string } };
   };
   const NET = "Server bilan aloqa yo'q. Internetni tekshirib, qayta urinib ko'ring.";
+
+  // Telegram bot orqali kirish: havola ochiladi, foydalanuvchi botda Start bosadi, shu orada sahifa har 2 soniyada tekshiradi.
+  const [tg, setTg] = React.useState<{ url: string; key: string } | null>(null);
+  const [tgBusy, setTgBusy] = React.useState(false);
+  const tgStart = async () => {
+    if (tgBusy) return; setTgBusy(true); setErr("");
+    const w = window.open("", "_blank"); // bosish paytida ochamiz, shunda brauzer oynani bloklamaydi
+    try {
+      const { ok, d } = await post("/api/auth/telegram/start", {});
+      if (!ok || !d.url || !d.pollKey) { w?.close(); setErr(d.error ?? NET); return; }
+      if (w) w.location.href = d.url;
+      setTg({ url: d.url, key: d.pollKey });
+    } catch { w?.close(); setErr(NET); } finally { setTgBusy(false); }
+  };
+  React.useEffect(() => {
+    if (!tg) return;
+    let alive = true;
+    const iv = setInterval(async () => {
+      try {
+        const { d } = await post("/api/auth/telegram/poll", { pollKey: tg.key });
+        if (!alive) return;
+        if (d.status === "ok") { alive = false; clearInterval(iv); toast("success", "Xush kelibsiz!"); router.push(d.next ?? "/dashboard"); router.refresh(); }
+        else if (d.status === "expired") { alive = false; clearInterval(iv); setTg(null); setErr("Telegram orqali kirish vaqti tugadi. Qayta urinib ko'ring."); }
+      } catch { /* tarmoq vaqtincha uzilsa, keyingi urinish davom etadi */ }
+    }, 2000);
+    return () => { alive = false; clearInterval(iv); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tg]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); setErr("");
@@ -183,6 +205,19 @@ export default function Page() {
               <Button className="w-full" size="lg" onClick={() => router.push("/dashboard")}>Bosh sahifaga o'tish</Button>
               <Button variant="outline" className="w-full" onClick={logout}>Chiqish</Button>
             </div>
+          ) : tg ? (
+            <div className="space-y-5 text-center" aria-live="polite">
+              <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#27A7E7]/10"><TelegramIcon /></span>
+              <h1 className="text-2xl font-extrabold tracking-tight">Telegramda «Start» ni bosing</h1>
+              <ol className="mx-auto max-w-xs space-y-2 text-left text-sm text-muted-foreground">
+                <li>1. Ochilgan Telegram botda <b className="text-foreground">Start</b> tugmasini bosing.</li>
+                <li>2. Bot sizni ro'yxatdan o'tkazadi.</li>
+                <li>3. Shu sahifaga qaytsangiz, o'zi ochiladi.</li>
+              </ol>
+              <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-primary" />Tasdiqlash kutilmoqda...</p>
+              <Button asChild size="lg" className="w-full"><a href={tg.url} target="_blank" rel="noopener noreferrer">Telegramni ochish</a></Button>
+              <button type="button" className="text-sm font-semibold text-primary hover:underline" onClick={() => setTg(null)}>Bekor qilish</button>
+            </div>
           ) : (
             <>
               <div>
@@ -200,7 +235,9 @@ export default function Page() {
                     {providers.google && (
                       <Button asChild variant="outline" className={socialBtn}><a href="/api/auth/google/start"><GoogleIcon />Google</a></Button>
                     )}
-                    {providers.telegram && <div className={cn("overflow-hidden rounded-xl", !providers.google && "min-[420px]:col-span-2")}><TelegramButton bot={providers.telegram} /></div>}
+                    {providers.telegram && (
+                      <Button type="button" variant="outline" loading={tgBusy} onClick={tgStart} className={cn(socialBtn, !providers.google && "min-[420px]:col-span-2")}><TelegramIcon />Telegram</Button>
+                    )}
                     {providers.yandex && (
                       <Button asChild variant="outline" className={cn(socialBtn, "min-[420px]:col-span-2")}><a href="/api/auth/yandex/start"><span aria-hidden className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#FC3F1D] text-xs font-bold text-white">Я</span>Yandex</a></Button>
                     )}
