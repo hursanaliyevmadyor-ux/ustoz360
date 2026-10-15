@@ -39,7 +39,6 @@ export function SuccessState({ title, text, action }: { title: string; text: str
 export function NoBackendNote({ children }: { children?: React.ReactNode }) {
   return (
     <p className="flex items-start gap-2 rounded-xl bg-amber/10 px-3.5 py-2.5 text-xs text-foreground">
-      <span className="mt-0.5 font-bold uppercase text-amber">Prototip</span>
       <span>{children ?? "Backend ulanmagan: bu amal hozircha saqlanmaydi va haqiqiy natija bermaydi."}</span>
     </p>
   );

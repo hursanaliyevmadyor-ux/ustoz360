@@ -190,7 +190,7 @@ function ProfileMenu() {
       <DM.Trigger asChild>
         <button className="flex items-center gap-2.5 rounded-xl p-1 pr-2 hover:bg-muted" aria-label="Profil menyusi">
           <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">{initials}</span>
-          <span className="hidden text-left leading-tight md:block"><span className="block text-sm font-bold">{label}</span><span className="block text-xs text-muted-foreground">{me ? "Akkaunt" : `${user.plan} tarif (demo)`}</span></span>
+          <span className="hidden text-left leading-tight md:block"><span className="block text-sm font-bold">{label}</span><span className="block text-xs text-muted-foreground">{me ? "Akkaunt" : `${user.plan} tarif`}</span></span>
         </button>
       </DM.Trigger>
       <DM.Portal>
@@ -228,9 +228,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded-lg focus:bg-primary focus:px-3 focus:py-2 focus:text-white">Asosiy kontentga o'tish</a>
       <Sidebar />
       <div className="lg:pl-64">
-        <div className="bg-amber/15 px-4 py-1.5 text-center text-xs font-semibold text-foreground">
-          PROTOTIP: kirish, profil, dashboard, diagnostika, xatolar va bilim xaritasi haqiqiy backend bilan ishlaydi. AI yordamchi va dars ishlanmasi server kaliti ulangach ishlaydi. Qolgan bo'limlar namunaviy (demo); to'lov ulanmagan.
-        </div>
         <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-border bg-background/90 px-4 backdrop-blur sm:gap-3 lg:px-8">
           <Logo className="lg:hidden" />
           <div className="hidden min-w-0 flex-1 lg:block"><Breadcrumb /></div>
