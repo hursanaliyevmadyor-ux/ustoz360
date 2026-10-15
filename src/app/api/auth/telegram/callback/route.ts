@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { signInWithTelegram } from "@/server/auth";
+import { landingPath } from "@/server/onboarding";
 import { appOrigin, verifyTelegramAuth } from "@/server/oauth";
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const GET = async (req: Request) => {
     const params = Object.fromEntries(new URL(req.url).searchParams.entries());
     const v = verifyTelegramAuth(params, token);
     if (!v.ok) return fail(v.reason);
-    await signInWithTelegram(v.data);
-    return NextResponse.redirect(`${origin}/dashboard`);
+    const user = await signInWithTelegram(v.data);
+    return NextResponse.redirect(`${origin}${await landingPath(user.id)}`);
   } catch (e) { return fail(`kutilmagan xato: ${(e as Error).message}`); }
 };

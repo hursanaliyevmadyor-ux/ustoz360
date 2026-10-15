@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { signInWithYandex } from "@/server/auth";
+import { landingPath } from "@/server/onboarding";
 import { appOrigin, validateYandexInfo, type YandexInfo } from "@/server/oauth";
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,8 @@ export const GET = async (req: Request) => {
     const v = validateYandexInfo((await ir.json()) as YandexInfo);
     if (!v.ok) return fail(v.reason);
 
-    await signInWithYandex(v);
-    const res = NextResponse.redirect(`${origin}/dashboard`);
+    const user = await signInWithYandex(v);
+    const res = NextResponse.redirect(`${origin}${await landingPath(user.id)}`);
     res.cookies.delete({ name: COOKIE, path: "/api/auth/yandex" });
     return res;
   } catch (e) { return fail(`kutilmagan xato: ${(e as Error).message}`); }

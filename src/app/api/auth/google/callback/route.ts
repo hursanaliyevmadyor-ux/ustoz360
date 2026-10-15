@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { signInWithGoogle } from "@/server/auth";
+import { landingPath } from "@/server/onboarding";
 import { appOrigin, decodeJwtPayload, validateGoogleClaims } from "@/server/oauth";
 export const dynamic = "force-dynamic";
 
@@ -28,8 +29,8 @@ export const GET = async (req: Request) => {
     const v = validateGoogleClaims(id_token ? decodeJwtPayload(id_token) : null, clientId, nonce);
     if (!v.ok) return fail(v.reason);
 
-    await signInWithGoogle(v);
-    const res = NextResponse.redirect(`${origin}/dashboard`);
+    const user = await signInWithGoogle(v);
+    const res = NextResponse.redirect(`${origin}${await landingPath(user.id)}`);
     res.cookies.delete({ name: "u360_oauth", path: "/api/auth/google" });
     return res;
   } catch (e) { return fail(`kutilmagan xato: ${(e as Error).message}`); }

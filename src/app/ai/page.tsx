@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowUp, BarChart3, BookOpen, Check, ClipboardList, Copy, FileText, GraduationCap, Home, Lightbulb, Mail, Menu, MessageSquare, Plus, Sparkles, Trash2, X, Zap,
 } from "lucide-react";
@@ -72,6 +73,7 @@ function CopyBtn({ text }: { text: string }) {
 }
 
 export default function Page() {
+  const router = useRouter();
   const [me, setMe] = React.useState<Me>(null);
   const [anon, setAnon] = React.useState(false);
   const [status, setStatus] = React.useState<Status | null>(null);
@@ -90,9 +92,9 @@ export default function Page() {
     fetch("/api/ai/status").then(async (r) => { if (r.status === 401) { setAnon(true); return; } if (r.ok) setStatus(await r.json()); }).catch(() => {});
   }, []);
   React.useEffect(() => {
-    fetch("/api/me").then((r) => r.json()).then((d) => { setMe(d.user); if (!d.user) setAnon(true); }).catch(() => {});
+    fetch("/api/me").then((r) => r.json()).then((d) => { if (d.user && d.user.onboarded === false) { router.replace("/royxat"); return; } setMe(d.user); if (!d.user) setAnon(true); }).catch(() => {});
     loadStatus();
-  }, [loadStatus]);
+  }, [loadStatus, router]);
 
   const loadChats = React.useCallback(() => {
     fetch("/api/ai/chats").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) { setChats(d.chats); setSaveOk(d.available); } }).catch(() => {});

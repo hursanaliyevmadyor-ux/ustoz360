@@ -88,7 +88,7 @@ export default function Page() {
   const [show, setShow] = React.useState(false);
   const [busy, setBusy] = React.useState(false); const [err, setErr] = React.useState("");
   const [who, setWho] = React.useState<{ name: string | null; email: string | null } | null>(null);
-  React.useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setWho(d.user)).catch(() => {}); }, []);
+  React.useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => { if (d.user && d.user.onboarded === false) { router.replace("/royxat"); return; } setWho(d.user); }).catch(() => {}); }, [router]);
   const [providers, setProviders] = React.useState<{ google: boolean; yandex: boolean; telegram: string | null }>({ google: false, yandex: false, telegram: null });
   React.useEffect(() => {
     fetch("/api/auth/providers").then((r) => r.json()).then(setProviders).catch(() => {});
