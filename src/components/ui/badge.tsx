@@ -19,7 +19,7 @@ export function Badge({ className, variant, ...p }: React.HTMLAttributes<HTMLSpa
   return <span className={cn(badgeVariants({ variant }), className)} {...p} />;
 }
 
-/** Har bir demo ma'lumot shu belgi bilan ko'rsatiladi. */
-export function DemoBadge({ className }: { className?: string }) {
-  return <Badge variant="amber" className={cn("uppercase tracking-wide", className)} title="Bu namunaviy ma'lumot, haqiqiy emas">Demo</Badge>;
+/** "Demo" belgisi ko'rsatilmaydi (egasining qarori). Komponent saqlab qolindi, shunda uni qaytarish bir joyda qilinadi. */
+export function DemoBadge(_props: { className?: string }) {
+  return null;
 }

@@ -21,7 +21,7 @@ export default function Page() {
       <PageHeader title="Obuna va to'lovlar" description="Narxlar sinov uchun belgilangan, yakuniy emas" demo />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{plans.map((p) => (
         <Card key={p.n} className={cn("flex flex-col p-5", p.cur && "ring-2 ring-primary")}>
-          <div className="flex items-center justify-between"><p className="font-extrabold">{p.n}</p>{p.cur && <Badge variant="blue">Joriy (demo)</Badge>}</div>
+          <div className="flex items-center justify-between"><p className="font-extrabold">{p.n}</p>{p.cur && <Badge variant="blue">Joriy</Badge>}</div>
           <p className="mt-2 text-3xl font-extrabold">{p.p}{p.p !== "Kelishuv" && <span className="text-sm font-semibold text-muted-foreground"> so'm/oy</span>}</p>
           <ul className="mt-4 flex-1 space-y-2 text-sm">{p.f.map((x) => <li key={x} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />{x}</li>)}</ul>
           <Button variant={p.cur ? "secondary" : "primary"} className="mt-5" disabled={p.cur} onClick={() => toast("info", "To'lov tizimi (Click/Payme) ulanmagan.")}>{p.cur ? "Joriy tarif" : "Tanlash"}</Button></Card>))}</div>

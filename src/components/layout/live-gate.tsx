@@ -19,13 +19,13 @@ export function LiveGate<T>({ url, render, demo }: { url: string; render: (data:
     <Card className="max-w-xl"><CardContent className="space-y-3">
       <p className="font-bold">Natijalaringiz akkauntga saqlanadi</p>
       <p className="text-sm text-muted-foreground">Bu bo'lim ma'lumotlarini ko'rish uchun tizimga kiring va diagnostika topshiring.</p>
-      <div className="flex flex-wrap gap-2"><Button asChild><Link href="/kirish">Kirish / Ro'yxatdan o'tish</Link></Button><Button variant="outline" onClick={() => setShowDemo(true)}>Namunani ko'rish (DEMO)</Button></div>
+      <div className="flex flex-wrap gap-2"><Button asChild><Link href="/kirish">Kirish</Link></Button><Button variant="outline" onClick={() => setShowDemo(true)}>Namunani ko'rish</Button></div>
     </CardContent></Card>
   );
   if (state.status === "offline") return (
     <>
       <ErrorState title="Backend ulanmagan" text="Server yoki ma'lumotlar bazasi mavjud emas, shuning uchun sizning ma'lumotlaringizni ko'rsatib bo'lmaydi." onRetry={reload} />
-      <div className="mt-4 flex justify-center"><Button variant="outline" onClick={() => setShowDemo(true)}>Namunani ko'rish (DEMO)</Button></div>
+      <div className="mt-4 flex justify-center"><Button variant="outline" onClick={() => setShowDemo(true)}>Namunani ko'rish</Button></div>
     </>
   );
   return <>{render(state.data)}</>;
