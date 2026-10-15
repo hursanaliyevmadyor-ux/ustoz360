@@ -219,6 +219,11 @@ function ThemeToggle() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [more, setMore] = React.useState(false);
   const [search, setSearch] = React.useState(false);
+  const nav = useRouter();
+  React.useEffect(() => {
+    // Ism-familiya va yashash joyi to'ldirilmagan bo'lsa, avval ro'yxatdan o'tishni yakunlatamiz.
+    fetch("/api/me").then((r) => r.json()).then((d) => { if (d.user && d.user.onboarded === false) nav.replace("/royxat"); }).catch(() => {});
+  }, [nav]);
   React.useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearch(true); } };
     window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);

@@ -90,6 +90,10 @@ model Profile {
   targetExam    String?
   examDate      DateTime?
   dailyMinutes  Int?
+  region        String?
+  district      String?
+  /// Birinchi kirishdan keyin ism-familiya va yashash joyi to'ldirilgan vaqt. Bo'sh bo'lsa /royxat sahifasiga yo'naltiriladi.
+  onboardedAt   DateTime?
 }
 
 model UserRole {
