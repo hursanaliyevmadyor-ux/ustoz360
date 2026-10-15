@@ -79,9 +79,13 @@ export async function login(rawEmail: string, password: string) {
  * Himoya: agar shu email bilan oldin parol orqali (tasdiqlanmagan) akkaunt ochilgan bo'lsa, u birovning emailini
  * oldindan egallab olgan bo'lishi mumkin. Shuning uchun parol bekor qilinadi va barcha eski sessiyalar o'chiriladi.
  */
-export async function signInWithGoogle(g: { sub: string; email: string; name: string | null }) {
+type OAuthIdentity = { id: string; email: string; name: string | null };
+
+/** Tashqi provayder (Google/Yandex) orqali kirish: id bo'yicha topadi, aks holda tasdiqlangan email bo'yicha bog'laydi yoki yangi akkaunt ochadi. */
+async function signInOAuth(provider: "google" | "yandex", g: OAuthIdentity) {
+  const idData = provider === "google" ? { googleSub: g.id } : { yandexId: g.id };
   const now = new Date();
-  let user = await db.user.findUnique({ where: { googleSub: g.sub } });
+  let user = await db.user.findUnique({ where: idData });
   if (!user) {
     const byEmail = await db.user.findUnique({ where: { email: g.email } });
     if (byEmail) {
@@ -89,19 +93,22 @@ export async function signInWithGoogle(g: { sub: string; email: string; name: st
       if (preHijackRisk) await db.authSession.deleteMany({ where: { userId: byEmail.id } });
       user = await db.user.update({
         where: { id: byEmail.id },
-        data: { googleSub: g.sub, emailVerifiedAt: byEmail.emailVerifiedAt ?? now, ...(preHijackRisk && { passwordHash: null }), name: byEmail.name ?? g.name },
+        data: { ...idData, emailVerifiedAt: byEmail.emailVerifiedAt ?? now, ...(preHijackRisk && { passwordHash: null }), name: byEmail.name ?? g.name },
       });
-      await db.auditLog.create({ data: { userId: user.id, action: preHijackRisk ? "auth.google_link_reset_password" : "auth.google_link" } });
+      await db.auditLog.create({ data: { userId: user.id, action: preHijackRisk ? `auth.${provider}_link_reset_password` : `auth.${provider}_link` } });
     } else {
-      user = await db.user.create({ data: { email: g.email, googleSub: g.sub, emailVerifiedAt: now, name: g.name, roles: { create: { role: "TEACHER" } }, profile: { create: {} } } });
-      await db.auditLog.create({ data: { userId: user.id, action: "auth.register_google" } });
+      user = await db.user.create({ data: { email: g.email, ...idData, emailVerifiedAt: now, name: g.name, roles: { create: { role: "TEACHER" } }, profile: { create: {} } } });
+      await db.auditLog.create({ data: { userId: user.id, action: `auth.register_${provider}` } });
     }
   }
   if (user.deletedAt) throw new ApiError(403, "Akkaunt o'chirilgan.");
   await startSession(user.id);
-  await db.auditLog.create({ data: { userId: user.id, action: "auth.login_google" } });
+  await db.auditLog.create({ data: { userId: user.id, action: `auth.login_${provider}` } });
   return user;
 }
+
+export const signInWithGoogle = (g: { sub: string; email: string; name: string | null }) => signInOAuth("google", { id: g.sub, email: g.email, name: g.name });
+export const signInWithYandex = (y: OAuthIdentity) => signInOAuth("yandex", y);
 
 /** Telegram orqali kirish (imzo oldindan oauth.verifyTelegramAuth bilan tekshirilgan bo'lishi shart). */
 export async function signInWithTelegram(t: { id: string; first_name?: string; last_name?: string; username?: string }) {

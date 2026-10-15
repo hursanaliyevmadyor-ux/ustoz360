@@ -13,6 +13,8 @@ type Mode = "login" | "register";
 const ERRORS: Record<string, string> = {
   google: "Google orqali kirib bo'lmadi. Qayta urinib ko'ring yoki email va parol bilan kiring.",
   google_yoq: "Google orqali kirish hali sozlanmagan.",
+  yandex: "Yandex orqali kirib bo'lmadi. Qayta urinib ko'ring yoki email va parol bilan kiring.",
+  yandex_yoq: "Yandex orqali kirish hali sozlanmagan.",
   telegram: "Telegram orqali kirib bo'lmadi. Qayta urinib ko'ring.",
 };
 
@@ -49,7 +51,7 @@ export default function Page() {
   const [busy, setBusy] = React.useState(false); const [err, setErr] = React.useState("");
   const [who, setWho] = React.useState<{ name: string | null; email: string | null } | null>(null);
   React.useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setWho(d.user)).catch(() => {}); }, []);
-  const [providers, setProviders] = React.useState<{ google: boolean; telegram: string | null }>({ google: false, telegram: null });
+  const [providers, setProviders] = React.useState<{ google: boolean; yandex: boolean; telegram: string | null }>({ google: false, yandex: false, telegram: null });
   React.useEffect(() => {
     fetch("/api/auth/providers").then((r) => r.json()).then(setProviders).catch(() => {});
     const x = new URLSearchParams(location.search).get("xato"); if (x && ERRORS[x]) setErr(ERRORS[x]);
@@ -69,7 +71,7 @@ export default function Page() {
 
   return (
     <>
-      <PageHeader title="Kirish / Ro'yxatdan o'tish" description="Google, Telegram yoki email va parol orqali" />
+      <PageHeader title="Kirish / Ro'yxatdan o'tish" description="Google, Yandex, Telegram yoki email va parol orqali" />
       <Card className="max-w-md"><CardContent>
         {who ? (
           <div className="space-y-4"><p className="text-sm">Siz tizimdasiz: <b>{who.name ?? who.email}</b></p>
@@ -81,10 +83,13 @@ export default function Page() {
                 <button key={m} role="tab" aria-selected={mode === m} type="button" onClick={() => { setMode(m); setErr(""); }}
                   className={cn("rounded-lg px-3 py-2 text-sm font-semibold", mode === m ? "bg-card shadow-soft" : "text-muted-foreground")}>{m === "login" ? "Kirish" : "Ro'yxatdan o'tish"}</button>))}
             </div>
-            {(providers.google || providers.telegram) && (
+            {(providers.google || providers.yandex || providers.telegram) && (
               <div className="mb-5 space-y-3">
                 {providers.google && (
                   <Button asChild variant="outline" className="w-full"><a href="/api/auth/google/start"><GoogleIcon />Google (Gmail) bilan kirish</a></Button>
+                )}
+                {providers.yandex && (
+                  <Button asChild variant="outline" className="w-full"><a href="/api/auth/yandex/start"><span aria-hidden className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#FC3F1D] text-xs font-bold text-white">Я</span>Yandex bilan kirish</a></Button>
                 )}
                 {providers.telegram && <TelegramButton bot={providers.telegram} />}
                 <p className="flex items-center gap-3 pt-1 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />yoki email bilan<span className="h-px flex-1 bg-border" /></p>

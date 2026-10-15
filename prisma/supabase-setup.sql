@@ -347,3 +347,7 @@ DO $$ BEGIN
   ALTER TABLE "AiRequest" ADD CONSTRAINT "AiRequest_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ALTER TABLE "AiRequest" ENABLE ROW LEVEL SECURITY;
+
+-- Yandex orqali kirish uchun ustun. Xavfsiz: istalgancha marta ishga tushirish mumkin.
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "yandexId" TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS "User_yandexId_key" ON "User"("yandexId");

@@ -61,6 +61,7 @@ model User {
   passwordHash String?
   /// Email tasdiqlangan vaqti (Google orqali kirganda to'ldiriladi). Parol bilan ro'yxatdan o'tishda bo'sh.
   emailVerifiedAt DateTime?
+  yandexId     String?     @unique
   googleSub    String?     @unique
   telegramId   String?     @unique
   telegramUsername String?

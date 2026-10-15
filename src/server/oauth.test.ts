@@ -48,3 +48,18 @@ describe("validateGoogleClaims", () => {
     expect(pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
   });
 });
+
+import { validateYandexInfo } from "./oauth";
+describe("validateYandexInfo", () => {
+  it("to'g'ri javobni qabul qiladi", () => {
+    expect(validateYandexInfo({ id: "1000034426", default_email: " Test@Yandex.ru ", real_name: "Ali Valiyev" })).toEqual({ ok: true, id: "1000034426", email: "test@yandex.ru", name: "Ali Valiyev" });
+    expect(validateYandexInfo({ id: 42, default_email: "a@ya.ru", login: "ali" })).toMatchObject({ ok: true, id: "42", name: "ali" });
+  });
+  it("id yoki email yo'q/noto'g'ri bo'lsa rad etadi", () => {
+    expect(validateYandexInfo(null).ok).toBe(false);
+    expect(validateYandexInfo({ default_email: "a@ya.ru" }).ok).toBe(false);
+    expect(validateYandexInfo({ id: "abc", default_email: "a@ya.ru" }).ok).toBe(false);
+    expect(validateYandexInfo({ id: "1" }).ok).toBe(false);
+    expect(validateYandexInfo({ id: "1", default_email: "yo'q" }).ok).toBe(false);
+  });
+});

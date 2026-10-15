@@ -52,6 +52,17 @@ export function validateGoogleClaims(c: GoogleClaims | null, clientId: string, n
   return { ok: true, sub: c.sub, email: c.email.trim().toLowerCase(), name: c.name?.trim() || null };
 }
 
+// ---------- Yandex OAuth (Authorization Code + PKCE) ----------
+export type YandexInfo = { id?: string | number; login?: string; default_email?: string; display_name?: string; real_name?: string };
+
+/** login.yandex.ru/info javobini tekshiradi. default_email Yandex tomonidan tasdiqlangan asosiy manzil. */
+export function validateYandexInfo(i: YandexInfo | null): { ok: true; id: string; email: string; name: string | null } | { ok: false; reason: string } {
+  if (!i || i.id === undefined || i.id === null || !/^\d{1,30}$/.test(String(i.id))) return { ok: false, reason: "id yo'q yoki noto'g'ri" };
+  const email = i.default_email?.trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, reason: "email yo'q" };
+  return { ok: true, id: String(i.id), email, name: (i.real_name || i.display_name || i.login || "").trim() || null };
+}
+
 export function appOrigin(req: Request) {
   const env = process.env.APP_URL?.replace(/\/$/, "");
   if (env) return env;

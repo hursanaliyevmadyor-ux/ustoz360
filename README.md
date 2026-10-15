@@ -54,7 +54,7 @@ Bo'sh Supabase bazasini sozlashning ikki yo'li:
 
 Vercel'ga joylashda `DATABASE_URL` va `AUTH_SECRET` (32+ belgi) ni loyiha Environment Variables'ga qo'shing.
 
-Mavjud Supabase bazasini yangilash (eski sxema o'rnatilgan bo'lsa), SQL Editor'da shu tartibda bir martadan: `prisma/supabase-update-email-auth.sql`, keyin `prisma/supabase-update-social-auth.sql`, keyin `prisma/supabase-update-ai.sql` (AI jadvali).
+Mavjud Supabase bazasini yangilash (eski sxema o'rnatilgan bo'lsa), SQL Editor'da shu tartibda bir martadan: `prisma/supabase-update-email-auth.sql`, keyin `prisma/supabase-update-social-auth.sql`, keyin `prisma/supabase-update-ai.sql` (AI jadvali), keyin `prisma/supabase-update-yandex.sql` (Yandex kirishi).
 
 ## Google va Telegram orqali kirish
 Kalitlar o'rnatilmaguncha tugmalar ko'rinmaydi (`GET /api/auth/providers` qaysi usul sozlanganini aytadi).
@@ -88,3 +88,11 @@ Yo'llar: `GET /api/ai/status`, `POST /api/ai/{chat,lesson,explain-error}`. Faqat
 
 - **BEPUL AI** moduli (`/bepul-ai`): OpenAI-mos shlyuz orqali. [FreeLLMAPI](https://github.com/tashfeenahmed/freellmapi) ni o'zingiz joylab, manzil va kalitni bering: `FREE_LLM_BASE_URL` (masalan `https://sizning-domen/v1`), `FREE_LLM_API_KEY`, ixtiyoriy `FREE_LLM_MODEL` (standart `auto`) va `AI_FREE_DAILY_LIMIT` (standart 50). Bepul AI limiti Claude limitiga qo'shilmaydi.
 - **Mening AI obunalarim** (`/bepul-ai/obunalarim`): Claude, ChatGPT, Gemini'ni saytning yonida alohida oynada ochadi. Ular boshqa saytlar ichida ochilishini taqiqlagani uchun iframe ishlamaydi; kirish ularning o'z sahifasida bajariladi, parol/kodlar bizga o'tmaydi.
+
+### Yandex orqali kirish
+
+1. https://oauth.yandex.com/client/new da ilova yarating: platforma **Web services**, Redirect URI: `https://SIZNING-SAYT/api/auth/yandex/callback`, ruxsatlar: **login:email** va **login:info**.
+2. Netlify/Vercel o'zgaruvchilariga `YANDEX_CLIENT_ID` va `YANDEX_CLIENT_SECRET` ni qo'shing (va `APP_URL`), qayta deploy qiling. Kalitlar bo'lmasa tugma ko'rinmaydi.
+3. `prisma/supabase-update-yandex.sql` ni Supabase SQL Editor'da bir marta ishga tushiring.
+
+Test: `YANDEX_CLIENT_ID=ya-client YANDEX_CLIENT_SECRET=ya-secret YANDEX_TOKEN_URL=http://localhost:4456/token YANDEX_INFO_URL=http://localhost:4456/info APP_URL=http://localhost:3114 next dev -p 3114`, so'ng `BASE_URL=http://localhost:3114 npm run test:e2e:yandex`.
