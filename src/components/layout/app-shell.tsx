@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, ChevronRight, Grid2x2, Home, LayoutDashboard, Menu, Moon, Search, Sparkles, Sun, User, CreditCard, LogOut, Send, ArrowRight, Check,
+  Bell, ChevronRight, Grid2x2, Home, LayoutDashboard, Menu, Moon, Search, Sparkles, Sun, User, CreditCard, LogOut, ArrowRight, Check,
 } from "lucide-react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { allModules, dashboardItem, modules, findAny, searchIndex, adminModule } from "@/lib/modules";
@@ -13,7 +13,6 @@ import { Badge, DemoBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/form";
-import { NoBackendNote } from "@/components/ui/states";
 import { ToastProvider } from "@/components/ui/toast";
 
 function Logo({ className }: { className?: string }) {
@@ -65,7 +64,7 @@ function BottomNav() {
   const items = [
     { href: "/dashboard", label: "Bosh", icon: Home, on: path === "/dashboard" },
     { href: "/ustoz-ai/diagnostika", label: "O'rganish", icon: modules[0].icon, on: path.startsWith("/ustoz-ai") },
-    { href: "/bilimxona/suhbat", label: "AI", icon: Sparkles, on: path.startsWith("/bilimxona/suhbat") },
+    { href: "/ai", label: "AI", icon: Sparkles, on: false },
     { href: "/bilimxona", label: "Materiallar", icon: modules[5].icon, on: path === "/bilimxona" || path.startsWith("/bilimxona/kutubxona") || path.startsWith("/bilimxona/yuklash") },
     { href: "/profil", label: "Profil", icon: User, on: path.startsWith("/profil") },
   ];
@@ -217,62 +216,9 @@ function ThemeToggle() {
   return <Button variant="ghost" size="icon" onClick={() => setDark((d) => !d)} aria-label={dark ? "Yorug' rejim" : "Qorong'u rejim"}>{dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</Button>;
 }
 
-type Msg = { who: "me" | "ai" | "sys"; text: string };
-type AiStatus = { configured: boolean; remaining: number; limit: number };
-function AiPanel({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
-  const [msgs, setMsgs] = React.useState<Msg[]>([]);
-  const [text, setText] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [st, setSt] = React.useState<AiStatus | "anon" | null>(null);
-  React.useEffect(() => {
-    if (!open) return;
-    fetch("/api/ai/status").then(async (r) => setSt(r.status === 401 ? "anon" : r.ok ? await r.json() : null)).catch(() => setSt(null));
-  }, [open]);
-  const send = async (t: string) => {
-    if (!t.trim() || busy) return;
-    const history = msgs.filter((m) => m.who !== "sys").map((m) => ({ role: m.who === "me" ? "user" : "assistant", content: m.text }));
-    setMsgs((m) => [...m, { who: "me", text: t }]);
-    setText(""); setBusy(true);
-    try {
-      const r = await fetch("/api/ai/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: [...history, { role: "user", content: t }].slice(-20) }) });
-      const d = await r.json();
-      if (!r.ok) setMsgs((m) => [...m, { who: "sys", text: r.status === 401 ? "AI dan foydalanish uchun avval tizimga kiring." : d.error ?? "Xatolik yuz berdi." }]);
-      else { setMsgs((m) => [...m, { who: "ai", text: d.reply }]); setSt((s) => (s && s !== "anon" ? { ...s, remaining: d.remaining } : s)); }
-    } catch { setMsgs((m) => [...m, { who: "sys", text: "Server bilan aloqa yo'q." }]); }
-    setBusy(false);
-  };
-  const off = st === "anon" || (st !== null && st.configured === false);
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent side="right" title="USTOZ AI yordamchi" description="Barcha bo'limlarda mavjud yordamchi">
-        {st === "anon" && <NoBackendNote>AI dan foydalanish uchun tizimga kiring.</NoBackendNote>}
-        {st && st !== "anon" && !st.configured && <NoBackendNote>AI kaliti hali serverga ulanmagan, shuning uchun javob berilmaydi.</NoBackendNote>}
-        {st && st !== "anon" && st.configured && <p className="text-xs text-muted-foreground">Bugun qolgan so'rovlar: {st.remaining} / {st.limit}</p>}
-        <div className="mt-4 space-y-3" aria-live="polite">
-          <div className="rounded-2xl bg-muted p-3.5 text-sm"><p>Salom! Men mavzu tushuntirish, test g'oyalari va dars rejasi bo'yicha yordam beraman. Savolingizni yozing.</p></div>
-          {msgs.map((m, i) => (
-            <div key={i} className={cn("whitespace-pre-wrap rounded-2xl p-3.5 text-sm", m.who === "me" ? "ml-8 bg-primary text-white" : m.who === "ai" ? "bg-muted" : "bg-amber/10")}>{m.text}</div>
-          ))}
-          {busy && <div className="rounded-2xl bg-muted p-3.5 text-sm text-muted-foreground">AI o'ylamoqda...</div>}
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {["Formativ va diagnostik baholash farqi", "3-sinf uchun dars rejasi", "Faol o'qitish usullari"].map((s) => (
-            <button key={s} disabled={off || busy} onClick={() => send(s)} className="rounded-full border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted disabled:opacity-50">{s}</button>
-          ))}
-        </div>
-        <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); send(text); }}>
-          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Savol yozing..." aria-label="AI uchun savol" maxLength={4000} />
-          <Button size="icon" aria-label="Yuborish" disabled={off || busy}><Send className="h-4 w-4" /></Button>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [more, setMore] = React.useState(false);
   const [search, setSearch] = React.useState(false);
-  const [ai, setAi] = React.useState(false);
   React.useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearch(true); } };
     window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
@@ -294,8 +240,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Search className="h-4 w-4" aria-hidden />Qidirish...<kbd className="ml-auto rounded bg-muted px-1.5 text-[11px]">Ctrl K</kbd>
           </button>
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setSearch(true)} aria-label="Qidirish"><Search className="h-5 w-5" /></Button>
-          <Button variant="outline" size="sm" onClick={() => setAi(true)} className="hidden sm:inline-flex"><Sparkles className="h-4 w-4 text-primary" aria-hidden />AI yordamchi</Button>
-          <Button variant="ghost" size="icon" className="sm:hidden" onClick={() => setAi(true)} aria-label="AI yordamchi"><Sparkles className="h-5 w-5 text-primary" /></Button>
+          <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex"><Link href="/ai"><Sparkles className="h-4 w-4 text-primary" aria-hidden />AI yordamchi</Link></Button>
+          <Button asChild variant="ghost" size="icon" className="sm:hidden"><Link href="/ai" aria-label="AI yordamchi"><Sparkles className="h-5 w-5 text-primary" /></Link></Button>
           <ThemeToggle />
           <Notifications />
           <ProfileMenu />
@@ -306,7 +252,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <BottomNav />
       <AllServices open={more} setOpen={setMore} />
       <SearchDialog open={search} setOpen={setSearch} />
-      <AiPanel open={ai} setOpen={setAi} />
     </ToastProvider>
   );
 }
