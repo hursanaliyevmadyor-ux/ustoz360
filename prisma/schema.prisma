@@ -77,6 +77,7 @@ model User {
   errorCards ErrorCard[]
   auditLogs  AuditLog[]
   aiRequests AiRequest[]
+  aiChats    AiChat[]
 }
 
 model Profile {
@@ -237,4 +238,27 @@ model AiRequest {
   createdAt    DateTime @default(now())
   @@index([userId, createdAt])
   @@index([createdAt])
+}
+
+/// /ai sahifasidagi chatlar: foydalanuvchi o'zi ko'radi va o'chira oladi. Matn saqlanadi (AiRequest jurnalidan farqli).
+model AiChat {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  model     String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  messages  AiMessage[]
+  @@index([userId, updatedAt])
+}
+
+model AiMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      AiChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+  @@index([chatId, createdAt])
 }
