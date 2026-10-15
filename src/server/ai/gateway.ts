@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { ApiError } from "../auth";
+import { ApiError, requireVerified } from "../auth";
 import { db } from "../db";
 
 export type AiFeature = "chat" | "explain" | "lesson";
@@ -31,6 +31,7 @@ export type AiResult = { text: string; model: string };
 
 export async function runAi(c: Call): Promise<AiResult> {
   if (!aiConfigured()) throw new ApiError(503, "AI xizmati hali sozlanmagan (ANTHROPIC_API_KEY yo'q).");
+  await requireVerified(c.userId);
   const u = await usageToday(c.userId);
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   if (u.remaining <= 0 || (await db.aiRequest.count({ where: { createdAt: { gte: since }, feature: { not: "free-chat" } } })) >= globalDailyCap()) {
@@ -83,6 +84,7 @@ export async function freeUsageToday(userId: string) {
 
 export async function runFreeAi(userId: string, messages: { role: "user" | "assistant"; content: string }[]): Promise<AiResult> {
   if (!freeConfigured()) throw new ApiError(503, "Bepul AI hali sozlanmagan (FREE_LLM_BASE_URL va FREE_LLM_API_KEY yo'q).");
+  await requireVerified(userId);
   const u = await freeUsageToday(userId);
   const model = process.env.FREE_LLM_MODEL || "auto";
   if (u.remaining <= 0) {

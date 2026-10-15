@@ -7,12 +7,10 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
-type Mode = "login" | "register";
-
 const ERRORS: Record<string, string> = {
-  google: "Google orqali kirib bo'lmadi. Qayta urinib ko'ring yoki email va parol bilan kiring.",
+  google: "Google orqali kirib bo'lmadi. Qayta urinib ko'ring.",
   google_yoq: "Google orqali kirish hali sozlanmagan.",
-  yandex: "Yandex orqali kirib bo'lmadi. Qayta urinib ko'ring yoki email va parol bilan kiring.",
+  yandex: "Yandex orqali kirib bo'lmadi. Qayta urinib ko'ring.",
   yandex_yoq: "Yandex orqali kirish hali sozlanmagan.",
   telegram: "Telegram orqali kirib bo'lmadi. Qayta urinib ko'ring.",
 };
@@ -86,8 +84,7 @@ function Showcase() {
 
 export default function Page() {
   const router = useRouter(); const toast = useToast();
-  const [mode, setMode] = React.useState<Mode>("login");
-  const [name, setName] = React.useState(""); const [email, setEmail] = React.useState(""); const [password, setPassword] = React.useState("");
+  const [email, setEmail] = React.useState(""); const [password, setPassword] = React.useState("");
   const [show, setShow] = React.useState(false);
   const [busy, setBusy] = React.useState(false); const [err, setErr] = React.useState("");
   const [who, setWho] = React.useState<{ name: string | null; email: string | null } | null>(null);
@@ -102,10 +99,10 @@ export default function Page() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); setErr("");
     try {
-      const r = await fetch(`/api/auth/${mode}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(mode === "register" ? { email, password, name: name || undefined } : { email, password }) });
+      const r = await fetch("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setErr(d.error ?? "Server bilan aloqa yo'q (backend ulanmagan bo'lishi mumkin)."); return; }
-      toast("success", mode === "register" ? "Akkaunt yaratildi. Xush kelibsiz!" : "Xush kelibsiz!");
+      toast("success", "Xush kelibsiz!");
       router.push("/dashboard"); router.refresh();
     } catch { setErr("Server bilan aloqa yo'q."); } finally { setBusy(false); }
   };
@@ -129,8 +126,8 @@ export default function Page() {
           ) : (
             <>
               <div>
-                <h1 className="text-3xl font-extrabold tracking-tight">{mode === "login" ? "Qaytganingiz bilan!" : "Akkaunt yarating"}</h1>
-                <p className="mt-2 text-sm text-muted-foreground">{mode === "login" ? "Hisobingizga kirib, o'qishni davom ettiring." : "Bir daqiqada boshlang, kartasiz."}</p>
+                <h1 className="text-3xl font-extrabold tracking-tight">Xush kelibsiz!</h1>
+                <p className="mt-2 text-sm text-muted-foreground">Google yoki Telegram orqali kiring. Akkaunt birinchi kirishda o'zi ochiladi.</p>
               </div>
 
               {social && (
@@ -144,32 +141,24 @@ export default function Page() {
                       <Button asChild variant="outline" className={cn(socialBtn, "min-[420px]:col-span-2")}><a href="/api/auth/yandex/start"><span aria-hidden className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#FC3F1D] text-xs font-bold text-white">Я</span>Yandex</a></Button>
                     )}
                   </div>
-                  <p className="mt-6 flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />yoki login va parol<span className="h-px flex-1 bg-border" /></p>
+                  <p className="mt-6 flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />mavjud akkaunt (login va parol)<span className="h-px flex-1 bg-border" /></p>
                 </div>
               )}
 
               <form onSubmit={submit} className={cn("space-y-4", social ? "mt-6" : "mt-7")}>
-                {mode === "register" && <Field label="Ism familiya (ixtiyoriy)"><Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={80} /></Field>}
                 <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="ism@pochta.uz" required maxLength={254} /></Field>
-                <Field label="Parol" hint={mode === "register" ? "Kamida 8 belgi" : undefined} error={err}>
+                <Field label="Parol" error={err}>
                   <span className="relative block">
                     <Input type={show ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className="pr-11"
-                      autoComplete={mode === "register" ? "new-password" : "current-password"} required minLength={mode === "register" ? 8 : 1} maxLength={128} />
+                      autoComplete="current-password" required maxLength={128} />
                     <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? "Parolni yashirish" : "Parolni ko'rsatish"}
                       className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground hover:text-foreground">
                       {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </span>
                 </Field>
-                <Button type="submit" size="lg" loading={busy} className="w-full">{mode === "login" ? "Kirish" : "Akkaunt yaratish"}</Button>
+                <Button type="submit" size="lg" loading={busy} className="w-full">Kirish</Button>
               </form>
-
-              <p className="mt-6 text-center text-sm text-muted-foreground">
-                {mode === "login" ? "Akkauntingiz yo'qmi?" : "Akkauntingiz bormi?"}{" "}
-                <button type="button" className="font-semibold text-primary hover:underline" onClick={() => { setMode(mode === "login" ? "register" : "login"); setErr(""); }}>
-                  {mode === "login" ? "Ro'yxatdan o'tish" : "Kirish"}
-                </button>
-              </p>
             </>
           )}
         </div>
