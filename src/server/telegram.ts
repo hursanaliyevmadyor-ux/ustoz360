@@ -85,7 +85,8 @@ export async function pollTelegramLogin(pollKey: string): Promise<PollResult> {
 // ---------- Bot ----------
 
 type TgUser = { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string };
-type TgMessage = { chat: { id: number; type: string }; from?: TgUser; text?: string };
+type TgContact = { phone_number: string; user_id?: number };
+type TgMessage = { chat: { id: number; type: string }; from?: TgUser; text?: string; contact?: TgContact };
 export type TgUpdate = { update_id: number; message?: TgMessage };
 
 const HELP = [
@@ -100,6 +101,14 @@ const HELP = [
 
 const siteButton = (origin: string, text = "Saytga qaytish") => ({ inline_keyboard: [[{ text, url: origin }]] });
 
+/** Pastki menyudagi "raqamni yuborish" tugmasi: bosilganda Telegram o'zi tasdiqlashni so'raydi va faqat foydalanuvchining O'Z raqamini yuboradi. */
+const phoneKeyboard = { keyboard: [[{ text: "📱 Telefon raqamni yuborish", request_contact: true }]], resize_keyboard: true, one_time_keyboard: true, input_field_placeholder: "Pastdagi tugmani bosing" };
+const removeKeyboard = { remove_keyboard: true };
+const ASK_PHONE = "Ro'yxatdan o'tish uchun pastdagi «📱 Telefon raqamni yuborish» tugmasini bosing. Telegram sizdan tasdiqlashni so'raydi; tasdiqlasangiz, shu raqam bilan ro'yxatdan o'tasiz.";
+
+/** "+998 90 123-45-67" kabi yozuvni "+998901234567" ga keltiradi; noto'g'ri bo'lsa null. */
+export const normalizePhone = (raw: string) => { const d = raw.replace(/\D/g, ""); return d.length >= 9 && d.length <= 15 ? `+${d}` : null; };
+
 async function currentChat(userId: string) {
   return db.aiChat.findFirst({
     where: { userId, model: "telegram", updatedAt: { gt: new Date(Date.now() - CHAT_IDLE_MS) } },
@@ -108,27 +117,68 @@ async function currentChat(userId: string) {
   });
 }
 
+const identity = (from: TgUser) => ({ id: String(from.id), first_name: from.first_name, last_name: from.last_name, username: from.username });
+
 async function handleStart(msg: TgMessage, from: TgUser, param: string, origin: string) {
-  const { user, isNew } = await upsertTelegramUser({ id: String(from.id), first_name: from.first_name, last_name: from.last_name, username: from.username });
-  const name = user.name ?? from.first_name ?? "";
+  const existing = await db.user.findUnique({ where: { telegramId: String(from.id) } });
+  const registered = !!existing && !existing.deletedAt && !!existing.phone;
+
+  let row = null;
   if (param.startsWith("l_")) {
-    const row = await db.telegramLogin.findUnique({ where: { code: param.slice(2) } });
+    row = await db.telegramLogin.findUnique({ where: { code: param.slice(2) } });
     if (!row || row.consumedAt || row.expiresAt < new Date()) {
       await sendText(msg.chat.id, "Bu kirish havolasi eskirgan. Saytda «Telegram» tugmasini qayta bosing.", siteButton(origin, "Saytni ochish"));
       return;
     }
-    if (!row.confirmedAt) await db.telegramLogin.update({ where: { id: row.id }, data: { userId: user.id, confirmedAt: new Date() } });
-    await sendText(msg.chat.id, isNew
-      ? "🎉 Tabriklaymiz, ro'yxatdan o'tdingiz!\n\nEndi saytga qaytishingiz mumkin. Saytda ism-familiya va yashash joyingizni kiritib, ro'yxatdan o'tishni yakunlaysiz.\n\nBu botda ham xuddi sayt kabi AI yordamchidan foydalanishingiz mumkin: savolingizni yozing."
-      : `✅ Xush kelibsiz${name ? `, ${name}` : ""}! Saytga kirish tasdiqlandi, saytga qaytishingiz mumkin.\n\nBu botda ham AI yordamchidan foydalanishingiz mumkin: savolingizni yozing.`, siteButton(origin));
+  }
+
+  // Raqami hali tasdiqlanmagan: ro'yxatdan o'tish uchun telefon raqam so'raymiz. Sayt kirishi raqam kelgandan keyin tasdiqlanadi.
+  if (!registered) {
+    if (row) await db.telegramLogin.update({ where: { id: row.id }, data: { telegramId: String(from.id) } });
+    await sendText(msg.chat.id, `👋 Salom${from.first_name ? `, ${from.first_name}` : ""}!\n\n${ASK_PHONE}`, phoneKeyboard);
     return;
   }
-  await sendText(msg.chat.id, `${isNew ? "🎉 Tabriklaymiz, ro'yxatdan o'tdingiz!\n\n" : `Salom${name ? `, ${name}` : ""}!\n\n`}${HELP}`, siteButton(origin, "Saytni ochish"));
+
+  const { user } = await upsertTelegramUser(identity(from));
+  const name = user.name ?? from.first_name ?? "";
+  if (row) {
+    if (!row.confirmedAt) await db.telegramLogin.update({ where: { id: row.id }, data: { userId: user.id, confirmedAt: new Date() } });
+    await sendText(msg.chat.id, `✅ Xush kelibsiz${name ? `, ${name}` : ""}! Saytga kirish tasdiqlandi, saytga qaytishingiz mumkin.\n\nBu botda ham AI yordamchidan foydalanishingiz mumkin: savolingizni yozing.`, siteButton(origin));
+    return;
+  }
+  await sendText(msg.chat.id, `Salom${name ? `, ${name}` : ""}!\n\n${HELP}`, siteButton(origin, "Saytni ochish"));
+}
+
+/** Foydalanuvchi "raqamni yuborish" tugmasini bosib, Telegram'da tasdiqlagandan keyin keladi: shu raqam bilan ro'yxatdan o'tkazamiz. */
+async function handleContact(msg: TgMessage, from: TgUser, contact: TgContact, origin: string) {
+  // Boshqa odamning kontaktini yuborib qo'ygan bo'lsa (tugmasiz) qabul qilmaymiz.
+  if (contact.user_id !== from.id) { await sendText(msg.chat.id, "Iltimos, o'zingizning raqamingizni pastdagi tugma orqali yuboring.", phoneKeyboard); return; }
+  const phone = normalizePhone(contact.phone_number);
+  if (!phone) { await sendText(msg.chat.id, "Raqam noto'g'ri ko'rinyapti. Pastdagi tugma orqali qayta yuboring.", phoneKeyboard); return; }
+
+  const { user } = await upsertTelegramUser(identity(from));
+  if (user.phone !== phone) {
+    try { await db.user.update({ where: { id: user.id }, data: { phone } }); }
+    catch (e) {
+      if ((e as { code?: string }).code === "P2002") { await sendText(msg.chat.id, "Bu telefon raqami boshqa akkauntga bog'langan. Yordam kerak bo'lsa, sayt administratoriga murojaat qiling.", removeKeyboard); return; }
+      throw e;
+    }
+  }
+  await db.auditLog.create({ data: { userId: user.id, action: "auth.telegram_phone" } });
+
+  const row = await db.telegramLogin.findFirst({ where: { telegramId: String(from.id), confirmedAt: null, consumedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } });
+  if (row) await db.telegramLogin.update({ where: { id: row.id }, data: { userId: user.id, confirmedAt: new Date() } });
+
+  await sendText(msg.chat.id, "✅ Raqamingiz qabul qilindi.", removeKeyboard);
+  await sendText(msg.chat.id, row
+    ? "🎉 Tabriklaymiz, ro'yxatdan o'tdingiz!\n\nEndi saytga qaytishingiz mumkin. Saytda ism-familiya va yashash joyingizni kiritib, ro'yxatdan o'tishni yakunlaysiz.\n\nBu botda ham xuddi sayt kabi AI yordamchidan foydalanishingiz mumkin: savolingizni yozing."
+    : `🎉 Tabriklaymiz, ro'yxatdan o'tdingiz!\n\nSaytga kirish uchun saytda «Telegram» tugmasini bosing.\n\n${HELP}`, siteButton(origin));
 }
 
 async function handleAi(msg: TgMessage, from: TgUser, text: string) {
   const user = await db.user.findUnique({ where: { telegramId: String(from.id) } });
   if (!user || user.deletedAt) { await sendText(msg.chat.id, "Boshlash uchun /start ni bosing."); return; }
+  if (!user.phone) { await sendText(msg.chat.id, ASK_PHONE, phoneKeyboard); return; }
   void api("sendChatAction", { chat_id: msg.chat.id, action: "typing" }).catch(() => {});
   const chat = await currentChat(user.id);
   const history = (chat?.messages ?? []).slice().reverse().map((m) => ({ role: m.role as "user" | "assistant", content: m.content.slice(0, 4000) }));
@@ -143,14 +193,8 @@ async function handleAi(msg: TgMessage, from: TgUser, text: string) {
   }
 }
 
-/** Telegram'dan kelgan bitta yangilanishni qayta ishlaydi. Bir xil update_id ikkinchi marta kelsa e'tiborga olinmaydi. */
-export async function handleUpdate(update: TgUpdate, origin: string) {
-  try { await db.telegramUpdate.create({ data: { id: String(update.update_id) } }); }
-  catch (e) { if ((e as { code?: string }).code === "P2002") return; throw e; }
-  if (Math.random() < 0.02) await db.telegramUpdate.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 2 * 86_400_000) } } }).catch(() => {});
-
-  const msg = update.message, from = msg?.from;
-  if (!msg || !from || from.is_bot || msg.chat.type !== "private") return;
+async function route(msg: TgMessage, from: TgUser, origin: string) {
+  if (msg.contact) return handleContact(msg, from, msg.contact, origin);
   const text = (msg.text ?? "").trim();
   if (!text) { await sendText(msg.chat.id, "Hozircha faqat matnli savollarga javob bera olaman."); return; }
 
@@ -175,4 +219,16 @@ export async function handleUpdate(update: TgUpdate, origin: string) {
   }
   if (cmd) { await sendText(msg.chat.id, "Bunday buyruq yo'q. /yordam ni bosing."); return; }
   await handleAi(msg, from, text);
+}
+
+/** Telegram'dan kelgan bitta yangilanishni qayta ishlaydi. Bir xil update_id ikkinchi marta kelsa e'tiborga olinmaydi. */
+export async function handleUpdate(update: TgUpdate, origin: string) {
+  try { await db.telegramUpdate.create({ data: { id: String(update.update_id) } }); }
+  catch (e) { if ((e as { code?: string }).code === "P2002") return; throw e; }
+  if (Math.random() < 0.02) await db.telegramUpdate.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 2 * 86_400_000) } } }).catch(() => {});
+
+  const msg = update.message, from = msg?.from;
+  if (!msg || !from || from.is_bot || msg.chat.type !== "private") return;
+  try { await route(msg, from, origin); }
+  catch (e) { if (e instanceof ApiError) await sendText(msg.chat.id, e.message); else throw e; }
 }

@@ -211,8 +211,8 @@ export default function Page() {
               <h1 className="text-2xl font-extrabold tracking-tight">Telegramda «Start» ni bosing</h1>
               <ol className="mx-auto max-w-xs space-y-2 text-left text-sm text-muted-foreground">
                 <li>1. Ochilgan Telegram botda <b className="text-foreground">Start</b> tugmasini bosing.</li>
-                <li>2. Bot sizni ro'yxatdan o'tkazadi.</li>
-                <li>3. Shu sahifaga qaytsangiz, o'zi ochiladi.</li>
+                <li>2. Pastdagi <b className="text-foreground">«📱 Telefon raqamni yuborish»</b> tugmasini bosib, Telegramda tasdiqlang.</li>
+                <li>3. Bot «Tabriklaymiz» deydi. Shu sahifaga qaytsangiz, o'zi ochiladi.</li>
               </ol>
               <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-primary" />Tasdiqlash kutilmoqda...</p>
               <Button asChild size="lg" className="w-full"><a href={tg.url} target="_blank" rel="noopener noreferrer">Telegramni ochish</a></Button>
