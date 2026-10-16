@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Users, GraduationCap, BookOpen, Wallet } from "lucide-react";
+import { Users, GraduationCap, BookOpen, Wallet, ClipboardList, Layers, CalendarDays, FlaskConical } from "lucide-react";
 import { adminModule } from "@/lib/modules";
 import { adminUsers, adminPayments, fmt } from "@/lib/demo";
 import { PageHeader, StatCard } from "@/components/layout/page";
@@ -11,7 +11,22 @@ import { LineChart, BarChart, Donut } from "@/components/charts/charts";
 export default function Page() {
   return (
     <>
-      <PageHeader module={adminModule} title="Admin dashboard" description="Tizim ko'rsatkichlari (namunaviy ma'lumotlar)" demo />
+      <PageHeader module={adminModule} title="Admin dashboard" description="Kontentni boshqarish va tizim ko'rsatkichlari" demo />
+      <h2 className="mb-3 text-sm font-bold text-muted-foreground">Kontentni boshqarish</h2>
+      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { href: "/admin/savollar", icon: FlaskConical, t: "Savollar banki", d: "Mashq savollari: qo'shish, tasdiqlash, AI qoralamalari" },
+          { href: "/admin/imtihonlar", icon: ClipboardList, t: "Imtihonlar", d: "Test va yozma imtihonlar, savollar kiritish" },
+          { href: "/admin/mavzular", icon: Layers, t: "Mavzular", d: "Fanlar va mavzularni qo'shish, o'zgartirish" },
+          { href: "/admin/seminarlar", icon: CalendarDays, t: "Seminarlar", d: "Seminar e'lonlarini qo'shish va tahrirlash" },
+        ].map((x) => (
+          <Link key={x.href} href={x.href} className="group rounded-2xl border border-border bg-card p-5 shadow-soft transition hover:border-primary">
+            <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><x.icon className="h-5 w-5" aria-hidden /></span>
+            <p className="mt-3 font-extrabold group-hover:text-primary">{x.t}</p><p className="text-sm text-muted-foreground">{x.d}</p>
+          </Link>
+        ))}
+      </div>
+      <h2 className="mb-3 text-sm font-bold text-muted-foreground">Ko'rsatkichlar</h2>
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard label="Foydalanuvchilar" value="1 284" delta="12% o'tgan oyga nisbatan" icon={Users} />
         <StatCard label="Metodistlar" value="14" delta="5%" icon={GraduationCap} tone="violet" />

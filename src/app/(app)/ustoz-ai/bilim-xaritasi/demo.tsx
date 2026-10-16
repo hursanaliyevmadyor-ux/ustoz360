@@ -30,7 +30,7 @@ export function DemoMap() {
               </div>
             ))}
             <p className="text-xs text-muted-foreground">2–3 ta savol asosida mavzu o'zlashtirilgan deb hisoblanmaydi: ishonchlilik past bo'lsa mavzu kulrang ko'rsatiladi.</p>
-            <Button asChild><Link href="/ustoz-ai/reja">Shu asosida reja</Link></Button>
+            <Button asChild><Link href="/toifa/reja?view=kunlik">Shu asosida reja</Link></Button>
           </CardContent></Card>
       </div>
     </>

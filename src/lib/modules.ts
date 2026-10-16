@@ -1,6 +1,10 @@
 import { Brain, BookOpenCheck, Compass, Store, BarChart3, Library, LayoutDashboard, Bot, type LucideIcon } from "lucide-react";
 
-export type SubPage = { href: string; label: string };
+/**
+ * hidden: yuqoridagi tabda alohida ko'rinmaydi (bo'lim ichidagi sahifa). group: shu sahifa qaysi tab ostida turadi
+ * (tab shu sahifada faol bo'ladi va yo'l ko'rsatkichida bo'limning nomi chiqadi).
+ */
+export type SubPage = { href: string; label: string; hidden?: boolean; group?: string };
 export type Module = {
   key: string; href: string; name: string; short: string; icon: LucideIcon;
   /** Tailwind klasslari statik bo'lishi kerak, shuning uchun to'liq yozilgan */
@@ -11,57 +15,65 @@ export type Module = {
 export const dashboardItem = { href: "/dashboard", name: "Bosh sahifa", icon: LayoutDashboard };
 
 export const modules: Module[] = [
-  { key: "ai", href: "/ustoz-ai", name: "USTOZ AI", short: "Diagnostika va reja", icon: Brain, hex: "#2563EB",
+  { key: "ai", href: "/ustoz-ai", name: "USTOZ AI", short: "Bilim, mashq va rivojlanish", icon: Brain, hex: "#2563EB",
     bg: "bg-[#2563EB]", text: "text-[#2563EB]", soft: "bg-[#2563EB]/10", bar: "bg-[#2563EB]",
+    // Bitta umumiy bo'lim: yuqorida to'rtta tab. Qolgan sahifalar tab ichida, keyingi rejimni tanlash orqali ochiladi.
+    // Ichki sahifalar ro'yxatning oxirida turadi: yo'l ko'rsatkichi eng aniq mosini tanlaydi.
     subs: [
-      { href: "/ustoz-ai", label: "Umumiy" }, { href: "/ustoz-ai/diagnostika", label: "Diagnostika" },
-      { href: "/ustoz-ai/testlar", label: "Testlar" }, { href: "/ustoz-ai/bilim-xaritasi", label: "Bilim xaritasi" },
-      { href: "/ustoz-ai/xatolar", label: "Xatolar daftari" }, { href: "/ustoz-ai/reja", label: "Shaxsiy reja" },
+      { href: "/ustoz-ai", label: "Umumiy" }, { href: "/ustoz-ai/testlar", label: "Testlar" },
+      { href: "/ustoz-ai/natijalar", label: "Natijalarim" },
+      { href: "/ustoz-ai/diagnostika", label: "Diagnostika", hidden: true, group: "/ustoz-ai" },
+      { href: "/ustoz-ai/mashq", label: "Oddiy mashq", hidden: true, group: "/ustoz-ai/testlar" },
+      { href: "/ustoz-ai/bilim-xaritasi", label: "Bilim xaritasi", hidden: true, group: "/ustoz-ai/natijalar" },
+      { href: "/ustoz-ai/xatolar", label: "Xatolar daftari", hidden: true, group: "/ustoz-ai/natijalar" },
+      { href: "/ustoz-ai/testlar/tarix", label: "Mashqlar tarixi", hidden: true, group: "/ustoz-ai/natijalar" },
+      { href: "/ustoz-ai/mashq/tarix", label: "Mashqlar tarixi", hidden: true, group: "/ustoz-ai/natijalar" },
     ] },
   { key: "darsyor", href: "/darsyor", name: "DARSYOR", short: "Dars tayyorlash", icon: BookOpenCheck, hex: "#D97706",
     bg: "bg-[#D97706]", text: "text-[#B45309]", soft: "bg-[#F59E0B]/15", bar: "bg-[#F59E0B]",
+    // Har modul: eng ko'pi bilan to'rtta tab. O'xshash sahifalar bitta bo'limga birlashtirilgan, ichidagilari tanlash orqali ochiladi.
     subs: [
-      { href: "/darsyor", label: "Umumiy" }, { href: "/darsyor/dars-ishlanmasi", label: "Dars ishlanmasi" },
-      { href: "/darsyor/test-generator", label: "Test generatori" }, { href: "/darsyor/korgazma", label: "Ko'rgazmalar" },
-      { href: "/darsyor/baholash", label: "Baholash" },
+      { href: "/darsyor", label: "Umumiy" }, { href: "/darsyor/dars-ishlanmasi", label: "Dars ishlanmasi" }, { href: "/darsyor/materiallar", label: "Materiallar" },
+      { href: "/darsyor/test-generator", label: "Test generatori", hidden: true, group: "/darsyor/materiallar" },
+      { href: "/darsyor/korgazma", label: "Ko'rgazmali materiallar", hidden: true, group: "/darsyor/materiallar" },
+      { href: "/darsyor/baholash", label: "Baholash materiallari", hidden: true, group: "/darsyor/materiallar" },
     ] },
   { key: "toifa", href: "/toifa", name: "TOIFA NAVIGATOR", short: "Attestatsiya yo'li", icon: Compass, hex: "#0D9488",
     bg: "bg-[#0D9488]", text: "text-[#0D9488]", soft: "bg-[#0D9488]/10", bar: "bg-[#0D9488]",
-    subs: [
-      { href: "/toifa", label: "Umumiy" }, { href: "/toifa/yol-xaritasi", label: "Yo'l xaritasi" },
-      { href: "/toifa/kalendar", label: "Kalendar" }, { href: "/toifa/hujjatlar", label: "Hujjatlar" },
-    ] },
+    subs: [{ href: "/toifa", label: "Umumiy" }, { href: "/toifa/reja", label: "Reja" }, { href: "/toifa/hujjatlar", label: "Hujjatlar" }] },
   { key: "market", href: "/market", name: "USTOZ MARKET", short: "Kurs va materiallar", icon: Store, hex: "#7C3AED",
     bg: "bg-[#7C3AED]", text: "text-[#7C3AED]", soft: "bg-[#7C3AED]/10", bar: "bg-[#7C3AED]",
-    subs: [
-      { href: "/market", label: "Katalog" }, { href: "/market/mening-kurslarim", label: "Mening kurslarim" },
-      { href: "/market/xaridlar", label: "Xaridlar" }, { href: "/market/muallif", label: "Muallif kabineti" },
-    ] },
+    subs: [{ href: "/market", label: "Katalog" }, { href: "/market/mening-kurslarim", label: "Kurslarim va xaridlar" }, { href: "/market/muallif", label: "Muallif kabineti" }] },
   { key: "sinf", href: "/sinf", name: "SINF ANALITIKA", short: "Sinf natijalari", icon: BarChart3, hex: "#E11D48",
     bg: "bg-[#E11D48]", text: "text-[#E11D48]", soft: "bg-[#E11D48]/10", bar: "bg-[#E11D48]",
-    subs: [
-      { href: "/sinf", label: "Sinflar" }, { href: "/sinf/natijalar", label: "Natijalar" },
-      { href: "/sinf/tahlil", label: "Tahlil" }, { href: "/sinf/topshiriqlar", label: "Individual topshiriqlar" },
-    ] },
+    subs: [{ href: "/sinf", label: "Sinflar" }, { href: "/sinf/tahlil", label: "Tahlil va natijalar" }] },
   { key: "bilimxona", href: "/bilimxona", name: "BILIMXONA", short: "Kutubxona va AI suhbat", icon: Library, hex: "#4F46E5",
     bg: "bg-[#4F46E5]", text: "text-[#4F46E5]", soft: "bg-[#4F46E5]/10", bar: "bg-[#4F46E5]",
     subs: [
-      { href: "/bilimxona", label: "Kutubxona" }, { href: "/bilimxona/yuklash", label: "Fayl yuklash" },
-      { href: "/bilimxona/suhbat", label: "Hujjat bilan suhbat" },
+      { href: "/bilimxona", label: "Kutubxona" }, { href: "/bilimxona/suhbat", label: "Hujjat bilan suhbat" },
+      { href: "/bilimxona/yuklash", label: "Fayl yuklash", hidden: true, group: "/bilimxona" },
     ] },
   { key: "bepul", href: "/bepul-ai", name: "BEPUL AI", short: "Bepul va o'z obunangiz", icon: Bot, hex: "#059669",
     bg: "bg-[#059669]", text: "text-[#047857]", soft: "bg-[#059669]/10", bar: "bg-[#059669]",
-    subs: [{ href: "/bepul-ai", label: "Bepul suhbat" }, { href: "/bepul-ai/obunalarim", label: "Mening AI obunalarim" }] },
+    subs: [{ href: "/bepul-ai", label: "Umumiy" }, { href: "/bepul-ai/obunalarim", label: "Mening AI obunalarim" }] },
 ];
 
 export const findModule = (path: string) => modules.find((m) => path === m.href || path.startsWith(m.href + "/"));
+
+/** Sahifa moduldagi qaysi bo'limga tegishli: eng aniq mos kelgan ichki sahifa, faol tab va yo'l ko'rsatkichi uchun. */
+export function resolveSub(mod: { subs: SubPage[] }, path: string) {
+  const sub = [...mod.subs].reverse().find((s) => path === s.href || path.startsWith(s.href + "/"));
+  const tab = sub ? (sub.group ?? sub.href) : undefined;
+  return { sub, tab, group: sub?.group ? mod.subs.find((s) => s.href === sub.group) : undefined };
+}
 
 import { ShieldCheck } from "lucide-react";
 export const adminModule: Module = {
   key: "admin", href: "/admin", name: "Admin panel", short: "Boshqaruv", icon: ShieldCheck, hex: "#122B49",
   bg: "bg-[#122B49]", text: "text-[#122B49] dark:text-[#9DB8DA]", soft: "bg-[#122B49]/10", bar: "bg-[#122B49]",
   subs: [
-    { href: "/admin", label: "Dashboard" }, { href: "/admin/foydalanuvchilar", label: "Foydalanuvchilar" },
+    { href: "/admin", label: "Dashboard" }, { href: "/admin/imtihonlar", label: "Imtihonlar" }, { href: "/admin/mavzular", label: "Mavzular" },
+    { href: "/admin/seminarlar", label: "Seminarlar" }, { href: "/admin/foydalanuvchilar", label: "Foydalanuvchilar" },
     { href: "/admin/savollar", label: "Savollar banki" }, { href: "/admin/kurslar", label: "Kurslar" },
     { href: "/admin/tolovlar", label: "To'lovlar" }, { href: "/admin/hisobotlar", label: "Hisobotlar" },
     { href: "/admin/sozlamalar", label: "Sozlamalar" },

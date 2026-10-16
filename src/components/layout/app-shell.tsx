@@ -3,58 +3,69 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, ChevronRight, Grid2x2, Home, LayoutDashboard, Menu, Moon, Search, Sparkles, Sun, User, CreditCard, LogOut, ArrowRight, Check,
+  Bell, BookOpen, Brain, CalendarDays, ChevronRight, Grid2x2, Home, Moon, Search, Sparkles, Sun, User, CreditCard, LogOut, Check,
 } from "lucide-react";
 import * as DM from "@radix-ui/react-dropdown-menu";
-import { allModules, dashboardItem, modules, findAny, searchIndex, adminModule } from "@/lib/modules";
+import { allModules, dashboardItem, modules, findAny, resolveSub, searchIndex, adminModule } from "@/lib/modules";
 import { notifications as demoNotifs, user } from "@/lib/demo";
 import { cn } from "@/lib/utils";
-import { Badge, DemoBadge } from "@/components/ui/badge";
+import { DemoBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/form";
 import { ToastProvider } from "@/components/ui/toast";
 
-function Logo({ className }: { className?: string }) {
+function Logo({ className, dark }: { className?: string; dark?: boolean }) {
   return (
-    <Link href="/dashboard" className={cn("flex shrink-0 items-center gap-2.5 whitespace-nowrap", className)} aria-label="USTOZ 360 bosh sahifa">
-      <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-sm font-extrabold text-white">U</span>
-      <span className="text-lg font-extrabold tracking-tight">USTOZ <span className="text-primary">360</span></span>
+    <Link href="/dashboard" className={cn("flex shrink-0 items-center gap-2.5 whitespace-nowrap", className)} aria-label="EDUTECHALL bosh sahifa">
+      <BookOpen className={cn("h-8 w-8", dark ? "text-[#7FA2FF]" : "text-primary")} strokeWidth={2.2} aria-hidden />
+      <span className={cn("text-xl font-black tracking-tight", dark ? "text-white" : "text-foreground")}>EDUTECH<span className={dark ? "text-[#7FA2FF]" : "text-primary"}>ALL</span></span>
     </Link>
   );
 }
 
-function NavLink({ href, icon: Icon, label, active, accent }: { href: string; icon: React.ElementType; label: string; active: boolean; accent?: { bg: string; soft: string; text: string } }) {
+function NavLink({ href, icon: Icon, label, active }: { href: string; icon: React.ElementType; label: string; active: boolean }) {
   return (
     <Link href={href} aria-current={active ? "page" : undefined}
       className={cn("flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
-        active ? "bg-primary text-white shadow-soft" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
-      <span className={cn("grid h-7 w-7 place-items-center rounded-lg", active ? "bg-white/20" : accent?.soft ?? "bg-muted", !active && accent?.text)}>
-        <Icon className="h-4 w-4" aria-hidden />
-      </span>
-      {label}
+        active ? "bg-primary text-white shadow-soft" : "text-white/75 hover:bg-white/10 hover:text-white")}>
+      <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
+
+function SideProfile() {
+  const [me, setMe] = React.useState<{ name: string | null; email: string | null } | null>(null);
+  React.useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setMe(d.user ?? null)).catch(() => {}); }, []);
+  const label = me ? (me.name ?? me.email ?? "?") : user.name;
+  const initials = label.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  return (
+    <Link href="/profil" className="mt-3 flex items-center gap-3 rounded-xl p-2 text-white hover:bg-white/10" aria-label="Profil">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/15 text-sm font-bold">{initials}</span>
+      <span className="min-w-0 leading-tight"><span className="block truncate text-sm font-bold">{label}</span><span className="block truncate text-xs text-white/60">{me ? "Ustoz" : `${user.plan} tarif`}</span></span>
     </Link>
   );
 }
 
 function Sidebar() {
   const path = usePathname();
+  const cur = findAny(path)?.key;
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-card p-4 lg:flex">
-      <Logo className="px-2 pb-5 pt-1" />
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-side p-4 text-white lg:flex">
+      <Logo dark className="px-2 pb-6 pt-1" />
       <nav aria-label="Asosiy menyu" className="flex-1 space-y-1 overflow-y-auto">
         <NavLink href={dashboardItem.href} icon={dashboardItem.icon} label={dashboardItem.name} active={path === "/dashboard"} />
-        <NavLink href="/ai" icon={Sparkles} label="AI chat" active={false} />
-        <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Modullar</p>
-        {modules.map((m) => <NavLink key={m.key} href={m.href} icon={m.icon} label={m.name} accent={m} active={findAny(path)?.key === m.key} />)}
-        <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Boshqaruv</p>
-        <NavLink href="/admin" icon={adminModule.icon} label="Admin panel" accent={adminModule} active={findAny(path)?.key === "admin"} />
+        {/* Diagnostika, testlar, imtihon simulyatsiyasi, natijalar va AI suhbat bitta umumiy USTOZ AI bo'limi ichida. */}
+        <NavLink href="/ustoz-ai" icon={Brain} label="USTOZ AI" active={cur === "ai" || path === "/imtihon" || path.startsWith("/imtihon/")} />
+        <NavLink href="/seminarlar" icon={CalendarDays} label="Seminarlar" active={path === "/seminarlar"} />
+        <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Modullar</p>
+        {modules.filter((m) => m.key !== "ai").map((m) => <NavLink key={m.key} href={m.href} icon={m.icon} label={m.name} active={cur === m.key} />)}
+        <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Boshqaruv</p>
+        <NavLink href="/admin" icon={adminModule.icon} label="Admin panel" active={cur === "admin"} />
+        <NavLink href="/obuna" icon={CreditCard} label="Obuna" active={path === "/obuna"} />
       </nav>
-      <Link href="/obuna" className="mt-3 block rounded-2xl bg-navy p-4 text-background">
-        <div className="flex items-center justify-between"><Badge variant="amber">FREE</Badge><ArrowRight className="h-4 w-4" aria-hidden /></div>
-        <p className="mt-2 text-sm font-bold">Obuna holati</p>
-        <p className="text-xs opacity-75">To'lov hali ulanmagan</p>
-      </Link>
+      <SideProfile />
     </aside>
   );
 }
@@ -63,7 +74,7 @@ function BottomNav() {
   const path = usePathname();
   const items = [
     { href: "/dashboard", label: "Bosh", icon: Home, on: path === "/dashboard" },
-    { href: "/ustoz-ai/diagnostika", label: "O'rganish", icon: modules[0].icon, on: path.startsWith("/ustoz-ai") },
+    { href: "/ustoz-ai", label: "O'rganish", icon: modules[0].icon, on: path.startsWith("/ustoz-ai") || path.startsWith("/imtihon") },
     { href: "/ai", label: "AI", icon: Sparkles, on: false },
     { href: "/bilimxona", label: "Materiallar", icon: modules[5].icon, on: path === "/bilimxona" || path.startsWith("/bilimxona/kutubxona") || path.startsWith("/bilimxona/yuklash") },
     { href: "/profil", label: "Profil", icon: User, on: path.startsWith("/profil") },
@@ -108,19 +119,22 @@ function Breadcrumb() {
   const crumbs: { label: string; href?: string }[] = [{ label: "Bosh sahifa", href: "/dashboard" }];
   if (path === "/dashboard") crumbs.length = 0, crumbs.push({ label: "Bosh sahifa" });
   else if (mod) {
-    const sub = [...mod.subs].reverse().find((s) => path === s.href || path.startsWith(s.href + "/"));
+    const { sub, group } = resolveSub(mod, path);
     crumbs.push({ label: mod.name, href: sub && sub.href !== mod.href ? mod.href : undefined });
+    if (group && group.href !== mod.href) crumbs.push({ label: group.label, href: group.href });
     if (sub && sub.href !== mod.href) crumbs.push({ label: sub.label });
+  } else if (path === "/imtihon") {
+    crumbs.push({ label: "USTOZ AI", href: "/ustoz-ai" }, { label: "Testlar", href: "/ustoz-ai/testlar" }, { label: "Imtihon simulyatsiyasi" });
   } else {
-    const map: Record<string, string> = { "/profil": "Profil", "/obuna": "Obuna", "/xizmatlar": "Barcha xizmatlar", "/holatlar": "Holatlar namunasi" };
+    const map: Record<string, string> = { "/profil": "Profil", "/obuna": "Obuna", "/xizmatlar": "Barcha xizmatlar", "/holatlar": "Holatlar namunasi", "/imtihon": "Imtihon simulyatori", "/seminarlar": "Seminarlar" };
     crumbs.push({ label: map[path] ?? "Sahifa" });
   }
   return (
-    <ol className="flex min-w-0 items-center gap-1 text-sm" aria-label="Breadcrumb">
+    <ol className="flex min-w-0 items-center gap-1 text-xs uppercase tracking-wide" aria-label="Breadcrumb">
       {crumbs.map((c, i) => (
         <li key={c.label} className="flex min-w-0 items-center gap-1">
           {i > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />}
-          {c.href ? <Link href={c.href} className="truncate text-muted-foreground hover:text-foreground">{c.label}</Link> : <span className="truncate font-semibold" aria-current="page">{c.label}</span>}
+          {c.href ? <Link href={c.href} className="truncate text-muted-foreground hover:text-foreground">{c.label}</Link> : <span className="truncate font-bold text-foreground" aria-current="page">{c.label}</span>}
         </li>
       ))}
     </ol>

@@ -38,7 +38,7 @@ export const POST = (req: Request) => handle(async () => {
         update: { mistakes: { increment: 1 }, mastered: false, nextReviewAt: r.nextReviewAt, intervalDays: r.intervalDays, lastMistakeAt: now },
       });
     }
-  });
+  }, { maxWait: 15_000, timeout: 60_000 });
 
   const topics = await db.topicMastery.findMany({ where: { userId: user.id, topicId: { in: [...new Set(questions.map((q) => q.topicId))] } }, include: { topic: true } });
   return {

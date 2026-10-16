@@ -25,7 +25,7 @@ type QuizProps = { startUrl?: string; submitUrl?: string; title?: string; intro?
 
 export function ServerQuiz({
   startUrl = "/api/diagnostic/start", submitUrl = "/api/diagnostic/submit", title = "Diagnostika", startLabel = "Diagnostikani boshlash",
-  intro = "Javoblar serverda saqlanadi va natija mavzular bo'yicha hisoblanadi. To'g'ri javoblar test tugagandan keyin ko'rsatiladi.",
+  intro = "Maqsad: hozirgi bilim darajangizni mavzular bo'yicha aniqlash. Test davomida ishora, izoh va AI yordam berilmaydi, to'g'ri javoblar test tugagandan keyin ko'rsatiladi. Javoblar serverda saqlanadi va natija mavzular bo'yicha hisoblanadi.",
   emptyTitle = "Hozircha takrorlash shart emas", emptyText = "Muddati kelgan xatolar yo'q.",
 }: QuizProps) {
   const toast = useToast();
@@ -87,6 +87,18 @@ export function ServerQuiz({
                 <span className="flex items-center gap-2 text-muted-foreground">{t.correct}/{t.total}{t.needsMoreData && <Badge variant="amber">Qo'shimcha diagnostika kerak</Badge>}</span></div>
               <Progress value={t.total ? (t.correct / t.total) * 100 : 0} barClass={t.needsMoreData ? "bg-muted-foreground/50" : undefined} label={t.name} />
             </div>))}
+          {res.topics.length > 0 && (() => {
+            const strong = res.topics.filter((t) => !t.needsMoreData && t.total > 0 && t.correct / t.total >= 0.75).map((t) => t.name);
+            const weak = res.topics.filter((t) => !t.needsMoreData && t.total > 0 && t.correct / t.total < 0.75).map((t) => t.name);
+            const thin = res.topics.filter((t) => t.needsMoreData).map((t) => t.name);
+            return (
+              <div className="grid gap-3 rounded-xl bg-muted/50 p-3.5 text-sm sm:grid-cols-2">
+                <div><p className="font-bold text-success">Kuchli yo'nalishlar</p><p className="text-muted-foreground">{strong.length ? strong.join(", ") : "Hozircha aniq ko'rinmayapti."}</p></div>
+                <div><p className="font-bold text-danger">Mustahkamlash kerak</p><p className="text-muted-foreground">{weak.length ? weak.join(", ") : "Yo'q."}</p></div>
+                {thin.length > 0 && <p className="sm:col-span-2 text-warning">Aniqroq xulosa uchun qo'shimcha diagnostika kerak: {thin.join(", ")} bo'yicha savollar kam.</p>}
+              </div>
+            );
+          })()}
           <p className="pt-2 font-bold">Xato qilingan savollar</p>
           {res.review.filter((r) => !r.isCorrect).map((r) => (
             <div key={r.questionId} className="rounded-xl border border-border p-3.5 text-sm"><p className="font-semibold">{r.text}</p>
@@ -99,7 +111,9 @@ export function ServerQuiz({
           </>)}
           {res.review.every((r) => r.isCorrect) && <p className="text-sm text-success">Barcha javoblar to'g'ri.</p>}
           <div className="flex flex-wrap gap-2 pt-2"><Button onClick={() => { setS(null); setRes(null); }}>Qayta urinish</Button>
-            <Button asChild variant="outline"><Link href="/ustoz-ai/xatolar">Xatolar daftari</Link></Button></div>
+            <Button asChild variant="outline"><Link href="/ustoz-ai/testlar/sozlash?mode=errors">Xatolar testi</Link></Button>
+            <Button asChild variant="outline"><Link href="/ustoz-ai/xatolar">Xatolar daftari</Link></Button>
+            <Button asChild variant="outline"><Link href="/ustoz-ai/bilim-xaritasi">Bilim xaritasi</Link></Button></div>
         </CardContent></Card>
       </div>
     </>

@@ -20,19 +20,22 @@ const qs: Q[] = [
 ];
 
 async function main() {
-  const subject = await db.subject.upsert({ where: { slug: "umumiy-pedagogika" }, update: {}, create: { slug: "umumiy-pedagogika", name: "Umumiy pedagogika (DEMO)" } });
+  const subject = await db.subject.upsert({ where: { slug: "umumiy-pedagogika" }, update: {}, create: { slug: "umumiy-pedagogika", name: "Umumiy pedagogika" } });
   const topicId: Record<string, string> = {};
   for (const [slug, name] of topics) topicId[slug] = (await db.topic.upsert({ where: { slug }, update: {}, create: { slug, name, subjectId: subject.id } })).id;
 
-  await db.question.deleteMany({ where: { isDemo: true } });
+  // Mavjud savollar o'chirilmaydi: ularga foydalanuvchi javoblari bog'langan bo'lishi mumkin. Faqat yo'qlari qo'shiladi.
+  let created = 0;
   for (const q of qs) {
+    if (await db.question.findFirst({ where: { topicId: topicId[q.topic], text: q.q }, select: { id: true } })) continue;
     await db.question.create({
       data: {
-        topicId: topicId[q.topic], text: q.q, explanation: q.why, difficulty: q.level, status: "APPROVED", isDemo: true,
+        topicId: topicId[q.topic], text: q.q, explanation: q.why, difficulty: q.level, status: "APPROVED", isDemo: true, source: "SAMPLE",
         options: { create: q.opts.map((text, i) => ({ text, isCorrect: i === q.a, position: i })) },
       },
     });
+    created++;
   }
-  console.log(`Seed: ${qs.length} ta DEMO savol (APPROVED, isDemo)`);
+  console.log(`Seed: ${created} ta yangi namunaviy savol (APPROVED, isDemo); ${qs.length - created} tasi allaqachon bor`);
 }
 main().finally(() => db.$disconnect());

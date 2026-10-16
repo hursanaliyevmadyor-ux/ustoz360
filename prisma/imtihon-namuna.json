@@ -1,0 +1,76 @@
+{
+  "exams": [
+    {
+      "slug": "matematika-test",
+      "title": "Matematika: 4 variantli test",
+      "subject": "Matematika",
+      "kind": "TEST",
+      "durationMin": 15,
+      "questions": [
+        { "type": "CHOICE", "text": "15 + 27 = ?", "options": ["42", "41", "43", "32"], "correct": 0 },
+        { "type": "CHOICE", "text": "9 × 8 = ?", "options": ["72", "81", "64", "78"], "correct": 0 },
+        { "type": "CHOICE", "text": "Kvadrati 144 bo'lgan musbat son qaysi?", "options": ["12", "14", "11", "13"], "correct": 0 },
+        { "type": "CHOICE", "text": "x + 7 = 19 tenglamaning yechimi qaysi?", "options": ["12", "26", "11", "13"], "correct": 0 },
+        { "type": "CHOICE", "text": "Uchburchak ichki burchaklarining yig'indisi necha gradus?", "options": ["180°", "360°", "90°", "270°"], "correct": 0 },
+        { "type": "CHOICE", "text": "Tomoni 6 sm bo'lgan kvadratning yuzi qancha?", "options": ["36 sm²", "24 sm²", "12 sm²", "48 sm²"], "correct": 0 },
+        { "type": "CHOICE", "text": "1/2 va 0,4 sonlaridan qaysi biri katta?", "options": ["1/2", "0,4", "Ular teng", "Aniqlab bo'lmaydi"], "correct": 0 },
+        { "type": "CHOICE", "text": "Aylana uzunligining formulasi qaysi?", "options": ["2πr", "πr²", "πd²", "4πr"], "correct": 0 },
+        { "type": "CHOICE", "text": "Eng kichik tub son qaysi?", "options": ["2", "1", "3", "0"], "correct": 0 },
+        { "type": "CHOICE", "text": "100 ning 15 foizi nechaga teng?", "options": ["15", "10", "25", "1,5"], "correct": 0 },
+        { "type": "CHOICE", "text": "12 va 18 sonlarining eng katta umumiy bo'luvchisi qaysi?", "options": ["6", "3", "9", "12"], "correct": 0 },
+        { "type": "CHOICE", "text": "3x = 21 bo'lsa, x nechaga teng?", "options": ["7", "6", "8", "63"], "correct": 0 }
+      ]
+    },
+    {
+      "slug": "ona-tili-test-ae",
+      "title": "Ona tili: 5 variantli test (A–E)",
+      "subject": "Ona tili",
+      "kind": "TEST",
+      "durationMin": 12,
+      "questions": [
+        { "type": "CHOICE", "text": "O'zbek alifbosida nechta unli tovush bor?", "options": ["6", "5", "8", "7", "4"], "correct": 0 },
+        { "type": "CHOICE", "text": "Quyidagi so'zlardan qaysi biri ot so'z turkumiga kiradi?", "options": ["kitob", "yugurmoq", "chiroyli", "tez", "besh"], "correct": 0 },
+        { "type": "CHOICE", "text": "«Chiroyli» so'zi qaysi so'z turkumiga kiradi?", "options": ["Sifat", "Ot", "Fe'l", "Son", "Olmosh"], "correct": 0 },
+        { "type": "CHOICE", "text": "«Men» so'zi qaysi so'z turkumiga kiradi?", "options": ["Olmosh", "Ot", "Sifat", "Son", "Ravish"], "correct": 0 },
+        { "type": "CHOICE", "text": "«Bola kitob o'qidi» gapida kesim qaysi so'z?", "options": ["o'qidi", "bola", "kitob", "Kesim yo'q", "Barchasi kesim"], "correct": 0 },
+        { "type": "CHOICE", "text": "«Katta» so'zining antonimi (zid ma'noli so'zi) qaysi?", "options": ["kichik", "uzun", "baland", "yangi", "eski"], "correct": 0 },
+        { "type": "CHOICE", "text": "So'roq gap oxiriga qaysi tinish belgisi qo'yiladi?", "options": ["So'roq belgisi", "Nuqta", "Vergul", "Undov belgisi", "Tire"], "correct": 0 },
+        { "type": "CHOICE", "text": "«Maktab» so'zida nechta bo'g'in bor?", "options": ["2", "1", "3", "4", "5"], "correct": 0 },
+        { "type": "CHOICE", "text": "Quyidagi qo'shimchalardan qaysi biri ko'plik qo'shimchasi?", "options": ["-lar", "-ni", "-ning", "-da", "-dan"], "correct": 0 },
+        { "type": "CHOICE", "text": "«Yil» so'zida nechta bo'g'in bor?", "options": ["1", "2", "3", "4", "5"], "correct": 0 }
+      ]
+    },
+    {
+      "slug": "fizika-yozma",
+      "title": "Fizika: yozma javobli imtihon",
+      "subject": "Fizika",
+      "kind": "WRITTEN",
+      "durationMin": 10,
+      "questions": [
+        { "type": "WRITTEN", "text": "Tezlikning SI sistemasidagi o'lchov birligini yozing (qisqartirib, masalan: m/s).", "accepted": ["m/s", "m/sek", "metr/sekund"] },
+        { "type": "WRITTEN", "text": "Suv normal atmosfera bosimida necha °C da qaynaydi? (faqat son yozing)", "accepted": ["100"] },
+        { "type": "WRITTEN", "text": "Erkin tushish tezlanishi taxminan necha m/s² ga teng? (butun songa yaxlitlab, faqat son yozing)", "accepted": ["10", "9.8", "9.81"] },
+        { "type": "WRITTEN", "text": "Kuchning SI sistemasidagi o'lchov birligi qanday ataladi?", "accepted": ["nyuton", "newton", "n"] },
+        { "type": "WRITTEN", "text": "Yorug'likning vakuumdagi tezligi taxminan necha km/s? (faqat son yozing)", "accepted": ["300000"] }
+      ]
+    },
+    {
+      "slug": "aralash-imtihon",
+      "title": "Umumiy bilim: aralash imtihon",
+      "subject": "Umumiy fanlar",
+      "kind": "MIXED",
+      "durationMin": 12,
+      "questions": [
+        { "type": "CHOICE", "text": "O'zbekiston Respublikasining poytaxti qaysi shahar?", "options": ["Toshkent", "Samarqand", "Buxoro", "Xiva"], "correct": 0 },
+        { "type": "CHOICE", "text": "7 × 6 = ?", "options": ["42", "36", "48", "49"], "correct": 0 },
+        { "type": "CHOICE", "text": "Suvning kimyoviy formulasi qaysi?", "options": ["H₂O", "CO₂", "O₂", "NaCl"], "correct": 0 },
+        { "type": "CHOICE", "text": "Yerning tabiiy yo'ldoshi qaysi?", "options": ["Oy", "Mars", "Quyosh", "Venera"], "correct": 0 },
+        { "type": "CHOICE", "text": "Bir haftada necha kun bor?", "options": ["7", "6", "5", "8"], "correct": 0 },
+        { "type": "CHOICE", "text": "Bir yilda necha oy bor?", "options": ["12", "10", "11", "13"], "correct": 0 },
+        { "type": "WRITTEN", "text": "25 ning kvadrat ildizi nechaga teng? (faqat son yozing)", "accepted": ["5"] },
+        { "type": "WRITTEN", "text": "Yerdagi eng katta okean qaysi? (bir-ikki so'z bilan yozing)", "accepted": ["tinch okean", "tinch okeani", "tinch"] },
+        { "type": "WRITTEN", "text": "Toshkent shahri qaysi mamlakatda joylashgan? (bir so'z)", "accepted": ["o'zbekiston", "ozbekiston", "uzbekistan"] }
+      ]
+    }
+  ]
+}

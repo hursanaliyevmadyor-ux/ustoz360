@@ -1,47 +1,68 @@
 "use client";
 import Link from "next/link";
+import { CircleDashed, Repeat2, ShieldCheck, Sprout } from "lucide-react";
 import { modules } from "@/lib/modules";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/layout/page";
 import { LiveGate } from "@/components/layout/live-gate";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
-import { Radar } from "@/components/charts/charts";
 import { DemoMap } from "./demo";
 
-type T = { name: string; correct: number; total: number; percent: number; confidence: "LOW" | "MEDIUM" | "HIGH" };
-const CONF = { LOW: "past", MEDIUM: "o'rta", HIGH: "yuqori" } as const;
+type State = "NEW" | "LEARNING" | "REINFORCING" | "STABLE";
+type T = { topicId: string; name: string; subject: string; correct: number; total: number; openErrors: number; state: State; label: string; hint: string };
+
+/** Holat belgisi rang bilan birga ikonka va matn bilan ham beriladi (faqat rangga tayanilmaydi). */
+const META: Record<State, { icon: React.ElementType; tone: string; order: number }> = {
+  LEARNING: { icon: Sprout, tone: "bg-amber/15 text-warning", order: 0 },
+  REINFORCING: { icon: Repeat2, tone: "bg-primary/10 text-primary", order: 1 },
+  NEW: { icon: CircleDashed, tone: "bg-muted text-muted-foreground", order: 2 },
+  STABLE: { icon: ShieldCheck, tone: "bg-success/10 text-success", order: 3 },
+};
 
 function Live({ topics }: { topics: T[] }) {
-  const sorted = [...topics].sort((a, b) => a.percent - b.percent);
+  const sorted = [...topics].sort((a, b) => META[a.state].order - META[b.state].order || b.openErrors - a.openErrors || a.name.localeCompare(b.name));
+  const practiced = topics.filter((t) => t.total > 0).length;
   return (
     <>
-      <PageHeader module={modules[0]} title="Bilim xaritasi" description="Mavzular bo'yicha natija va ishonchlilik" />
-      {topics.length === 0 ? <EmptyState title="Hali ma'lumot yo'q" text="Bilim xaritasi diagnostika natijasidan tuziladi." action={<Button asChild><Link href="/ustoz-ai/diagnostika">Diagnostikani boshlash</Link></Button>} /> : (
-        <div className="grid gap-6 lg:grid-cols-5">
-          {topics.length >= 3 && <Card className="lg:col-span-2"><CardHeader><CardTitle>Umumiy ko'rinish</CardTitle></CardHeader><CardContent><Radar items={topics.map((t) => ({ label: t.name.split(" ")[0], value: t.percent }))} /></CardContent></Card>}
-          <Card className={topics.length >= 3 ? "lg:col-span-3" : "lg:col-span-5"}><CardHeader><div><CardTitle>Mavzular</CardTitle><CardDescription>Avval o'rganish tavsiya etiladigan tartibda</CardDescription></div></CardHeader>
-            <CardContent className="space-y-4">
-              {sorted.map((t) => {
-                const low = t.confidence === "LOW";
-                return (
-                  <div key={t.name}>
-                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold">{t.name}</span>
-                      <span className="flex items-center gap-2 text-muted-foreground">{t.correct}/{t.total} savol
-                        {low ? <Badge variant="amber">Qo'shimcha diagnostika kerak</Badge> : <Badge variant="neutral">ishonch: {CONF[t.confidence]}</Badge>}<b className="text-foreground">{t.percent}%</b></span></div>
-                    <Progress value={t.percent} barClass={low ? "bg-muted-foreground/50" : t.percent < 50 ? "bg-danger" : t.percent < 70 ? "bg-amber" : "bg-success"} label={t.name} />
-                  </div>);
-              })}
-              <p className="text-xs text-muted-foreground">Savollar kam bo'lsa mavzu o'zlashtirilgan deb hisoblanmaydi: ishonchlilik past mavzular kulrang ko'rsatiladi.</p>
-              <Button asChild><Link href="/ustoz-ai/reja">Shu asosida reja</Link></Button>
-            </CardContent></Card>
-        </div>)}
+      <PageHeader module={modules[0]} title="Bilim xaritasi" description="Mavzular bo'yicha o'rganish holati: natija, savollar soni, qiyinlik va xatolarga qarab" />
+      {topics.length === 0 ? <EmptyState title="Mavzular hali qo'shilmagan" text="Mavzular admin tomonidan qo'shiladi." action={<Button asChild><Link href="/ustoz-ai/testlar">Testlar</Link></Button>} /> : (
+        <>
+          <ul className="mb-5 flex flex-wrap gap-2" aria-label="Holatlar izohi">
+            {(["NEW", "LEARNING", "REINFORCING", "STABLE"] as State[]).map((s) => {
+              const m = META[s], Icon = m.icon, label = topics.find((t) => t.state === s)?.label ?? { NEW: "Hali mashq qilinmagan", LEARNING: "O'rganilmoqda", REINFORCING: "Mustahkamlanmoqda", STABLE: "Barqaror natija kuzatilmoqda" }[s];
+              return <li key={s} className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold", m.tone)}><Icon className="h-3.5 w-3.5" aria-hidden />{label}</li>;
+            })}
+          </ul>
+          {practiced === 0 && <p className="mb-4 rounded-xl bg-primary/5 p-3 text-sm">Hali birorta mavzu bo'yicha mashq qilinmagan. Mashq qilgan sari xaritangiz to'lib boradi.</p>}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {sorted.map((t) => {
+              const m = META[t.state], Icon = m.icon;
+              const pct = t.total ? Math.round((t.correct / t.total) * 100) : null;
+              return (
+                <Card key={t.topicId} className="flex flex-col p-4">
+                  <p className="text-xs font-semibold text-muted-foreground">{t.subject}</p>
+                  <p className="mt-0.5 font-extrabold leading-snug">{t.name}</p>
+                  <p className={cn("mt-2 inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold", m.tone)}><Icon className="h-3.5 w-3.5" aria-hidden />{t.label}</p>
+                  <p className="mt-2 flex-1 text-sm text-muted-foreground">{t.hint}</p>
+                  <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <div><dt className="inline">Savollar: </dt><dd className="inline font-bold text-foreground">{t.total}</dd></div>
+                    {pct !== null && <div><dt className="inline">To'g'ri: </dt><dd className="inline font-bold text-foreground">{pct}%</dd></div>}
+                    {t.openErrors > 0 && <div><dt className="inline">Ochiq xato: </dt><dd className="inline font-bold text-foreground">{t.openErrors}</dd></div>}
+                  </dl>
+                  <Button asChild variant="outline" size="sm" className="mt-3 self-start"><Link href={`/ustoz-ai/mashq/sozlash?kind=topic&topic=${t.topicId}`}>Mashq qilish</Link></Button>
+                </Card>
+              );
+            })}
+          </div>
+          <p className="mt-5 text-xs text-muted-foreground">Holat faqat siz yechgan savollarga tayanadi va taxminiy. Savollar kam, faqat oson savollar yechilgan yoki ochiq xatolar bor mavzu eng yuqori holatga o'tmaydi. Bitta to'g'ri javob mavzuni o'zlashtirish degani emas.</p>
+        </>
+      )}
     </>
   );
 }
 
 export default function Page() {
-  return <LiveGate<{ topics: T[] }> url="/api/mastery" render={(d) => <Live topics={d.topics} />} demo={<DemoMap />} />;
+  return <LiveGate<{ topics: T[] }> url="/api/practice/map" render={(d) => <Live topics={d.topics} />} demo={<DemoMap />} />;
 }

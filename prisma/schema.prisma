@@ -39,6 +39,7 @@ enum TestMode {
   MIXED
   ERRORS
   SIMULATION
+  SITUATIONAL
 }
 
 enum SessionStatus {
@@ -78,6 +79,7 @@ model User {
   auditLogs  AuditLog[]
   aiRequests AiRequest[]
   aiChats    AiChat[]
+  examAttempts ExamAttempt[]
 }
 
 model Profile {
@@ -130,6 +132,8 @@ model Topic {
   subject   Subject    @relation(fields: [subjectId], references: [id])
   slug      String     @unique
   name      String
+  /// "Bu mavzuda nimalarni bilib olasiz?": 2-3 ta aniq o'quv maqsadi (admin kiritadi, bo'lmasa ko'rsatilmaydi).
+  objectives String[]  @default([])
   questions Question[]
   mastery   TopicMastery[]
 }
@@ -142,8 +146,18 @@ model Question {
   explanation String
   difficulty Difficulty
   status     QuestionStatus @default(DRAFT)
-  /// true bo'lsa: namunaviy savol, ekspert tekshirmagan. UI'da DEMO deb ko'rsatiladi.
+  /// true bo'lsa: namunaviy savol, ekspert tekshirmagan. UI'da "Namunaviy savol" deb belgilanadi.
   isDemo     Boolean        @default(false)
+  /// Eslab qolish uchun qisqa qoida ("Super kalit").
+  superKey   String?
+  /// MANUAL: admin kiritgan | AI: AI yaratgan (tasdiqlanmagan) | SAMPLE: namunaviy.
+  source     String         @default("MANUAL")
+  /// Manba nomi va bo'lim/sahifa (bo'lsa). Uydirilmaydi.
+  sourceRef  String?
+  /// Tekshiriladigan ko'nikma/tushuncha (masalan "formativ va summativ farqi"): xatolar testi va tahlil uchun.
+  skill      String?
+  /// CLASSIC: oddiy savol | SITUATIONAL: dars vaziyatiga asoslangan murakkab savol.
+  kind       String         @default("CLASSIC")
   options    AnswerOption[]
   answers    UserAnswer[]
   errorCards ErrorCard[]
@@ -174,6 +188,8 @@ model TestSession {
   submittedAt DateTime?
   score       Int?
   total       Int?
+  /// Mashq sozlamalari: tur, mavzular, qiyinlik, variantlar tartibi, ishoralar, AI savollar (javob kaliti emas).
+  config      Json?
   answers     UserAnswer[]
   @@index([userId, startedAt])
 }
@@ -186,7 +202,21 @@ model UserAnswer {
   question   Question    @relation(fields: [questionId], references: [id])
   optionId   String?
   isCorrect  Boolean
+  hintUsed   Boolean     @default(false)
+  answeredAt DateTime    @default(now())
+  /// Vaziyatli testda "Qaroringizni asoslang" bo'yicha foydalanuvchining ixtiyoriy yozuvi.
+  rationale  String?
   @@unique([sessionId, questionId])
+}
+
+/// Foydalanuvchi "Savolda xato bor" deb yuborgan xabarlar.
+model QuestionReport {
+  id         String   @id @default(cuid())
+  questionId String
+  userId     String
+  reason     String
+  createdAt  DateTime @default(now())
+  @@index([questionId])
 }
 
 model TopicMastery {
@@ -299,4 +329,74 @@ model TelegramLogin {
 model TelegramUpdate {
   id        String   @id
   createdAt DateTime @default(now())
+}
+
+/// Imtihon simulyatori: imtihon shabloni (fan, turi, vaqt, savollar soni).
+/// kind: TEST (variantli) | WRITTEN (yozma javob) | MIXED (aralash).
+model Exam {
+  id          String         @id @default(cuid())
+  slug        String         @unique
+  title       String
+  subject     String
+  kind        String
+  durationMin Int
+  /// Savollar bankidan nechtasi tushishi (bo'sh bo'lsa hammasi).
+  pickCount   Int?
+  active      Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  questions   ExamQuestion[]
+  attempts    ExamAttempt[]
+}
+
+/// type: CHOICE (options + correct: to'g'ri variant indeksi) | WRITTEN (accepted: qabul qilinadigan javoblar ro'yxati).
+model ExamQuestion {
+  id          String  @id @default(cuid())
+  examId      String
+  exam        Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  position    Int     @default(0)
+  type        String
+  text        String
+  options     Json?
+  correct     Int?
+  accepted    Json?
+  explanation String?
+  @@index([examId])
+}
+
+/// Bitta urinish. order: savollar ketma-ketligi va variantlar aralashmasi (har urinishda yangicha), answers: {savolId: {c?: tanlangan variant (ko'rsatilgan tartibda), t?: yozma javob}}.
+model ExamAttempt {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  examId      String
+  exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+  startedAt   DateTime  @default(now())
+  endsAt      DateTime
+  submittedAt DateTime?
+  order       Json
+  answers     Json      @default("{}")
+  score       Int?
+  total       Int?
+  /// Oynadan chiqish / to'liq ekrandan chiqish hodisalari soni.
+  leftCount   Int       @default(0)
+  @@index([userId, startedAt])
+  @@index([examId])
+}
+
+/// Seminarlar: admin qo'shadi va tahrirlaydi, saytda /seminarlar sahifasida ko'rinadi.
+model Seminar {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  speaker     String?
+  startsAt    DateTime
+  durationMin Int?
+  /// Joy (manzil) yoki onlayn bo'lsa platforma nomi.
+  place       String?
+  /// Onlayn qatnashish havolasi.
+  link        String?
+  capacity    Int?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  @@index([startsAt])
 }

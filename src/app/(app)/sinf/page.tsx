@@ -4,13 +4,15 @@ import { classes } from "@/lib/demo";
 import { modules } from "@/lib/modules";
 import { PageHeader } from "@/components/layout/page";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Spark } from "@/components/charts/charts";
 
 export default function Page() {
   return (
     <>
-      <PageHeader module={modules[4]} title="Sinflar" description="Sinflaringiz va umumiy natijalar. O'quvchilar taxallus bilan yuritiladi." demo />
+      <PageHeader module={modules[4]} title="SINF ANALITIKA" description="Sinflaringiz va umumiy natijalar. O'quvchilar taxallus bilan yuritiladi." demo
+        actions={<Button asChild variant="outline"><Link href="/sinf/tahlil">Tahlil va natijalar</Link></Button>} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {classes.map((c) => (
           <Link key={c.id} href="/sinf/tahlil"><Card className="p-5 hover:shadow-pop">

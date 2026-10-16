@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/ui/states";
 import { DemoErrors } from "./demo";
 
 type Card = { id: string; text: string; topic: string; isDemo: boolean; mistakes: number; mastered: boolean; nextReviewAt: string; lastMistakeAt: string };
-const fmtDate = (s: string) => new Date(s).toLocaleDateString("uz-UZ", { day: "numeric", month: "short" });
+import { fmtDate } from "@/lib/practice-client";
 const when = (s: string) => { const d = Math.ceil((new Date(s).getTime() - Date.now()) / 86_400_000); return d <= 0 ? "Bugun" : d === 1 ? "Ertaga" : `${d} kundan so'ng`; };
 
 function Explain({ id }: { id: string }) {
@@ -37,7 +37,7 @@ function Live({ cards }: { cards: Card[] }) {
   const due = cards.filter((c) => !c.mastered && new Date(c.nextReviewAt) <= new Date()).length;
   return (
     <>
-      <PageHeader module={modules[0]} title="Xatolar daftari" description={`${cards.length} ta xato, bugun takrorlash kerak: ${due}`} actions={due > 0 ? <Button asChild><Link href="/ustoz-ai/xatolar/takrorlash">Takrorlashni boshlash ({due})</Link></Button> : undefined} />
+      <PageHeader module={modules[0]} title="Xatolar daftari" description={`${cards.length} ta xato, bugun takrorlash kerak: ${due}`} actions={due > 0 ? <Button asChild><Link href="/ustoz-ai/testlar/sozlash?mode=errors">Xatolar testi ({due})</Link></Button> : undefined} />
       {cards.length === 0 ? <EmptyState title="Hali xato yo'q" text="Diagnostika topshiring: xato qilingan savollar shu yerga avtomatik tushadi." action={<Button asChild><Link href="/ustoz-ai/diagnostika">Diagnostikani boshlash</Link></Button>} /> : (
         <Card>
           <div className="flex flex-wrap items-center gap-3 p-4">

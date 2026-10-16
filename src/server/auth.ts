@@ -177,3 +177,10 @@ export async function logout() {
 export function hasRole(user: { roles: { role: string }[] }, ...roles: string[]) {
   return user.roles.some((r) => roles.includes(r.role));
 }
+
+/** Faqat adminlar uchun amallar: tizimga kirgan va ADMIN yoki SUPERADMIN roli bor foydalanuvchi. */
+export async function requireAdmin() {
+  const u = await requireUser();
+  if (!hasRole(u, "ADMIN", "SUPERADMIN")) throw new ApiError(403, "Bu amal faqat adminlar uchun.");
+  return u;
+}

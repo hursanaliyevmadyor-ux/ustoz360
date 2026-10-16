@@ -36,7 +36,7 @@ export const POST = (req: Request) => handle(async () => {
         update: { correct, total, confidence: confidenceFor(total) },
       });
     }
-  });
+  }, { maxWait: 15_000, timeout: 60_000 });
 
   return {
     score: graded.filter((g) => g.isCorrect).length, total: graded.length, topics: [],
