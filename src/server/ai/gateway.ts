@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { ApiError, requireVerified } from "../auth";
 import { db } from "../db";
 
-export type AiFeature = "chat" | "explain" | "lesson";
+export type AiFeature = "chat" | "explain" | "lesson" | "practice";
 
 const FALLBACK_MODELS = ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"];
 export const aiModel = () => process.env.AI_MODEL || "claude-opus-5-5";
@@ -26,7 +26,7 @@ export async function usageToday(userId: string) {
   return { used, limit: dailyLimit(), remaining: Math.max(0, dailyLimit() - used) };
 }
 
-type Call = { userId: string; feature: AiFeature; messages: { role: "user" | "assistant"; content: string }[]; maxTokens: number; effort?: "low" | "medium" | "high"; schema?: Record<string, unknown> };
+type Call = { userId: string; feature: AiFeature; messages: { role: "user" | "assistant"; content: string }[]; maxTokens: number; effort?: "low" | "medium" | "high"; schema?: Record<string, unknown>; system?: string };
 export type AiResult = { text: string; model: string };
 
 export async function runAi(c: Call): Promise<AiResult> {
@@ -40,7 +40,7 @@ export async function runAi(c: Call): Promise<AiResult> {
   }
   const model = aiModel();
   const params: Record<string, unknown> = {
-    model, max_tokens: c.maxTokens, system: SYSTEM, messages: c.messages,
+    model, max_tokens: c.maxTokens, system: c.system ?? SYSTEM, messages: c.messages,
     output_config: { effort: c.effort ?? "medium", ...(c.schema ? { format: { type: "json_schema", schema: c.schema } } : {}) },
   };
   if (FALLBACK_MODELS.includes(model)) { params.fallbacks = "default"; params.betas = ["server-side-fallback-2026-07-01"]; }
@@ -88,7 +88,7 @@ export async function freeUsageToday(userId: string) {
   return { used, limit: freeLimit(), remaining: Math.max(0, freeLimit() - used) };
 }
 
-export async function runFreeAi(userId: string, messages: { role: "user" | "assistant"; content: string }[]): Promise<AiResult> {
+export async function runFreeAi(userId: string, messages: { role: "user" | "assistant"; content: string }[], opts: { system?: string; maxTokens?: number } = {}): Promise<AiResult> {
   if (!freeConfigured()) throw new ApiError(503, "Bepul AI hali sozlanmagan (FREE_LLM_BASE_URL va FREE_LLM_API_KEY yo'q).");
   await requireVerified(userId);
   const u = await freeUsageToday(userId);
@@ -105,7 +105,7 @@ export async function runFreeAi(userId: string, messages: { role: "user" | "assi
         const res = await fetch(`${p.base}/chat/completions`, {
           method: "POST", signal: AbortSignal.timeout(45_000),
           headers: { "content-type": "application/json", authorization: `Bearer ${p.key}` },
-          body: JSON.stringify({ model: p.model, max_tokens: 1200, messages: [{ role: "system", content: SYSTEM }, ...messages] }),
+          body: JSON.stringify({ model: p.model, max_tokens: opts.maxTokens ?? 1200, messages: [{ role: "system", content: opts.system ?? SYSTEM }, ...messages] }),
         });
         if (!res.ok) { console.error("Free AI provider failed", new URL(p.base).host, res.status); continue; }
         const d = await res.json();

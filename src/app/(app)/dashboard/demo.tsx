@@ -60,7 +60,7 @@ export function DemoDashboard() {
             <p className="text-5xl font-extrabold tracking-tight text-primary">28<span className="ml-1 text-lg font-bold text-muted-foreground">kun</span></p>
             <Progress value={32} className="mt-4" label="Tayyorgarlik" />
             <p className="mt-2 text-sm text-muted-foreground">Reja bo'yicha 32% bajarildi</p>
-            <Button asChild variant="secondary" className="mt-4 w-full"><Link href="/toifa/kalendar"><CalendarClock className="h-4 w-4" />Kalendarni ochish</Link></Button>
+            <Button asChild variant="secondary" className="mt-4 w-full"><Link href="/toifa/reja?view=kalendar"><CalendarClock className="h-4 w-4" />Kalendarni ochish</Link></Button>
           </CardContent>
         </Card>
       </div>

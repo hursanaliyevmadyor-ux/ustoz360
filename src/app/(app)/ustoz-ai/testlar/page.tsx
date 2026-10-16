@@ -1,34 +1,73 @@
 "use client";
+import * as React from "react";
 import Link from "next/link";
-import { Dumbbell, Timer, Tags, Shuffle, Brain, RotateCcw, ClipboardCheck, GraduationCap } from "lucide-react";
-import { modules } from "@/lib/modules";
-import { PageHeader } from "@/components/layout/page";
-import { Card } from "@/components/ui/card";
+import { History, PlayCircle } from "lucide-react";
+import { MODES } from "@/components/tests/modes";
+import { ChoiceCard } from "@/components/layout/choice-card";
+import { SectionHeader } from "@/components/layout/section-header";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/toast";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/states";
+import { call, fmtClock, KIND_LABEL, sessionHref, type Home } from "@/lib/practice-client";
 
-const modes = [
-  { i: Dumbbell, t: "Oddiy mashq", d: "Vaqtsiz, izoh bilan." }, { i: Timer, t: "Vaqtli test", d: "Taymer bilan." },
-  { i: Tags, t: "Mavzuli test", d: "Tanlangan mavzu bo'yicha." }, { i: Shuffle, t: "Aralash test", d: "Barcha mavzulardan." },
-  { i: Brain, t: "Murakkab vaziyatli", d: "Amaliy vaziyatlar." }, { i: RotateCcw, t: "Xatolar testi", d: "Faqat xato qilinganlar." },
-  { i: ClipboardCheck, t: "Diagnostika", d: "Bilim darajasini aniqlash.", href: "/ustoz-ai/diagnostika" },
-  { i: GraduationCap, t: "Imtihon simulyatsiyasi", d: "Rasmiy spetsifikatsiyaga mos (spetsifikatsiya kiritilgach)." },
-];
 export default function Page() {
-  const toast = useToast();
+  const [home, setHome] = React.useState<Home | null>(null);
+  const [anon, setAnon] = React.useState(false);
+  const [offline, setOffline] = React.useState(false);
+
+  React.useEffect(() => {
+    void (async () => {
+      const r = await call<Home>("/api/practice/home");
+      if (r.ok) setHome(r.data); else if (r.status === 401) setAnon(true); else setOffline(true);
+    })();
+  }, []);
+
+  // Savollar bazasi bo'sh bo'lsa, tugma "tayyor" ko'rinmasligi uchun o'chiriladi va sababi yoziladi.
+  const noteFor = (key: string): string | undefined => {
+    if (!home) return undefined;
+    if (home.approved === 0 && ["practice", "timed", "topic", "mixed", "situational"].includes(key)) return "Tasdiqlangan savollar hali yo'q";
+    if (key === "situational" && home.situational === 0) return "Vaziyatli savollar hali yo'q";
+    return undefined;
+  };
+  const badgeFor = (key: string) => {
+    if (key === "errors" && home && home.errorsDue > 0) return <Badge variant="amber">{home.errorsDue} ta takrorlash vaqti kelgan</Badge>;
+    return undefined;
+  };
+
   return (
-    <>
-      <PageHeader module={modules[0]} title="Test rejimlari" description="Maqsadingizga mos rejimni tanlang" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {modes.map((m) => (
-          <Card key={m.t} className="flex flex-col p-5">
-            <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><m.i className="h-5 w-5" aria-hidden /></span>
-            <p className="mt-3 font-extrabold">{m.t}</p><p className="flex-1 text-sm text-muted-foreground">{m.d}</p>
-            {m.href ? <Button asChild size="sm" className="mt-4"><Link href={m.href}>Boshlash</Link></Button>
-              : <Button size="sm" variant="outline" className="mt-4" onClick={() => toast("info", "Bu rejim savollar banki (backend) ulangach ishlaydi.")}>Boshlash</Button>}
-          </Card>
-        ))}
+    <div className="mx-auto max-w-6xl">
+      <SectionHeader title="Qanday mashq qilamiz?" lead="Bilimingizni mustahkamlang va sinovlarga tayyorlaning. Rejimni tanlang." />
+
+      {anon && <p className="mb-4 rounded-xl bg-primary/5 p-3 text-sm">Natijalaringiz saqlanishi uchun avval <Link href="/kirish" className="font-bold text-primary hover:underline">tizimga kiring</Link>.</p>}
+      {offline && <p role="alert" className="mb-4 rounded-xl bg-danger/10 p-3 text-sm text-danger">Server bilan aloqa yo'q. Mashqlarni boshlash uchun internet va ma'lumotlar bazasi kerak.</p>}
+
+      {home?.active && (
+        <Card className="mb-5 flex flex-wrap items-center gap-3 border-primary/30 bg-primary/5 p-4">
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><PlayCircle className="h-5 w-5" aria-hidden /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold">Oxirgi mashqni davom ettirish</p>
+            <p className="text-sm text-muted-foreground">
+              {KIND_LABEL[home.active.kind]}: {home.active.answered} / {home.active.total} savol
+              {home.active.remainingSec !== null && <> · qolgan vaqt <b className="text-foreground">{fmtClock(home.active.remainingSec)}</b></>}
+            </p>
+          </div>
+          <Button asChild><Link href={sessionHref(home.active.kind, home.active.id)}>Davom ettirish</Link></Button>
+        </Card>
+      )}
+
+      {!home && !anon && !offline ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{MODES.map((m) => <Skeleton key={m.key} className="h-[210px]" />)}</div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {MODES.map((m) => <ChoiceCard key={m.key} mode={m} badge={badgeFor(m.key)} disabledNote={noteFor(m.key)} />)}
+        </div>
+      )}
+
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <Button asChild variant="outline"><Link href="/ustoz-ai/testlar/tarix"><History className="h-4 w-4" aria-hidden />Mashqlar tarixi</Link></Button>
+        {home && home.history[0] && <p className="text-sm text-muted-foreground">Oxirgi natija: <b className="text-foreground">{KIND_LABEL[home.history[0].kind]}, {home.history[0].score} / {home.history[0].total}</b></p>}
       </div>
-    </>
+    </div>
   );
 }

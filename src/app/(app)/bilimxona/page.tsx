@@ -16,7 +16,7 @@ export default function Page() {
   const list = documents.filter((d) => d.name.toLowerCase().includes(q.toLowerCase()));
   return (
     <>
-      <PageHeader module={modules[5]} title="BILIMXONA" description="Elektron kutubxona va manbali AI suhbat" demo actions={<Button asChild><Link href="/bilimxona/yuklash">Fayl yuklash</Link></Button>} />
+      <PageHeader module={modules[5]} title="BILIMXONA" description="Elektron kutubxona va manbali AI suhbat" demo actions={<><Button asChild variant="outline"><Link href="/bilimxona/suhbat">Hujjat bilan suhbat</Link></Button><Button asChild><Link href="/bilimxona/yuklash">Fayl yuklash</Link></Button></>} />
       <div className="relative mb-5 max-w-md"><Search className="absolute left-3.5 top-3.5 h-4 w-4 text-muted-foreground" aria-hidden /><Input className="pl-10" placeholder="Kutubxonadan qidirish" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Kutubxonadan qidirish" /></div>
       {list.length === 0 ? <EmptyState title="Fayl topilmadi" text="Boshqa so'z bilan qidiring yoki yangi fayl yuklang." /> :
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{list.map((d) => (

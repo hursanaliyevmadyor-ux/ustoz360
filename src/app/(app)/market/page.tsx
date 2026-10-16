@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { Search, Star } from "lucide-react";
 import { courses, fmt } from "@/lib/demo";
 import { modules } from "@/lib/modules";
@@ -18,7 +19,8 @@ export default function Page() {
     .sort((a, b) => sort === "asc" ? a.price - b.price : sort === "desc" ? b.price - a.price : 0);
   return (
     <>
-      <PageHeader module={modules[3]} title="USTOZ MARKET" description="Kurslar, elektron materiallar va mentorlik" demo />
+      <PageHeader module={modules[3]} title="USTOZ MARKET" description="Kurslar, elektron materiallar va mentorlik" demo
+        actions={<><Button asChild variant="outline"><Link href="/market/mening-kurslarim">Kurslarim va xaridlar</Link></Button><Button asChild variant="outline"><Link href="/market/muallif">Muallif kabineti</Link></Button></>} />
       <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_180px_180px]">
         <div className="relative"><Search className="absolute left-3.5 top-3.5 h-4 w-4 text-muted-foreground" aria-hidden /><Input className="pl-10" placeholder="Kurs qidirish" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Kurs qidirish" /></div>
         <Select value={sub} onChange={(e) => setSub(e.target.value)} aria-label="Fan"><option value="">Barcha fanlar</option><option>Umumiy</option><option>Matematika</option><option>Ona tili</option></Select>

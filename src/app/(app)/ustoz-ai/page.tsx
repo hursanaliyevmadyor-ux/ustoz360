@@ -1,31 +1,61 @@
+"use client";
+import * as React from "react";
 import Link from "next/link";
-import { ArrowRight, ClipboardCheck, Map, NotebookPen, CalendarCheck, ListChecks } from "lucide-react";
-import { modules } from "@/lib/modules";
-import { PageHeader } from "@/components/layout/page";
-import { Card } from "@/components/ui/card";
+import { ArrowRight, Compass } from "lucide-react";
+import { HUB } from "@/components/tests/modes";
+import { ChoiceCard } from "@/components/layout/choice-card";
+import { SectionHeader } from "@/components/layout/section-header";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/states";
+import { call, fmtClock, KIND_LABEL, sessionHref, type Home } from "@/lib/practice-client";
 
-const m = modules[0];
-const feats = [
-  { href: "/ustoz-ai/diagnostika", icon: ClipboardCheck, t: "Diagnostika", d: "Savollar bo'yicha bilim darajangizni aniqlang." },
-  { href: "/ustoz-ai/testlar", icon: ListChecks, t: "Test rejimlari", d: "Mashq, vaqtli, mavzuli va xatolar testi." },
-  { href: "/ustoz-ai/bilim-xaritasi", icon: Map, t: "Bilim xaritasi", d: "Kuchli va zaif mavzular bir ko'rinishda." },
-  { href: "/ustoz-ai/xatolar", icon: NotebookPen, t: "Xatolar daftari", d: "Xatolar oraliqli takrorlash bilan qaytadi." },
-  { href: "/ustoz-ai/reja", icon: CalendarCheck, t: "Shaxsiy reja", d: "Imtihon sanasi va vaqtingizga mos kunlik reja." },
-];
+/** Keyingi qadam faqat haqiqiy ma'lumotga tayanadi: yangi foydalanuvchiga soxta statistika ko'rsatilmaydi. */
+function nextStep(h: Home) {
+  if (h.active) return { title: "Tugallanmagan mashqni davom ettiring", text: `${KIND_LABEL[h.active.kind]}: ${h.active.answered} / ${h.active.total} savol${h.active.remainingSec !== null ? `, qolgan vaqt ${fmtClock(h.active.remainingSec)}` : ""}.`, href: sessionHref(h.active.kind, h.active.id), cta: "Davom ettirish" };
+  if (h.errorsDue > 0) return { title: `${h.errorsDue} ta xatoni takrorlash vaqti keldi`, text: "Xatolar o'z vaqtida takrorlansa, yaxshiroq eslab qolinadi.", href: "/ustoz-ai/testlar/sozlash?mode=errors", cta: "Xatolar testi" };
+  if (h.history.length === 0) return { title: "Diagnostika bilan boshlang", text: "Bilim darajangiz mavzular bo'yicha aniqlanadi, keyingi mashqlar shunga moslab beriladi.", href: "/ustoz-ai/diagnostika", cta: "Diagnostikani boshlash" };
+  return { title: "Yangi mashq boshlang", text: "Bilimingizni mustahkamlash uchun rejimni tanlang.", href: "/ustoz-ai/testlar", cta: "Rejimni tanlash" };
+}
+
 export default function Page() {
+  const [home, setHome] = React.useState<Home | null>(null);
+  const [anon, setAnon] = React.useState(false);
+
+  React.useEffect(() => {
+    void (async () => {
+      const r = await call<Home>("/api/practice/home");
+      if (r.ok) setHome(r.data); else if (r.status === 401) setAnon(true);
+    })();
+  }, []);
+
+  const step = home ? nextStep(home) : null;
   return (
-    <>
-      <PageHeader module={m} title="USTOZ AI" description="Attestatsiya va milliy sertifikatga individual tayyorgarlik"
-        actions={<Button asChild><Link href="/ustoz-ai/diagnostika">Diagnostikani boshlash<ArrowRight className="h-4 w-4" /></Link></Button>} />
+    <div className="mx-auto max-w-6xl">
+      <SectionHeader title="USTOZ AI" lead="Bilimingizni aniqlang, mashq qiling, xatolar ustida ishlang va rivojlaning." />
+
+      {anon ? (
+        <Card className="mb-5 flex flex-wrap items-center gap-3 border-primary/30 bg-primary/5 p-4">
+          <p className="min-w-0 flex-1 text-sm">Natijalaringiz va xatolaringiz akkauntingizga saqlanishi uchun avval tizimga kiring.</p>
+          <Button asChild><Link href="/kirish">Kirish</Link></Button>
+        </Card>
+      ) : !home ? (
+        <Skeleton className="mb-5 h-20" />
+      ) : step && (
+        <Card className="mb-5 flex flex-wrap items-center gap-3 border-primary/30 bg-primary/5 p-4">
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><Compass className="h-5 w-5" aria-hidden /></span>
+          <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wide text-primary">Keyingi qadam</p><p className="font-bold">{step.title}</p><p className="text-sm text-muted-foreground">{step.text}</p></div>
+          <Button asChild><Link href={step.href}>{step.cta}<ArrowRight className="h-4 w-4" aria-hidden /></Link></Button>
+        </Card>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {feats.map((f) => (
-          <Link key={f.href} href={f.href}><Card className="h-full p-5 hover:shadow-pop">
-            <span className={`grid h-11 w-11 place-items-center rounded-xl ${m.soft} ${m.text}`}><f.icon className="h-5 w-5" aria-hidden /></span>
-            <p className="mt-3 font-extrabold">{f.t}</p><p className="text-sm text-muted-foreground">{f.d}</p>
-          </Card></Link>
+        {HUB.map((m) => (
+          <ChoiceCard key={m.key} mode={m}
+            badge={m.key === "results" && home && home.errorsDue > 0 ? <Badge variant="amber">{home.errorsDue} ta takrorlash vaqti kelgan</Badge> : undefined} />
         ))}
       </div>
-    </>
+    </div>
   );
 }

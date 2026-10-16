@@ -7,6 +7,8 @@ const config: Config = {
     extend: {
       colors: {
         navy: "hsl(var(--navy))",
+        side: "hsl(var(--side))",
+        warning: "hsl(var(--warning))",
         background: "hsl(var(--background))",
         card: "hsl(var(--card))",
         foreground: "hsl(var(--foreground))",

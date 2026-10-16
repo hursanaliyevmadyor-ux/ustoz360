@@ -21,7 +21,7 @@ export type Task = { id: string; title: string; hint: string; href: string };
 export function buildTasks(i: { hasDiagnostic: boolean; dueErrors: number; mastery: Mastery[]; hasExamDate: boolean }): Task[] {
   const t: Task[] = [];
   if (!i.hasDiagnostic) t.push({ id: "diag", title: "Diagnostikani topshiring", hint: "Bilim xaritasi va reja shundan tuziladi", href: "/ustoz-ai/diagnostika" });
-  if (i.dueErrors > 0) t.push({ id: "review", title: `Xatolarni takrorlang (${i.dueErrors} ta)`, hint: "Muddati kelgan xatolar", href: "/ustoz-ai/xatolar/takrorlash" });
+  if (i.dueErrors > 0) t.push({ id: "review", title: `Xatolarni takrorlang (${i.dueErrors} ta)`, hint: "Muddati kelgan xatolar", href: "/ustoz-ai/testlar/sozlash?mode=errors" });
   const weak = i.mastery.filter((x) => x.confidence !== "LOW" && x.total > 0 && x.correct / x.total < 0.6).sort((a, b) => a.correct / a.total - b.correct / b.total)[0];
   if (weak) t.push({ id: "weak", title: `Zaif mavzu: ${weak.name}`, hint: `${Math.round((weak.correct / weak.total) * 100)}%, qayta o'rganing`, href: "/ustoz-ai/bilim-xaritasi" });
   const thin = i.mastery.find((x) => x.confidence === "LOW");

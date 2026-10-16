@@ -1,9 +1,6 @@
-"use client";
-import { ServerQuiz } from "../../diagnostika/server-quiz";
+import { redirect } from "next/navigation";
 
+/** Eski takrorlash sahifasi: xatolarni takrorlash endi "Xatolar testi" rejimida (Testlar bo'limida), shuning uchun u yerga yo'naltiriladi. */
 export default function Page() {
-  return (
-    <ServerQuiz startUrl="/api/review/start" submitUrl="/api/review/submit" title="Xatolarni takrorlash" startLabel="Takrorlashni boshlash"
-      intro="Muddati kelgan xatolaringizdan savollar beriladi. To'g'ri javob keyingi takrorlashni uzoqroqqa suradi, noto'g'ri javob ertangi kunga qaytaradi." />
-  );
+  redirect("/ustoz-ai/testlar/sozlash?mode=errors");
 }

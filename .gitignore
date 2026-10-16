@@ -2,4 +2,9 @@ node_modules
 .next
 next-env.d.ts
 *.tsbuildinfo
+# Maxfiy sozlamalar hech qachon GitHub'ga yuklanmasligi kerak (repo ochiq bo'lishi mumkin).
 .env
+.env.*
+!.env.example
+netlify-env.txt
+.tmp-*

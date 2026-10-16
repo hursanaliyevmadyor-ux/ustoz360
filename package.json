@@ -14,6 +14,9 @@
     "test:e2e:yandex": "tsx e2e/yandex.e2e.ts",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed-exams": "tsx --env-file=.env.local prisma/seed-exams.ts",
+    "db:make-admin": "tsx --env-file=.env.local prisma/make-admin.ts",
+    "db:seed-practice": "tsx --env-file=.env.local prisma/seed-practice.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
