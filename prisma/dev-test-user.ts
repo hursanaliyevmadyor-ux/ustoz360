@@ -9,16 +9,22 @@ import { createHmac, randomBytes } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 const db = new PrismaClient();
-const EMAIL = "mashq-sinov@example.invalid";
+// --second: ikkinchi sinov foydalanuvchisi (masalan, xaridor); --remove ikkalasini ham o'chiradi.
+const SECOND = process.argv.includes("--second");
+const EMAIL = SECOND ? "mashq-sinov2@example.invalid" : "mashq-sinov@example.invalid";
 
 async function main() {
   const existing = await db.user.findUnique({ where: { email: EMAIL } });
   if (process.argv.includes("--remove")) {
-    if (!existing) { console.log("Sinov foydalanuvchisi yo'q."); return; }
-    // Javoblar savollarga bog'langan, ammo foydalanuvchi o'chganda sessiya va javoblar kaskad bilan o'chadi.
-    await db.questionReport.deleteMany({ where: { userId: existing.id } });
-    await db.user.delete({ where: { id: existing.id } });
-    console.log("Sinov foydalanuvchisi o'chirildi.");
+    // Javoblar, sessiyalar, kurslar, to'lovlar, sinflar va hujjatlar foydalanuvchi o'chganda kaskad bilan o'chadi.
+    for (const email of ["mashq-sinov@example.invalid", "mashq-sinov2@example.invalid"]) {
+      const u = await db.user.findUnique({ where: { email } });
+      if (!u) { console.log(`${email}: yo'q.`); continue; }
+      await db.questionReport.deleteMany({ where: { userId: u.id } });
+      await db.auditLog.deleteMany({ where: { userId: u.id } });
+      await db.user.delete({ where: { id: u.id } });
+      console.log(`${email}: o'chirildi.`);
+    }
     return;
   }
   const secret = process.env.AUTH_SECRET;
@@ -26,7 +32,7 @@ async function main() {
   const admin = process.argv.includes("--admin");
   const user = existing ?? await db.user.create({
     data: {
-      email: EMAIL, name: "Sinov Foydalanuvchi", googleSub: "dev-test-mashq", emailVerifiedAt: new Date(),
+      email: EMAIL, name: "Sinov Foydalanuvchi", googleSub: SECOND ? "dev-test-mashq-2" : "dev-test-mashq", emailVerifiedAt: new Date(),
       roles: { create: { role: admin ? "ADMIN" : "TEACHER" } },
       profile: { create: { onboardedAt: new Date(), region: "Toshkent", district: "Yunusobod" } },
     },

@@ -13,7 +13,16 @@ import { ErrorState, Skeleton } from "@/components/ui/states";
 export function LiveGate<T>({ url, render, demo }: { url: string; render: (data: T) => React.ReactNode; demo: React.ReactNode }) {
   const [state, reload] = useApi<T>(url);
   const [showDemo, setShowDemo] = React.useState(false);
-  if (showDemo) return <>{demo}</>;
+  // Namuna rejimi foydalanuvchi so'raganda ko'rsatiladi va doim aniq belgilanadi: haqiqiy natija bilan aralashmaydi.
+  if (showDemo) return (
+    <>
+      <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber/40 bg-amber/10 px-4 py-3 text-sm">
+        <span><b>NAMUNA.</b> Bu ma'lumotlar tasdiqlangan emas va sizning natijangiz emas.</span>
+        <Button size="sm" variant="outline" onClick={() => setShowDemo(false)}>Namunadan chiqish</Button>
+      </div>
+      {demo}
+    </>
+  );
   if (state.status === "loading") return <div className="space-y-3"><Skeleton className="h-10 w-1/3" /><Skeleton className="h-40 w-full" /></div>;
   if (state.status === "anon") return (
     <Card className="max-w-xl"><CardContent className="space-y-3">

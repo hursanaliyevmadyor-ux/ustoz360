@@ -1,5 +1,8 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
+import { useQuery } from "@/lib/use-query";
+import { useShell } from "@/components/layout/shell-context";
 import { PageHeader } from "@/components/layout/page";
 import { LiveGate } from "@/components/layout/live-gate";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +44,23 @@ function Form({ initial }: { initial: P }) {
           </div>
           <Button type="submit" loading={busy}>Saqlash</Button>
         </CardContent></form></Card>
+      <AccountPlan />
     </>
+  );
+}
+
+/** Tarif va sotib olingan kurslar (USTOZ MARKET va obuna ma'lumoti profilda ham ko'rinadi). */
+function AccountPlan() {
+  const { me } = useShell();
+  const q = useQuery<{ courses: { id: string }[]; payments: { status: string }[] }>("/api/market/purchases");
+  const pending = q.data?.payments.filter((p) => p.status === "PENDING").length ?? 0;
+  return (
+    <Card className="mt-6 max-w-3xl"><CardHeader><CardTitle>Tarif va kurslar</CardTitle></CardHeader>
+      <CardContent className="flex flex-wrap items-center justify-between gap-4">
+        <div className="text-sm"><p>Joriy tarif: <b>{me?.plan ?? "FREE"}</b></p>
+          <p className="text-muted-foreground">{q.data ? `${q.data.courses.length} ta kurs${pending ? `, ${pending} ta to'lov kutilmoqda` : ""}` : "Kurslar yuklanmoqda..."}</p></div>
+        <div className="flex flex-wrap gap-2"><Button asChild variant="outline" size="sm"><Link href="/obuna">Obuna va to'lovlar</Link></Button><Button asChild variant="outline" size="sm"><Link href="/market/mening-kurslarim">Kurslarim</Link></Button></div>
+      </CardContent></Card>
   );
 }
 

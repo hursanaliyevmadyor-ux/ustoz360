@@ -9,14 +9,14 @@ export const DARSYOR_HUB: ChoiceDef[] = [
 ];
 
 export const DARSYOR_MATERIALS: ChoiceDef[] = [
-  { key: "test", title: "Test generatori", desc: "O'quvchilar uchun 8 turdagi savol, javob va izoh bilan. Sinf tahlilidagi individual topshiriqlar ham shu yerda tayyorlanadi.", benefit: "Savollar tayyorlash", icon: ListChecks, tone: "teal", href: "/darsyor/test-generator", cta: "Ochish", tag: "AI ulangach ishlaydi" },
-  { key: "visual", title: "Ko'rgazmali materiallar", desc: "Venn, klaster, Frayer, baliq skeleti kabi tahrirlanadigan shablonlar.", benefit: "Dars uchun vizual vositalar", icon: Shapes, tone: "violet", href: "/darsyor/korgazma", cta: "Ochish", tag: "Muharrir tez orada" },
-  { key: "assess", title: "Baholash materiallari", desc: "Rubrika, mezonlar va kuzatuv varaqalari. Rubrikani CSV qilib yuklab olish mumkin.", benefit: "Aniq baholash mezonlari", icon: ClipboardList, tone: "rose", href: "/darsyor/baholash", cta: "Ochish" },
+  { key: "test", title: "Test generatori", desc: "O'quvchilar uchun 8 turdagi savol, javob va izoh bilan. Sinf tahlilidagi individual topshiriqlar ham shu yerda tayyorlanadi.", benefit: "Savollar tayyorlash", icon: ListChecks, tone: "teal", href: "/darsyor/test-generator", cta: "Ochish" },
+  { key: "visual", title: "Ko'rgazmali materiallar", desc: "Venn, klaster, Frayer, baliq skeleti kabi tahrirlanadigan shablonlar: saqlash va chop etish bilan.", benefit: "Dars uchun vizual vositalar", icon: Shapes, tone: "violet", href: "/darsyor/korgazma", cta: "Ochish" },
+  { key: "assess", title: "Baholash materiallari", desc: "Rubrika, kuzatuv varaqasi va fikr-mulohaza: serverda saqlanadi, CSV va chop etish bor.", benefit: "Aniq baholash mezonlari", icon: ClipboardList, tone: "rose", href: "/darsyor/baholash", cta: "Ochish" },
 ];
 
 export const TOIFA_HUB: ChoiceDef[] = [
-  { key: "plan", title: "Reja", desc: "Imtihongacha yo'l xaritasi, tayyorgarlik kalendari va kunlik reja bir joyda.", benefit: "Bosqichma-bosqich tayyorgarlik", icon: Route, tone: "teal", href: "/toifa/reja", cta: "Ochish", tag: "Namunaviy" },
-  { key: "docs", title: "Hujjatlar", desc: "Hujjatlar cheklisti va rasmiy ma'lumotlar manbasi bilan.", benefit: "Hech narsani unutmang", icon: FolderCheck, tone: "blue", href: "/toifa/hujjatlar", cta: "Ochish", tag: "Namunaviy" },
+  { key: "plan", title: "Reja", desc: "Maqsadingiz va test natijalaringizga qarab tuzilgan yo'l xaritasi, kalendar va kunlik reja.", benefit: "Bosqichma-bosqich tayyorgarlik", icon: Route, tone: "teal", href: "/toifa/reja", cta: "Ochish" },
+  { key: "docs", title: "Hujjatlar", desc: "Shaxsiy cheklist va administrator manba bilan kiritgan rasmiy ma'lumotlar.", benefit: "Hech narsani unutmang", icon: FolderCheck, tone: "blue", href: "/toifa/hujjatlar", cta: "Ochish" },
 ];
 
 export const BEPUL_HUB: ChoiceDef[] = [

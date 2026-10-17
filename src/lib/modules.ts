@@ -74,7 +74,7 @@ export const adminModule: Module = {
   subs: [
     { href: "/admin", label: "Dashboard" }, { href: "/admin/imtihonlar", label: "Imtihonlar" }, { href: "/admin/mavzular", label: "Mavzular" },
     { href: "/admin/seminarlar", label: "Seminarlar" }, { href: "/admin/foydalanuvchilar", label: "Foydalanuvchilar" },
-    { href: "/admin/savollar", label: "Savollar banki" }, { href: "/admin/kurslar", label: "Kurslar" },
+    { href: "/admin/savollar", label: "Savollar banki" }, { href: "/admin/kurslar", label: "Kurslar" }, { href: "/admin/kutubxona", label: "Kutubxona" }, { href: "/admin/rasmiy", label: "Rasmiy ma'lumotlar" },
     { href: "/admin/tolovlar", label: "To'lovlar" }, { href: "/admin/hisobotlar", label: "Hisobotlar" },
     { href: "/admin/sozlamalar", label: "Sozlamalar" },
   ],
@@ -87,6 +87,5 @@ export const searchIndex: { label: string; href: string; group: string }[] = [
   { label: "Barcha xizmatlar", href: "/xizmatlar", group: "Umumiy" },
   { label: "Profil", href: "/profil", group: "Hisob" },
   { label: "Obuna va to'lovlar", href: "/obuna", group: "Hisob" },
-  { label: "Holatlar namunasi (loading, empty, error)", href: "/holatlar", group: "Hisob" },
   ...allModules.flatMap((m) => m.subs.map((s) => ({ label: `${m.name}: ${s.label}`, href: s.href, group: m.name }))),
 ];

@@ -80,6 +80,17 @@ model User {
   aiRequests AiRequest[]
   aiChats    AiChat[]
   examAttempts ExamAttempt[]
+  notifications Notification[]
+  subscriptions Subscription[]
+  payments   Payment[]
+  teacherDocs TeacherDoc[]
+  planItems  PlanItem[]
+  checklist  ChecklistItem[]
+  classrooms Classroom[]
+  authoredCourses Course[] @relation("CourseAuthor")
+  courseAccess CourseAccess[]
+  libraryDocs LibraryDoc[]
+  libraryFavorites LibraryFavorite[]
 }
 
 model Profile {
@@ -269,6 +280,10 @@ model AiRequest {
   inputTokens  Int      @default(0)
   outputTokens Int      @default(0)
   status       String
+  /// So'rov davomiyligi (ms), prompt versiyasi va taxminiy narx (mikro-dollar). Matn saqlanmaydi.
+  latencyMs     Int?
+  promptVersion String?
+  costMicro     Int?
   createdAt    DateTime @default(now())
   @@index([userId, createdAt])
   @@index([createdAt])
@@ -399,4 +414,277 @@ model Seminar {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   @@index([startsAt])
+}
+
+// ---------- Platforma xizmatlari (sozlamalar, bildirishnoma, obuna, to'lov) ----------
+
+/// Admin boshqaradigan sozlamalar (kalit-qiymat). MAXFIY KALITLAR bu yerda SAQLANMAYDI: ular faqat muhit o'zgaruvchilarida.
+model SiteSetting {
+  key       String   @id
+  value     Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Masalan: seminar, reja, kurs, obuna, tizim.
+  kind      String
+  title     String
+  text      String
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([userId, createdAt])
+}
+
+/// Tarif kodda (src/lib/plans.ts); bu jadval foydalanuvchining qaysi tarifda ekanini saqlaydi.
+/// status: ACTIVE | CANCELED | EXPIRED. source: MANUAL (admin bergan) | PAYMENT (tasdiqlangan to'lov).
+model Subscription {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planKey   String
+  status    String    @default("ACTIVE")
+  source    String    @default("PAYMENT")
+  paymentId String?
+  startsAt  DateTime  @default(now())
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([userId, status])
+}
+
+/// kind: COURSE | PLAN. status: PENDING | PAID | FAILED | CANCELED | REFUNDED.
+/// Kirish/obuna faqat status PAID bo'lgandan keyin (server tasdig'i) beriladi. reference: foydalanuvchiga ko'rsatiladigan kod.
+model Payment {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String
+  courseId    String?
+  course      Course?   @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  planKey     String?
+  amount      Int
+  currency    String    @default("UZS")
+  provider    String
+  providerRef String?
+  reference   String    @unique
+  status      String    @default("PENDING")
+  meta        Json?
+  createdAt   DateTime  @default(now())
+  paidAt      DateTime?
+  @@unique([provider, providerRef])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// To'lov provayderi xabarini takror ishlamaslik uchun (idempotent webhook).
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  provider  String
+  eventId   String
+  createdAt DateTime @default(now())
+  @@unique([provider, eventId])
+}
+
+// ---------- DARSYOR: o'qituvchi hujjatlari ----------
+
+/// O'qituvchining saqlangan ishlari. kind: lesson_plan | visual | rubric | observation | taskset.
+/// data: turiga qarab tuzilma (bo'limlar, diagramma, mezonlar, savollar). status: DRAFT | SAVED.
+model TeacherDoc {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  title     String
+  subject   String?
+  grade     String?
+  data      Json
+  status    String   @default("SAVED")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, kind, updatedAt])
+}
+
+// ---------- TOIFA NAVIGATOR ----------
+
+/// Tayyorgarlik rejasi / kalendar bandi. source: MANUAL | AUTO (diagnostika va natijalarga ko'ra qoidalar bilan tuzilgan).
+model PlanItem {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime  @db.Date
+  title     String
+  kind      String    @default("TASK")
+  href      String?
+  source    String    @default("MANUAL")
+  doneAt    DateTime?
+  position  Int       @default(0)
+  createdAt DateTime  @default(now())
+  @@index([userId, date])
+}
+
+model ChecklistItem {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  note      String?
+  doneAt    DateTime?
+  position  Int       @default(0)
+  createdAt DateTime  @default(now())
+  @@index([userId, position])
+}
+
+/// Rasmiy havola yoki sana (admin kiritadi). verified=false bo'lsa foydalanuvchiga "tekshirilmagan" deb ko'rsatiladi.
+/// kind: LINK | DATE. exam: ATTESTATSIYA | MILLIY_SERTIFIKAT | bo'sh (umumiy).
+model OfficialInfo {
+  id         String    @id @default(cuid())
+  kind       String
+  exam       String?
+  title      String
+  url        String?
+  date       DateTime?
+  note       String?
+  sourceName String?
+  verified   Boolean   @default(false)
+  verifiedAt DateTime?
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+// ---------- SINF ANALITIKA ----------
+
+model Classroom {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  subject     String
+  grade       String?
+  createdAt   DateTime     @default(now())
+  students    Student[]
+  assessments Assessment[]
+  @@index([userId])
+}
+
+/// O'quvchi faqat taxallus bilan yuritiladi (ism-familiya, telefon saqlanmaydi).
+model Student {
+  id        String            @id @default(cuid())
+  classId   String
+  classroom Classroom         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  alias     String
+  createdAt DateTime          @default(now())
+  scores    AssessmentScore[]
+  @@unique([classId, alias])
+}
+
+/// kind: BEFORE (oldin) | AFTER (keyin) | CURRENT (joriy). Oldin/keyin taqqoslash bir xil topic bo'yicha.
+model Assessment {
+  id        String            @id @default(cuid())
+  classId   String
+  classroom Classroom         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title     String
+  topic     String
+  kind      String            @default("CURRENT")
+  maxScore  Int               @default(10)
+  date      DateTime          @db.Date
+  createdAt DateTime          @default(now())
+  scores    AssessmentScore[]
+  @@index([classId, date])
+}
+
+model AssessmentScore {
+  id           String     @id @default(cuid())
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  score        Float
+  @@unique([assessmentId, studentId])
+}
+
+// ---------- USTOZ MARKET ----------
+
+/// status: DRAFT | REVIEW | APPROVED | REJECTED | ARCHIVED. Katalogda faqat APPROVED ko'rinadi.
+model Course {
+  id           String         @id @default(cuid())
+  authorId     String
+  author       User           @relation("CourseAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  title        String
+  description  String         @default("")
+  subject      String         @default("Umumiy")
+  kind         String         @default("Videokurs")
+  priceUzs     Int            @default(0)
+  lessonCount  Int            @default(0)
+  /// Kurs materiallariga havola (video, kanal, papka). Faqat kursga kirish olgan foydalanuvchiga ko'rsatiladi.
+  accessUrl    String?
+  status       String         @default("DRAFT")
+  rejectReason String?
+  approvedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  access       CourseAccess[]
+  payments     Payment[]
+  @@index([status, createdAt])
+  @@index([authorId])
+}
+
+model CourseAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  paymentId String?
+  grantedAt DateTime @default(now())
+  @@unique([userId, courseId])
+}
+
+// ---------- BILIMXONA ----------
+
+/// Fayl Supabase Storage'da (storagePath), bu yerda faqat metadata.
+/// visibility: PRIVATE | PUBLIC_PENDING (ommaviy qilish so'ralgan) | PUBLIC (admin tasdiqlagan).
+/// status: UPLOADED | READY (matni indekslangan) | FAILED.
+model LibraryDoc {
+  id          String            @id @default(cuid())
+  ownerId     String
+  owner       User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title       String
+  fileName    String
+  mime        String
+  sizeBytes   Int
+  storagePath String
+  visibility  String            @default("PRIVATE")
+  status      String            @default("UPLOADED")
+  subject     String?
+  tags        String[]          @default([])
+  textChars   Int?
+  createdAt   DateTime          @default(now())
+  favorites   LibraryFavorite[]
+  chunks      LibraryChunk[]
+  @@index([ownerId, createdAt])
+  @@index([visibility, status])
+}
+
+model LibraryFavorite {
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  docId     String
+  doc       LibraryDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  @@id([userId, docId])
+}
+
+/// RAG uchun tayyor: hujjat matni bo'laklari (hozircha faqat TXT). embedding keyinroq alohida qo'shiladi.
+model LibraryChunk {
+  id    String     @id @default(cuid())
+  docId String
+  doc   LibraryDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+  idx   Int
+  text  String
+  @@unique([docId, idx])
 }

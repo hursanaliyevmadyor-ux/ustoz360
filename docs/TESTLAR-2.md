@@ -10,7 +10,7 @@ O'xshash bo'limlar alohida bo'lib qolmasligi uchun hammasi bitta USTOZ AI ichida
 | **Umumiy** (`/ustoz-ai`) | "Keyingi qadam" (haqiqiy ma'lumotga tayanadi) va bo'limlar: **Diagnostika** (shu yerda qoladi), Testlar, Natijalarim, Shaxsiy reja, AI bilan suhbat |
 | **Testlar** | Oddiy mashq (Tezkor / Tanlab / AI bilan o'rganish), Vaqtli, Mavzuli, Aralash, Vaziyatli, Xatolar testi, Imtihon simulyatsiyasi |
 | **Natijalarim** | Bilim xaritasi, Xatolar daftari, Mashqlar tarixi |
-| **Shaxsiy reja** | namunaviy (backend ulanmagan) |
+| **Shaxsiy reja** | TOIFA NAVIGATOR → Reja (haqiqiy, natijalardan qoidalar bilan tuziladi) |
 
 Birlashtirilgan takrorlar: "Bilim laboratoriyasi" alohida bo'lim emas (Oddiy mashq bo'ldi); "Xatolarim" kartasi va eski "Takrorlash" sahifasi (Xatolar testiga yo'naltiriladi); Diagnostika Testlar ichida takrorlanmaydi; yon menyudagi "Imtihon simulyatori", "Bilim laboratoriyasi" va "AI yordamchisi" USTOZ AI ichiga olindi. Eski manzillar ishlaydi, yo'l ko'rsatkichi va faol tab bo'lim bo'yicha ko'rsatiladi (`resolveSub`).
 

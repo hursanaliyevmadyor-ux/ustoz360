@@ -1,54 +1,68 @@
 "use client";
 import * as React from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { classTopics, classes, students } from "@/lib/demo";
+import { Pencil, Trash2 } from "lucide-react";
 import { modules } from "@/lib/modules";
+import { api } from "@/lib/admin-client";
+import { useQuery } from "@/lib/use-query";
+import { AnalysisPanel, ComparePanel, ResultsPanel, StudentsPanel, type Detail } from "@/components/sinf/class-view";
+import { QueryView } from "@/components/layout/query-view";
 import { PageHeader } from "@/components/layout/page";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Field, Input } from "@/components/ui/form";
-import { Table, Th, Td } from "@/components/ui/table";
+import { Select } from "@/components/ui/form";
+import { EmptyState, Skeleton } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
-import { LineChart } from "@/components/charts/charts";
+import { ClassDialog } from "@/components/sinf/class-dialog";
+import type { listClasses } from "@/server/sinf";
 
-/** Sinf tahlili va o'quvchilar natijalari bitta bo'limda: mavzular bo'yicha tahlil va har bir o'quvchining natijasi. */
-export default function Page() {
-  const weak = classTopics.filter((t) => t.v < 55);
-  const [open, setOpen] = React.useState(false);
-  const toast = useToast();
+const VIEWS = ["natijalar", "tahlil", "taqqoslash", "oquvchilar"] as const;
+
+function Inner() {
+  const router = useRouter(); const sp = useSearchParams(); const toast = useToast();
+  const classes = useQuery<Awaited<ReturnType<typeof listClasses>>>("/api/sinf");
+  const wanted = sp.get("classId");
+  const first = classes.data?.classes[0]?.id ?? null;
+  const classId = wanted && classes.data?.classes.some((c) => c.id === wanted) ? wanted : first;
+  const detail = useQuery<Detail>(classId ? `/api/sinf/${classId}` : null);
+  const view = (VIEWS as readonly string[]).includes(sp.get("view") ?? "") ? sp.get("view")! : "natijalar";
+  const go = (next: { classId?: string; view?: string }) => router.replace(`/sinf/tahlil?${new URLSearchParams({ classId: next.classId ?? classId ?? "", view: next.view ?? view })}`, { scroll: false });
+  const [edit, setEdit] = React.useState(false);
+
+  const remove = async () => {
+    if (!detail.data || !window.confirm(`«${detail.data.name}» sinfi, o'quvchilari va natijalari o'chiriladi. Davom etasizmi?`)) return;
+    const r = await api(`/api/sinf/${detail.data.id}`, "DELETE");
+    if (!r.ok) { toast("error", r.error); return; }
+    toast("success", "Sinf o'chirildi."); router.replace("/sinf");
+  };
+
   return (
     <>
-      <PageHeader module={modules[4]} title="Tahlil va natijalar" description="3-A sinf, Matematika. O'quvchilar anonim identifikator bilan yuritiladi." demo />
-      <p className="mb-4 rounded-xl bg-amber/10 p-3 text-sm"><b>Namunaviy ma'lumotlar.</b> Haqiqiy sinf natijalari backend ulangandan keyin shu yerda ko'rinadi.</p>
-      <Tabs defaultValue="tahlil">
-        <TabsList><TabsTrigger value="tahlil">Mavzular tahlili</TabsTrigger><TabsTrigger value="natijalar">O'quvchilar natijalari</TabsTrigger></TabsList>
-        <TabsContent value="tahlil">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card><CardHeader><div><CardTitle>Mavzular bo'yicha o'zlashtirish</CardTitle></div></CardHeader><CardContent className="space-y-4">
-              {classTopics.map((t) => <div key={t.name}><div className="mb-1 flex justify-between text-sm"><span className="font-semibold">{t.name}</span><b>{t.v}%</b></div>
-                <Progress value={t.v} barClass={t.v < 55 ? "bg-danger" : t.v < 75 ? "bg-amber" : "bg-success"} label={t.name} /></div>)}</CardContent></Card>
-            <Card><CardHeader><div><CardTitle>O'sish dinamikasi</CardTitle><CardDescription>O'rtacha natija, %</CardDescription></div></CardHeader>
-              <CardContent><LineChart data={classes[0].trend} labels={["Sen", "Okt", "Noy", "Dek", "Yan"]} color="#E11D48" /></CardContent></Card>
+      <PageHeader module={modules[4]} title="Tahlil va natijalar" description="Natijalarni kiriting, mavzular bo'yicha tahlil va oldin/keyin taqqoslashni ko'ring" />
+      <QueryView q={classes}>{(c) => c.classes.length === 0 ? (
+        <EmptyState title="Hali sinf yo'q" text="Avval sinf yarating." action={<Button asChild><Link href="/sinf">Sinflarga o'tish</Link></Button>} />
+      ) : (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <Select className="w-64" value={classId ?? ""} onChange={(e) => go({ classId: e.target.value })} aria-label="Sinf">{c.classes.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.subject}</option>)}</Select>
+            <Button variant="outline" size="sm" onClick={() => setEdit(true)} disabled={!detail.data}><Pencil className="h-4 w-4" />Sinfni tahrirlash</Button>
+            <Button variant="ghost" size="sm" onClick={remove} disabled={!detail.data}><Trash2 className="h-4 w-4 text-danger" />O'chirish</Button>
           </div>
-          <Card className="mt-6 p-5"><p className="font-extrabold">Qo'shimcha yordam kerak: {weak.map((w) => w.name).join(", ")}</p>
-            <p className="mt-1 text-sm text-muted-foreground">Individual topshiriqlar DARSYOR → Materiallar → Test generatorida tayyorlanadi: o'qituvchi tasdiqlamaguncha o'quvchilarga yuborilmaydi.</p>
-            <Button asChild className="mt-3"><Link href="/darsyor/test-generator">Topshiriq tayyorlash</Link></Button></Card>
-        </TabsContent>
-        <TabsContent value="natijalar">
-          <div className="mb-3 flex justify-end"><Button onClick={() => setOpen(true)}>Natija kiritish</Button></div>
-          <Card><Table><thead><tr><Th>ID</Th><Th>Taxallus</Th><Th>Natija</Th><Th>Qiyinchilik</Th><Th>Dinamika</Th></tr></thead>
-            <tbody>{students.map((s) => <tr key={s.id}><Td>{s.id}</Td><Td className="font-semibold">{s.alias}</Td><Td><b>{s.score}%</b></Td><Td>{s.weak}</Td>
-              <Td><Badge variant={s.trend === "yordam kerak" ? "amber" : s.trend === "o'sish" ? "success" : "neutral"}>{s.trend}</Badge></Td></tr>)}</tbody></Table></Card>
-          <p className="mt-3 text-xs text-muted-foreground">Natijalar yorlig'i doimiy emas: "yordam kerak" holati vaqtinchalik tavsiya.</p>
-        </TabsContent>
-      </Tabs>
-      <Dialog open={open} onOpenChange={setOpen}><DialogContent title="Natija kiritish" description="Qo'lda kiritish">
-        <div className="space-y-3"><Field label="O'quvchi ID"><Input placeholder="S-06" /></Field><Field label="Natija (%)"><Input type="number" min={0} max={100} /></Field>
-          <Button onClick={() => { setOpen(false); toast("info", "Saqlanmadi: backend ulanmagan."); }}>Saqlash</Button></div></DialogContent></Dialog>
+          <QueryView q={detail} skeleton={<Skeleton className="h-64 w-full" />}>{(d) => (
+            <Tabs value={view} onValueChange={(v) => go({ view: v })}>
+              <TabsList className="flex-wrap"><TabsTrigger value="natijalar">Natijalar</TabsTrigger><TabsTrigger value="tahlil">Tahlil</TabsTrigger><TabsTrigger value="taqqoslash">Oldin / keyin</TabsTrigger><TabsTrigger value="oquvchilar">O'quvchilar</TabsTrigger></TabsList>
+              <TabsContent value="natijalar"><ResultsPanel d={d} q={detail} /></TabsContent>
+              <TabsContent value="tahlil"><AnalysisPanel d={d} /></TabsContent>
+              <TabsContent value="taqqoslash"><ComparePanel d={d} /></TabsContent>
+              <TabsContent value="oquvchilar"><StudentsPanel d={d} q={detail} /></TabsContent>
+            </Tabs>)}</QueryView>
+          {edit && detail.data && <ClassDialog id={detail.data.id} initial={{ name: detail.data.name, subject: detail.data.subject, grade: detail.data.grade }} onClose={() => setEdit(false)} onSaved={() => { setEdit(false); detail.reload(); classes.reload(); }} />}
+        </div>)}</QueryView>
     </>
   );
+}
+
+export default function Page() {
+  return <React.Suspense fallback={<Skeleton className="h-96 w-full" />}><Inner /></React.Suspense>;
 }
