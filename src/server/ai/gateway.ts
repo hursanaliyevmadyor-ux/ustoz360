@@ -110,7 +110,7 @@ export const lessonSchema = {
 // ---- Bepul AI: OpenAI-mos endpoint (masalan, o'zingiz joylagan FreeLLMAPI yoki boshqa shlyuz) ----
 /** Bir nechta bepul xizmat: FREE_LLM_*, FREE_LLM2_*, FREE_LLM3_*. Birinchisi xato bersa yoki limitga yetsa, keyingisi sinaladi. */
 type FreeProvider = { base: string; key: string; model: string };
-const freeProviders = (): FreeProvider[] => ["", "2", "3"].flatMap((n) => {
+const freeProviders = (): FreeProvider[] => ["", "2", "3", "4", "5"].flatMap((n) => {
   const base = process.env[`FREE_LLM${n}_BASE_URL`], key = process.env[`FREE_LLM${n}_API_KEY`];
   return base && key ? [{ base: base.replace(/\/+$/, ""), key, model: process.env[`FREE_LLM${n}_MODEL`] || "auto" }] : [];
 });
