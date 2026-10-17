@@ -26,7 +26,8 @@ function Live({ topics }: { topics: T[] }) {
   const practiced = topics.filter((t) => t.total > 0).length;
   return (
     <>
-      <PageHeader module={modules[0]} title="Bilim xaritasi" description="Mavzular bo'yicha o'rganish holati: natija, savollar soni, qiyinlik va xatolarga qarab" />
+      <PageHeader module={modules[0]} title="Bilim xaritasi" description="Mavzular bo'yicha o'rganish holati: natija, savollar soni, qiyinlik va xatolarga qarab"
+        actions={<Button asChild variant="outline"><Link href="/toifa/reja?view=kunlik">Natijadan reja tuzish</Link></Button>} />
       {topics.length === 0 ? <EmptyState title="Mavzular hali qo'shilmagan" text="Mavzular admin tomonidan qo'shiladi." action={<Button asChild><Link href="/ustoz-ai/testlar">Testlar</Link></Button>} /> : (
         <>
           <ul className="mb-5 flex flex-wrap gap-2" aria-label="Holatlar izohi">

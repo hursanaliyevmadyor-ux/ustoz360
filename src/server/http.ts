@@ -1,13 +1,30 @@
 import { NextResponse } from "next/server";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { ApiError } from "./auth";
+
+/** Zod xabarlari o'zbekcha: foydalanuvchi forma xatosini tushunishi uchun (sxemada o'z matni berilgan bo'lsa, o'sha ishlatiladi). */
+z.config({
+  customError: (iss) => {
+    const n = (iss as { minimum?: number | bigint; maximum?: number | bigint }).minimum ?? (iss as { maximum?: number | bigint }).maximum;
+    const origin = (iss as { origin?: string }).origin;
+    const unit = origin === "string" ? "belgi" : origin === "array" || origin === "set" ? "ta element" : "";
+    switch (iss.code) {
+      case "invalid_type": return "Qiymat noto'g'ri turda yoki kiritilmagan.";
+      case "too_small": return origin === "string" || origin === "array" ? `Kamida ${String(n)} ${unit} bo'lishi kerak.` : `Qiymat ${String(n)} dan kam bo'lmasligi kerak.`;
+      case "too_big": return origin === "string" || origin === "array" ? `Ko'pi bilan ${String(n)} ${unit} bo'lishi mumkin.` : `Qiymat ${String(n)} dan oshmasligi kerak.`;
+      case "invalid_format": return "Format noto'g'ri.";
+      case "invalid_value": return "Ruxsat etilmagan qiymat tanlangan.";
+      default: return undefined;
+    }
+  },
+});
 
 export async function handle(fn: () => Promise<unknown>) {
   try {
     return NextResponse.json(await fn());
   } catch (e) {
     if (e instanceof ApiError) return NextResponse.json({ error: e.message, ...(e.code && { code: e.code }) }, { status: e.status });
-    if (e instanceof ZodError) return NextResponse.json({ error: "So'rov ma'lumotlari noto'g'ri." }, { status: 400 });
+    if (e instanceof ZodError) return NextResponse.json({ error: e.issues[0]?.message || "So'rov ma'lumotlari noto'g'ri.", code: "validation" }, { status: 400 });
     console.error(e);
     return NextResponse.json({ error: "Ichki xatolik." }, { status: 500 });
   }

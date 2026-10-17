@@ -11,6 +11,7 @@
     "test:e2e": "tsx e2e/api.e2e.ts",
     "test:e2e:social": "tsx e2e/social.e2e.ts",
     "test:e2e:ai": "tsx e2e/ai.e2e.ts",
+    "test:e2e:platform": "tsx e2e/platform.e2e.ts",
     "test:e2e:yandex": "tsx e2e/yandex.e2e.ts",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",

@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 export function LineChart({ data, labels, color = "#2563EB", height = 180 }: { data: number[]; labels: string[]; color?: string; height?: number }) {
   const w = 480, h = height, pad = 24;
   const max = Math.max(...data) * 1.1, min = Math.min(...data) * 0.8;
-  const x = (i: number) => pad + (i * (w - pad * 2)) / (data.length - 1);
-  const y = (v: number) => h - pad - ((v - min) / (max - min)) * (h - pad * 2);
+  const x = (i: number) => pad + (i * (w - pad * 2)) / Math.max(1, data.length - 1);
+  const y = (v: number) => h - pad - ((v - min) / (max - min || 1)) * (h - pad * 2); // barcha qiymat 0 bo'lsa ham NaN chiqmaydi
   const pts = data.map((v, i) => `${x(i)},${y(v)}`).join(" ");
   const id = `g${color.replace("#", "")}`;
   return (
@@ -22,7 +22,7 @@ export function LineChart({ data, labels, color = "#2563EB", height = 180 }: { d
 
 export function BarChart({ data, labels, colors = ["#2563EB", "#0D9488"], series = 1, height = 180 }: { data: number[][]; labels: string[]; colors?: string[]; series?: number; height?: number }) {
   const w = 480, h = height, pad = 24;
-  const max = Math.max(...data.flat()) * 1.1;
+  const max = Math.max(...data.flat()) * 1.1 || 1;
   const gw = (w - pad * 2) / labels.length;
   const bw = Math.min(22, (gw - 10) / series);
   return (

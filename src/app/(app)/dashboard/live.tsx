@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { ArrowRight, CalendarClock, CircleAlert, Play, Target, Timer, TrendingUp } from "lucide-react";
+import { ArrowRight, CalendarClock, CircleAlert, Megaphone, Play, Target, Timer, TrendingUp } from "lucide-react";
+import { sessionHref } from "@/lib/practice-client";
 import { ModulesAndQuick } from "@/components/layout/dashboard-bits";
 import { StatCard } from "@/components/layout/page";
 import { LineChart } from "@/components/charts/charts";
@@ -15,6 +16,11 @@ export type DashboardData = {
   errors: { total: number; due: number; mastered: number };
   topics: { name: string; correct: number; total: number; confidence: "LOW" | "MEDIUM" | "HIGH"; percent: number }[];
   tasks: { id: string; title: string; hint: string; href: string }[];
+  planToday?: { total: number; done: number };
+  seminars?: { id: string; title: string; startsAt: string; place: string | null }[];
+  resume?: { id: string; kind: string; total: number; answered: number; remainingSec: number | null } | null;
+  account?: { plan: string; endsAt: string | null; courses: number; pending: number; paymentsOn: boolean };
+  announcements?: { id: string; title: string; text: string; href: string }[];
 };
 
 export function LiveDashboard({ d }: { d: DashboardData }) {
@@ -25,6 +31,22 @@ export function LiveDashboard({ d }: { d: DashboardData }) {
         <Button asChild><Link href="/ustoz-ai/diagnostika"><Play className="h-4 w-4" />Test boshlash</Link></Button>
       </div>
 
+      {d.announcements && d.announcements.length > 0 && (
+        <section aria-label="Yangiliklar va e'lonlar" className="mb-6 space-y-2">
+          {d.announcements.map((a) => {
+            const body = <><span className="flex items-start gap-3"><Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden /><span><span className="block text-sm font-bold">{a.title}</span>{a.text && <span className="block text-sm text-muted-foreground">{a.text}</span>}</span></span></>;
+            const cls = "block rounded-2xl border border-primary/25 bg-primary/5 p-4";
+            return a.href ? (/^https:/i.test(a.href) ? <a key={a.id} href={a.href} target="_blank" rel="noopener noreferrer" className={cls}>{body}</a> : <Link key={a.id} href={a.href} className={cls}>{body}</Link>) : <div key={a.id} className={cls}>{body}</div>;
+          })}
+        </section>)}
+
+      {d.resume && (
+        <Card className="mb-6 border-primary/30 bg-primary/5"><CardContent className="flex flex-wrap items-center justify-between gap-4">
+          <div><p className="font-extrabold">Davom ettirilmagan mashq bor</p>
+            <p className="text-sm text-muted-foreground">{d.resume.answered} / {d.resume.total} savol{d.resume.remainingSec !== null ? ` · qolgan vaqt ${Math.floor(d.resume.remainingSec / 60)} daqiqa` : ""}</p></div>
+          <Button asChild><Link href={sessionHref(d.resume.kind, d.resume.id)}><Play className="h-4 w-4" />Davom ettirish</Link></Button>
+        </CardContent></Card>)}
+
       <section aria-label="Ko'rsatkichlar" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Imtihongacha" value={d.daysLeft !== null ? `${d.daysLeft} kun` : "Belgilanmagan"} delta={d.dailyMinutes ? `Kuniga ${d.dailyMinutes} daqiqa` : undefined} icon={Timer} tone="teal" />
         <StatCard label="Bilim darajasi" value={d.level !== null ? `${d.level}%` : "Ma'lumot kam"} icon={Target} tone="blue" />
@@ -34,7 +56,7 @@ export function LiveDashboard({ d }: { d: DashboardData }) {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader><div><CardTitle>Bugungi vazifalar</CardTitle><CardDescription>Natijalaringiz asosida</CardDescription></div></CardHeader>
+          <CardHeader><div><CardTitle>Bugungi vazifalar</CardTitle><CardDescription>{d.planToday?.total ? `Reja bo'yicha ${d.planToday.done}/${d.planToday.total} bajarildi` : "Natijalaringiz asosida"}</CardDescription></div></CardHeader>
           <CardContent>
             {d.tasks.length === 0 ? <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Hozircha vazifa yo'q. Yaxshi natija!</p> : (
               <ul className="space-y-2">{d.tasks.map((t) => (
@@ -71,6 +93,28 @@ export function LiveDashboard({ d }: { d: DashboardData }) {
             <Button asChild variant="outline" className="w-full"><Link href="/ustoz-ai/bilim-xaritasi">Bilim xaritasi<ArrowRight className="h-4 w-4" /></Link></Button>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        {d.account && (
+          <Card>
+            <CardHeader><div><CardTitle>Obuna va kurslar</CardTitle></div></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p className="flex items-center justify-between"><span>Tarif</span><Badge variant={d.account.plan === "FREE" ? "neutral" : "blue"}>{d.account.plan}</Badge></p>
+              {d.account.endsAt && <p className="flex items-center justify-between"><span>Amal qilish muddati</span><b>{new Date(d.account.endsAt).toISOString().slice(0, 10).split("-").reverse().join(".")}</b></p>}
+              <p className="flex items-center justify-between"><span>Sotib olingan kurslar</span><b>{d.account.courses}</b></p>
+              {d.account.pending > 0 && <p className="rounded-xl bg-amber/10 px-3 py-2 text-xs">{d.account.pending} ta to'lov tasdiqlanishini kutmoqda.</p>}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button asChild size="sm" variant="outline"><Link href="/obuna">Obuna</Link></Button>
+                <Button asChild size="sm" variant="outline"><Link href={d.account.courses || d.account.paymentsOn ? "/market/mening-kurslarim" : "/market"}>{d.account.courses ? "Kurslarim" : "Katalog"}</Link></Button>
+              </div>
+            </CardContent>
+          </Card>)}
+        {d.seminars && d.seminars.length > 0 && (
+          <Card className="lg:col-span-2"><CardHeader><div><CardTitle>Yaqin seminarlar</CardTitle></div><Link href="/seminarlar" className="text-sm font-semibold text-primary">Hammasi</Link></CardHeader>
+            <CardContent><ul className="grid gap-2 sm:grid-cols-3">{d.seminars.map((s) => (
+              <li key={s.id} className="rounded-xl border border-border p-3.5"><p className="text-sm font-semibold">{s.title}</p>
+                <p className="text-xs text-muted-foreground">{new Date(s.startsAt).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}{s.place ? ` · ${s.place}` : ""}</p></li>))}</ul></CardContent></Card>)}
       </div>
 
       <ModulesAndQuick />

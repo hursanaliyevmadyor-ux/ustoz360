@@ -28,7 +28,7 @@ export function StatCard({ label, value, delta, icon: Icon, tone = "blue" }: { l
         <span className={cn("grid h-11 w-11 place-items-center rounded-xl", tones[tone])}><Icon className="h-5 w-5" aria-hidden /></span>
         <p className="text-sm text-muted-foreground">{label}</p>
       </div>
-      <p className="mt-3 text-2xl font-extrabold tracking-tight">{value}</p>
+      <p className="mt-3 break-words text-xl font-extrabold leading-tight tracking-tight sm:text-2xl">{value}</p>
       {delta && <p className={cn("mt-1 flex items-center gap-1 text-xs font-semibold", down ? "text-danger" : "text-success")}>{down ? <TrendingDown className="h-3.5 w-3.5" /> : <TrendingUp className="h-3.5 w-3.5" />}{delta}</p>}
     </Card>
   );

@@ -79,6 +79,18 @@ export async function homeData(userId: string) {
   };
 }
 
+/** Davom ettirilmagan mashq/test (bosh sahifa uchun yengil so'rov): vaqti o'tmagan, tugallanmagan eng so'nggi sessiya. */
+export async function activePractice(userId: string) {
+  const now = new Date();
+  const active = await db.testSession.findFirst({ where: { ...engineWhere(userId), status: "IN_PROGRESS", expiresAt: { gt: now } }, orderBy: { startedAt: "desc" } });
+  if (!active) return null;
+  const cfg = parseConfig(active.config);
+  const remainingSec = cfg.durationSec ? Math.max(0, Math.round((active.startedAt.getTime() + cfg.durationSec * 1000 - now.getTime()) / 1000)) : null;
+  if (remainingSec !== null && remainingSec <= 0) return null;
+  const answered = cfg.policy === "deferred" ? Object.keys(cfg.answers).length : await db.userAnswer.count({ where: { sessionId: active.id } });
+  return { id: active.id, kind: cfg.kind, total: (active.questionIds as string[]).length, answered, remainingSec };
+}
+
 export async function topicsData(userId: string) {
   const [subjects, groups, last] = await Promise.all([
     db.subject.findMany({ include: { topics: { orderBy: { name: "asc" } } }, orderBy: { name: "asc" } }),

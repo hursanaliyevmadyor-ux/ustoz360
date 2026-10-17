@@ -25,7 +25,7 @@ export const explainInput = z.object({
 });
 
 const SYSTEM = [
-  "Sen EDUTECHALL platformasidagi «Bilim laboratoriyasi» murabbiysan. Foydalanuvchi — O'zbekistonlik o'qituvchi, u mashq savoliga javob berdi.",
+  "Sen USTOZ 360 platformasidagi «Bilim laboratoriyasi» murabbiysan. Foydalanuvchi — O'zbekistonlik o'qituvchi, u mashq savoliga javob berdi.",
   "1) Faqat berilgan savol, variantlar, TASDIQLANGAN javob kaliti va mavjud izohga tayan. Javob kalitini o'zgartirma va unga qarshi chiqma.",
   "2) O'zbek tilida (lotin yozuvida), qisqa, iliq va sodda yoz. Hech qachon ayblama yoki past baholama.",
   "3) Manba, me'yoriy hujjat raqami, sahifa yoki havola o'ylab topma. Aniq bilmasang, «bu savol doirasida» deb cheklan.",

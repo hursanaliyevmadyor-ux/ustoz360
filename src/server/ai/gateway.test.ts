@@ -8,6 +8,7 @@ describe("runFreeAi zaxira (failover)", () => {
   beforeEach(() => {
     vi.resetModules();
     process.env.ALLOW_EMAIL_SIGNUP = "1"; // tasdiqlash tekshiruvini o'tkazib yuboradi
+    process.env.AI_RETRY_MS = "0"; // testlarda kutmaymiz
     process.env.FREE_LLM_BASE_URL = "https://a.example.com/v1"; process.env.FREE_LLM_API_KEY = "ka"; process.env.FREE_LLM_MODEL = "ma";
     process.env.FREE_LLM2_BASE_URL = "https://b.example.com/v1/"; process.env.FREE_LLM2_API_KEY = "kb"; process.env.FREE_LLM2_MODEL = "mb";
   });
@@ -30,6 +31,23 @@ describe("runFreeAi zaxira (failover)", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 500 })));
     const { runFreeAi } = await import("./gateway");
     await expect(runFreeAi("u1", [{ role: "user", content: "hi" }])).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("5xx xatoda bir marta qayta uriniladi va muvaffaqiyatli bo'lsa javob qaytadi", async () => {
+    const f = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 502 })).mockResolvedValueOnce(ok("qayta"));
+    vi.stubGlobal("fetch", f);
+    const { runFreeAi } = await import("./gateway");
+    const r = await runFreeAi("u1", [{ role: "user", content: "hi" }]);
+    expect(r.text).toBe("qayta");
+    expect(f.mock.calls[1][0]).toBe("https://a.example.com/v1/chat/completions"); // xuddi shu xizmatga qayta urinish
+  });
+
+  it("limit (429) qayta urinilmaydi, darhol keyingi xizmatga o'tadi", async () => {
+    const f = vi.fn().mockResolvedValue(new Response("{}", { status: 429 }));
+    vi.stubGlobal("fetch", f);
+    const { runFreeAi } = await import("./gateway");
+    await expect(runFreeAi("u1", [{ role: "user", content: "hi" }])).rejects.toMatchObject({ status: 503 });
+    expect(f).toHaveBeenCalledTimes(2); // har bir xizmatga bittadan
   });
 
   it("kalit yo'q bo'lsa sozlanmagan deb hisoblanadi", async () => {

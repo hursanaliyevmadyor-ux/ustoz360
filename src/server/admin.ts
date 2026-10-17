@@ -3,6 +3,8 @@ import { Prisma } from "@prisma/client";
 import { ApiError } from "./auth";
 import { db } from "./db";
 import { deriveKind, slugify, type ExamInput, type QuestionInput, type SeminarInput } from "./adminvalid";
+import { notifyAll } from "./notify";
+import { getSetting } from "./settings";
 
 /** Faqat adminlar uchun kontent boshqaruvi. Chaqiruvchi (API yo'li) avval requireAdmin() bilan rolni tekshirishi shart. */
 
@@ -146,7 +148,15 @@ export async function listAdminSeminars() {
   const rows = await db.seminar.findMany({ orderBy: { startsAt: "desc" } });
   return { seminars: rows.map((s) => ({ ...s, startsAt: s.startsAt.toISOString(), createdAt: s.createdAt.toISOString() })) };
 }
-export async function createSeminar(i: SeminarInput) { return { id: (await db.seminar.create({ data: seminarData(i) })).id }; }
+export async function createSeminar(i: SeminarInput) {
+  const s = await db.seminar.create({ data: seminarData(i) });
+  // Yangi faol seminar haqida hammaga xabar (sozlamalarda o'chirilgan bo'lsa yuborilmaydi).
+  if (s.active && (await getSetting("notifications")).seminarAnnouncements) {
+    const when = s.startsAt.toISOString().slice(0, 10).split("-").reverse().join(".");
+    await notifyAll({ kind: "seminar", title: "Yangi seminar", text: `${s.title} — ${when}`, href: "/seminarlar" });
+  }
+  return { id: s.id };
+}
 export async function updateSeminar(id: string, i: SeminarInput) {
   const r = await db.seminar.updateMany({ where: { id }, data: seminarData(i) });
   if (!r.count) throw new ApiError(404, "Seminar topilmadi.");
