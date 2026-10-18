@@ -17,6 +17,7 @@ vi.mock("./db", () => ({ db: h.db }));
 vi.mock("./onboarding", () => ({ landingPath: async () => "/royxat" }));
 vi.mock("./ai/gateway", () => ({ runFreeAi: h.runFreeAi, freeUsageToday: h.freeUsageToday }));
 vi.mock("./ai/chats", () => ({ saveExchange: h.saveExchange }));
+vi.mock("./bot/digest", () => ({ digest: async () => ({ today: "2026-11-05", tomorrow: "2026-11-06", plan: [], planFuture: 0, dueErrors: 0, resume: null, seminars: [], daysLeft: null, targetExam: null, planName: "FREE", announcements: [] }) }));
 vi.mock("./auth", async (orig) => ({ ...(await orig<typeof import("./auth")>()), startSession: h.startSession }));
 
 import { createTelegramLogin, handleUpdate, pollTelegramLogin } from "./telegram";
@@ -40,7 +41,7 @@ beforeEach(() => {
 const msg = (text: string, extra: Record<string, unknown> = {}) => ({ update_id: Math.floor(Math.random() * 1e9), message: { chat: { id: 77, type: "private" }, from: { id: 5, first_name: "Ali", username: "ali" }, text, ...extra } });
 const contactMsg = (userId: number, phone = "+998 90 123-45-67") => ({ update_id: Math.floor(Math.random() * 1e9), message: { chat: { id: 77, type: "private" }, from: { id: 5, first_name: "Ali", username: "ali" }, contact: { phone_number: phone, user_id: userId } } });
 const PHONE = "+998901234567";
-const registeredUser = () => db.user.findUnique.mockResolvedValue({ id: "u1", name: "Ali", phone: PHONE, deletedAt: null, telegramUsername: "ali" });
+const registeredUser = (onboarded = true) => db.user.findUnique.mockResolvedValue({ id: "u1", name: "Ali", phone: PHONE, deletedAt: null, telegramUsername: "ali", profile: onboarded ? { onboardedAt: new Date() } : null });
 const lastMarkup = () => { const m = calls.filter((c) => c.method === "sendMessage"); return m.at(-1)?.body.reply_markup as { keyboard?: { request_contact?: boolean }[][]; remove_keyboard?: boolean } | undefined; };
 const liveRow = (extra: Record<string, unknown> = {}) => ({ id: "L1", code: "abc", consumedAt: null, confirmedAt: null, expiresAt: new Date(Date.now() + 60_000), ...extra });
 
@@ -157,16 +158,40 @@ describe("bot: telefon raqami bilan ro'yxatdan o'tish", () => {
   });
 });
 
-describe("bot: AI suhbat", () => {
-  it("oddiy savol AI'ga yuboriladi, javob botga va chat tarixiga yoziladi", async () => {
+describe("bot: kirish tekshiruvlari", () => {
+  it("AI rejimi yoqilmagan bo'lsa oddiy matn AI'ga ketmaydi, menyu ko'rsatiladi", async () => {
     registeredUser();
-    db.aiChat.findFirst.mockResolvedValue({ id: "C1", messages: [{ role: "assistant", content: "javob2" }, { role: "user", content: "savol1" }] });
-    h.runFreeAi.mockResolvedValue({ text: "AI javobi", model: "m" });
     await handleUpdate(msg("Dars rejasi tuz"), "https://site.example");
-    const sentMessages = h.runFreeAi.mock.calls[0][1];
-    expect(sentMessages.map((m: { content: string }) => m.content)).toEqual(["savol1", "javob2", "Dars rejasi tuz"]);
-    expect(h.saveExchange).toHaveBeenCalledWith("u1", "C1", "telegram", "Dars rejasi tuz", "AI javobi");
-    expect(sent()).toEqual(["AI javobi"]);
+    expect(h.runFreeAi).not.toHaveBeenCalled();
+    expect(sent()[0]).toContain("Tushunmadim");
+    expect(lastMarkup()?.keyboard).toBeTruthy();
+  });
+
+  it("ro'yxatdan o'tishni tugatmagan foydalanuvchiga ism so'raladi", async () => {
+    registeredUser(false);
+    await handleUpdate(msg("Dars rejasi tuz"), "https://site.example");
+    expect(h.runFreeAi).not.toHaveBeenCalled();
+    expect(sent()[0]).toContain("Ism va familiyangizni yozing");
+  });
+
+  it("/start: ro'yxatdan o'tgan foydalanuvchiga doimiy menyu va bosh sahifa ko'rsatiladi", async () => {
+    registeredUser();
+    await handleUpdate(msg("/start"), "https://site.example");
+    const kbCall = calls.find((c) => c.method === "sendMessage" && (c.body.reply_markup as { keyboard?: unknown } | undefined)?.keyboard)!;
+    expect((kbCall.body.reply_markup as { keyboard: { text: string }[][] }).keyboard.flat().map((k) => k.text)).toContain("📚 Testlar");
+    expect(sent().join("\n")).toContain("Bosh sahifa");
+  });
+
+  it("tugma bosilganda ro'yxatdan o'tmagan foydalanuvchiga ogohlantirish chiqadi", async () => {
+    db.user.findUnique.mockResolvedValue(null);
+    await handleUpdate({ update_id: 1, callback_query: { id: "c1", from: { id: 5 }, message: { message_id: 1, chat: { id: 77, type: "private" } }, data: "t.q" } }, "https://site.example");
+    const a = calls.find((c) => c.method === "answerCallbackQuery")!;
+    expect(String(a.body.text)).toContain("/start");
+  });
+
+  it("guruh chatidagi tugma bosilishi e'tiborga olinmaydi", async () => {
+    await handleUpdate({ update_id: 2, callback_query: { id: "c2", from: { id: 5 }, message: { message_id: 1, chat: { id: -9, type: "group" } }, data: "h" } }, "https://site.example");
+    expect(calls).toHaveLength(0);
   });
 
   it("raqamini tasdiqlamagan foydalanuvchi AI'dan foydalana olmaydi, raqam so'raladi", async () => {
@@ -181,11 +206,5 @@ describe("bot: AI suhbat", () => {
     await handleUpdate(msg("salom"), "https://site.example");
     expect(sent()[0]).toContain("/start");
     expect(h.runFreeAi).not.toHaveBeenCalled();
-  });
-
-  it("/limit qolgan so'rovlarni ko'rsatadi", async () => {
-    registeredUser(); h.freeUsageToday.mockResolvedValue({ used: 3, limit: 50, remaining: 47 });
-    await handleUpdate(msg("/limit"), "https://site.example");
-    expect(sent()[0]).toContain("47 / 50");
   });
 });

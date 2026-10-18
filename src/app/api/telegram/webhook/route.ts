@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { appOrigin } from "@/server/oauth";
-import { handleUpdate, webhookSecret, type TgUpdate } from "@/server/telegram";
+import { ensureWebhook, handleUpdate, webhookSecret, type TgUpdate } from "@/server/telegram";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
@@ -10,6 +10,8 @@ export const POST = async (req: Request) => {
   const want = webhookSecret();
   if (got.length !== want.length || !timingSafeEqual(Buffer.from(got), Buffer.from(want))) return new Response("forbidden", { status: 401 });
   try {
+    // Yangi server nusxasida webhook sozlamasi (qabul qilinadigan yangilanish turlari) bir marta yangilanadi: yangi versiya chiqqach tugmalar ham ishlaydi.
+    await ensureWebhook(appOrigin(req));
     await handleUpdate((await req.json()) as TgUpdate, appOrigin(req));
   } catch (e) { console.error("Telegram webhook xato", (e as Error).message); }
   return Response.json({ ok: true });

@@ -91,6 +91,21 @@ model User {
   courseAccess CourseAccess[]
   libraryDocs LibraryDoc[]
   libraryFavorites LibraryFavorite[]
+  botState   BotState?
+}
+
+/// Telegram botdagi holat: bot foydalanuvchidan keyingi matnni kutayotgan bo'lsa (masalan reja bandi nomi) va kunlik eslatma sozlamasi.
+model BotState {
+  userId      String   @id
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "idle" yoki kutilayotgan amal (masalan "plan.title", "ai").
+  mode        String   @default("idle")
+  data        Json?
+  /// Kunlik eslatma (reja, seminar, takrorlash) yoqilganmi.
+  remind      Boolean  @default(true)
+  /// Oxirgi eslatma yuborilgan sana (Toshkent vaqti, YYYY-MM-DD): bir kunda bittadan ortiq yuborilmaydi.
+  remindedOn  String?
+  updatedAt   DateTime @updatedAt
 }
 
 model Profile {
