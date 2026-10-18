@@ -3,31 +3,19 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, BookOpen, Brain, CalendarDays, ChevronRight, Grid2x2, Home, Moon, Search, Sparkles, Sun, User, CreditCard, LogOut, LogIn,
+  Brain, CalendarDays, ChevronRight, Grid2x2, Home, Search, Sparkles, User, CreditCard, LogOut, LogIn, ShieldCheck,
 } from "lucide-react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { allModules, dashboardItem, modules, findAny, resolveSub, searchIndex, adminModule } from "@/lib/modules";
 import { cn } from "@/lib/utils";
+import { AdminBar } from "@/components/admin/admin-bar";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/form";
 import { ToastProvider } from "@/components/ui/toast";
+import { Logo, Notifications, ThemeToggle, initialsOf, signOut } from "./shell-parts";
 import { ShellProvider, useShell } from "./shell-context";
-
-/** Sayt nomi sozlamalardan keladi (standart «USTOZ 360»): oxirgi so'z urg'u rangida. */
-function Logo({ className, dark }: { className?: string; dark?: boolean }) {
-  const { pub } = useShell();
-  const name = (pub?.siteName || "USTOZ 360").trim();
-  const parts = name.split(/\s+/);
-  const head = parts.length > 1 ? parts.slice(0, -1).join(" ") : name;
-  const tail = parts.length > 1 ? parts[parts.length - 1] : "";
-  return (
-    <Link href="/dashboard" className={cn("flex shrink-0 items-center gap-2.5 whitespace-nowrap", className)} aria-label={`${name} bosh sahifa`}>
-      <BookOpen className={cn("h-8 w-8", dark ? "text-[#7FA2FF]" : "text-primary")} strokeWidth={2.2} aria-hidden />
-      <span className={cn("text-lg font-black tracking-tight min-[380px]:text-xl", dark ? "text-white" : "text-foreground")}>{head}{tail && <> <span className={dark ? "text-[#7FA2FF]" : "text-primary"}>{tail}</span></>}</span>
-    </Link>
-  );
-}
 
 function NavLink({ href, icon: Icon, label, active }: { href: string; icon: React.ElementType; label: string; active: boolean }) {
   return (
@@ -39,8 +27,6 @@ function NavLink({ href, icon: Icon, label, active }: { href: string; icon: Reac
     </Link>
   );
 }
-
-const initialsOf = (label: string) => label.split(" ").filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
 function SideProfile() {
   const { me, ready } = useShell();
@@ -60,7 +46,7 @@ function SideProfile() {
   );
 }
 
-/** O'chirilgan modullar menyuda ko'rinmaydi (admin «Sozlamalar → Modullar»). Sozlama yuklanmaguncha hammasi ko'rinadi. */
+/** O'chirilgan modullar menyuda ko'rinmaydi (admin «Modullar»). Sozlama yuklanmaguncha hammasi ko'rinadi. */
 function useVisibleModules() {
   const { pub } = useShell();
   return React.useMemo(() => modules.filter((m) => pub?.modules?.[m.key] !== false), [pub]);
@@ -82,7 +68,7 @@ function Sidebar() {
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Modullar</p>
         {visible.filter((m) => m.key !== "ai").map((m) => <NavLink key={m.key} href={m.href} icon={m.icon} label={m.name} active={cur === m.key} />)}
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Hisob</p>
-        {isAdmin && <NavLink href="/admin" icon={adminModule.icon} label="Admin panel" active={cur === "admin"} />}
+        {isAdmin && <NavLink href="/admin" icon={adminModule.icon} label="Admin saytiga qaytish" active={false} />}
         <NavLink href="/obuna" icon={CreditCard} label="Obuna" active={path === "/obuna"} />
       </nav>
       <SideProfile />
@@ -189,66 +175,9 @@ function SearchDialog({ open, setOpen }: { open: boolean; setOpen: (v: boolean) 
   );
 }
 
-type Notif = { id: string; kind: string; title: string; text: string; href: string | null; unread: boolean; createdAt: string };
-
-function ago(iso: string) {
-  const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (m < 1) return "hozir";
-  if (m < 60) return `${m} daqiqa oldin`;
-  if (m < 1440) return `${Math.round(m / 60)} soat oldin`;
-  return `${Math.round(m / 1440)} kun oldin`;
-}
-
-/** Haqiqiy bildirishnomalar (bazadan). Kirmagan foydalanuvchida qo'ng'iroq ko'rinmaydi. */
-function Notifications() {
-  const { me } = useShell();
-  const router = useRouter();
-  const [items, setItems] = React.useState<Notif[]>([]); const [state, setState] = React.useState<"idle" | "loading" | "error">("idle");
-  const load = React.useCallback(() => {
-    setState("loading");
-    fetch("/api/notifications").then(async (r) => { if (!r.ok) throw new Error(); const d = await r.json(); setItems(d.items); setState("idle"); }).catch(() => setState("error"));
-  }, []);
-  React.useEffect(() => { if (me) load(); }, [me, load]);
-  if (!me) return null;
-  const unread = items.filter((i) => i.unread).length;
-  const read = (ids?: string[]) => {
-    setItems((s) => s.map((i) => (!ids || ids.includes(i.id) ? { ...i, unread: false } : i)));
-    void fetch("/api/notifications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(ids ? { ids } : {}) }).catch(() => {});
-  };
-  return (
-    <DM.Root onOpenChange={(o) => { if (o) load(); }}>
-      <DM.Trigger asChild>
-        <Button variant="ghost" size="icon" aria-label={`Bildirishnomalar${unread ? `, ${unread} ta yangi` : ""}`} className="relative">
-          <Bell className="h-5 w-5" aria-hidden />
-          {unread > 0 && <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-danger ring-2 ring-card" />}
-        </Button>
-      </DM.Trigger>
-      <DM.Portal>
-        <DM.Content align="end" sideOffset={8} className="z-50 max-h-[70vh] w-[min(360px,calc(100vw-24px))] overflow-y-auto rounded-2xl border border-border bg-card p-2 shadow-pop">
-          <div className="flex items-center justify-between px-3 py-2">
-            <p className="font-bold">Bildirishnomalar</p>
-            {unread > 0 && <button className="min-h-9 text-xs font-semibold text-primary" onClick={() => read()}>Hammasini o'qildi qilish</button>}
-          </div>
-          {state === "loading" && items.length === 0 && <p className="px-3 py-6 text-center text-sm text-muted-foreground">Yuklanmoqda...</p>}
-          {state === "error" && <p className="px-3 py-6 text-center text-sm text-danger">Yuklab bo'lmadi. Keyinroq urinib ko'ring.</p>}
-          {state === "idle" && items.length === 0 && <p className="px-3 py-6 text-center text-sm text-muted-foreground">Hozircha yangilik yo'q.</p>}
-          {items.map((n) => (
-            <DM.Item key={n.id} onSelect={() => { if (n.unread) read([n.id]); if (n.href) router.push(n.href); }}
-              className="flex min-h-11 cursor-pointer gap-3 rounded-xl px-3 py-2.5 outline-none data-[highlighted]:bg-muted">
-              <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", n.unread ? "bg-primary" : "bg-transparent")} />
-              <div><p className="text-sm font-semibold">{n.title}</p><p className="text-sm text-muted-foreground">{n.text}</p><p className="mt-0.5 text-xs text-muted-foreground">{ago(n.createdAt)}</p></div>
-            </DM.Item>
-          ))}
-        </DM.Content>
-      </DM.Portal>
-    </DM.Root>
-  );
-}
-
 function ProfileMenu() {
-  const { me, ready } = useShell();
+  const { me, ready, isAdmin } = useShell();
   const item = "flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm outline-none data-[highlighted]:bg-muted";
-  const out = async () => { await fetch("/api/auth/logout", { method: "POST" }).catch(() => {}); window.location.href = "/kirish"; };
   if (!ready) return <span className="skeleton h-9 w-9 rounded-full" aria-hidden />;
   if (!me) return <Button asChild size="sm"><Link href="/kirish"><LogIn className="h-4 w-4" />Kirish</Link></Button>;
   const label = me.name ?? me.email ?? "Foydalanuvchi";
@@ -264,22 +193,13 @@ function ProfileMenu() {
         <DM.Content align="end" sideOffset={8} className="z-50 w-56 rounded-2xl border border-border bg-card p-1.5 shadow-pop">
           <DM.Item asChild><Link href="/profil" className={item}><User className="h-4 w-4" />Profil</Link></DM.Item>
           <DM.Item asChild><Link href="/obuna" className={item}><CreditCard className="h-4 w-4" />Obuna va to'lovlar</Link></DM.Item>
+          {isAdmin && <DM.Item asChild><Link href="/admin" className={item}><ShieldCheck className="h-4 w-4" />Admin saytiga qaytish</Link></DM.Item>}
           <DM.Separator className="my-1 h-px bg-border" />
-          <DM.Item onSelect={out} className={item}><LogOut className="h-4 w-4" />Chiqish</DM.Item>
+          <DM.Item onSelect={signOut} className={item}><LogOut className="h-4 w-4" />Chiqish</DM.Item>
         </DM.Content>
       </DM.Portal>
     </DM.Root>
   );
-}
-
-function ThemeToggle() {
-  const [dark, setDark] = React.useState(false);
-  React.useEffect(() => { try { setDark(localStorage.getItem("u360-theme") === "dark"); } catch {} }, []);
-  React.useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
-    try { localStorage.setItem("u360-theme", dark ? "dark" : "light"); } catch {}
-  }, [dark]);
-  return <Button variant="ghost" size="icon" onClick={() => setDark((d) => !d)} aria-label={dark ? "Yorug' rejim" : "Qorong'u rejim"}>{dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</Button>;
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -294,6 +214,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded-lg focus:bg-primary focus:px-3 focus:py-2 focus:text-white">Asosiy kontentga o'tish</a>
       <Sidebar />
       <div className="lg:pl-64">
+        <AdminBar />
         <header className="sticky top-0 z-20 flex h-16 items-center gap-1.5 border-b border-border bg-background/90 px-3 backdrop-blur min-[380px]:gap-2 min-[380px]:px-4 sm:gap-3 lg:px-8">
           <Logo className="lg:hidden" />
           <div className="hidden min-w-0 flex-1 lg:block"><Breadcrumb /></div>
@@ -320,14 +241,28 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Qobiq tanlash: admin akkaunt kirsa admin sayti (alohida qobiq), «Ustoz ko'rinishi» tanlansa ustoz sayti va tepada admin paneli.
+ * Admin uchun ustoz sahifalariga to'g'ridan-to'g'ri kirilsa, admin saytiga qaytariladi.
+ */
+function Frame({ children }: { children: React.ReactNode }) {
+  const { ready, isAdmin, me, view, setView, adminMode } = useShell();
+  const path = usePathname(); const router = useRouter();
+  const prevPath = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!ready) return;
+    // Admin /admin sahifasiga kirsa admin sayti tiklanadi. Faqat YO'L o'zgarganda: «Ustoz ko'rinishi» bosilganda
+    // (ko'rinish o'zgaradi, yo'l hali /admin) qayta o'zgarib ketmasligi uchun.
+    const changed = prevPath.current !== path; prevPath.current = path;
+    if (changed && isAdmin && view === "teacher" && path.startsWith("/admin")) setView("admin");
+    else if (isAdmin && view === "admin" && !path.startsWith("/admin") && path !== "/kirish") router.replace("/admin");
+    // Ism-familiya va yashash joyi to'ldirilmagan ustoz avval ro'yxatdan o'tishni yakunlaydi (adminga bu shart emas).
+    else if (me && !isAdmin && me.onboarded === false) router.replace("/royxat");
+  }, [ready, isAdmin, view, path, me, router, setView]);
+  if (adminMode) return <AdminShell>{children}</AdminShell>;
+  return <ToastProvider><Shell>{children}</Shell></ToastProvider>;
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const nav = useRouter();
-  return (
-    <ToastProvider>
-      {/* Ism-familiya va yashash joyi to'ldirilmagan bo'lsa, avval ro'yxatdan o'tishni yakunlatamiz. */}
-      <ShellProvider onLoaded={(me) => { if (me && me.onboarded === false) nav.replace("/royxat"); }}>
-        <Shell>{children}</Shell>
-      </ShellProvider>
-    </ToastProvider>
-  );
+  return <ShellProvider><Frame>{children}</Frame></ShellProvider>;
 }
