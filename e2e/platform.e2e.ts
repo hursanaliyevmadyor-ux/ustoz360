@@ -148,6 +148,23 @@ async function main() {
     assert.equal(empty.status, 400);
   });
 
+  await t("admin statistikasi: hamma yo'nalish bo'limi ishlaydi, oddiy ustoz ko'ra olmaydi, shaxsiy ma'lumot chiqmaydi", async () => {
+    for (const name of ["users", "admins", "ustoz-ai", "darsyor", "toifa", "sinf", "market", "bilimxona", "ai", "seminarlar"]) {
+      const r = await admin.get(`/api/admin/stats/section?name=${name}&days=30`);
+      assert.equal(r.status, 200, `${name}: ${JSON.stringify(r.json).slice(0, 200)}`);
+      assert.ok(Array.isArray(r.json.kpis) && r.json.kpis.length > 0, `${name}: KPI yo'q`);
+      assert.equal((await user.get(`/api/admin/stats/section?name=${name}`)).status, 403, `${name}: ustoz ko'rmasin`);
+    }
+    assert.equal((await admin.get("/api/admin/stats/section?name=yoq")).status, 400);
+    const sinf = JSON.stringify((await admin.get("/api/admin/stats/section?name=sinf")).json);
+    assert.ok(!/alias|taxallus ro'yxati/i.test(sinf.replace(/taxalluslari/gi, "")), "SINF statistikasida o'quvchi ma'lumoti bo'lmasin");
+    // e'lon: admin qo'yadi, ustozning bosh sahifasida ko'rinadi, keyin o'chiriladi
+    const old = (await admin.get("/api/admin/settings")).json.settings.announcements;
+    assert.equal((await admin.put("/api/admin/settings", { key: "announcements", value: { items: [{ id: "e2e1", title: "E2E e'lon", text: "", href: "/seminarlar", active: true, until: "" }] } })).status, 200);
+    assert.ok((await user.get("/api/dashboard")).json.announcements.some((a: any) => a.title === "E2E e'lon"));
+    assert.equal((await admin.put("/api/admin/settings", { key: "announcements", value: old })).status, 200);
+  });
+
   await t("admin: hisobot CSV va dashboard haqiqiy ma'lumot, foydalanuvchi qidiruvi", async () => {
     const csv = await fetch(BASE + "/api/admin/reports?type=payments&format=csv", { headers: { cookie: `u360_session=${ADMIN}` } });
     assert.equal(csv.status, 200); assert.match(csv.headers.get("content-type") ?? "", /text\/csv/);

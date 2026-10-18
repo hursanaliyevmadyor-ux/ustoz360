@@ -1,13 +1,13 @@
 # USTOZ 360: yakunlash hisoboti
 
-Asos: audit ([AUDIT.md](AUDIT.md)), ish tarmog'i: `feat/platforma-yakunlash` (GitHub `main` o'zgartirilmagan, birlashtirish foydalanuvchi ruxsatidan keyin).
+Asos: audit ([AUDIT.md](AUDIT.md)). Platforma `main`ga birlashtirilgan (PR #13). Alohida admin sayti: ish tarmog'i `feat/admin-sayt` (8-bo'limga qarang); `main` foydalanuvchi ruxsatisiz o'zgartirilmaydi.
 
 ## 1. Bo'limlar holati
 
 | BO'LIM | AVVALGI HOLAT | QILINGAN ISH | HOZIRGI HOLAT | TEST NATIJASI |
 |---|---|---|---|---|
 | Umumiy xizmatlar | yo'q | Sozlamalar (`SiteSetting`), bildirishnoma, tarif/huquqlar (entitlement), to'lov xizmati, audit, fayl saqlash interfeysi | READY | birlik testlari + E2E |
-| Admin panel | DEMO (soxta raqamlar) | Dashboard (haqiqiy), foydalanuvchilar (qidiruv, rol, bloklash, tarif), kurslar tasdig'i, to'lovlar, kutubxona moderatsiyasi, rasmiy ma'lumotlar, hisobotlar (CSV), sozlamalar (modullar, AI, to'lov, ulanishlar holati) | READY | E2E: himoya, rol, CSV, statistika |
+| Admin panel | DEMO (soxta raqamlar) | Alohida admin sayti (o'z menyu va yuqori paneli), dashboard (haqiqiy), yo'nalishlar bo'yicha statistika, foydalanuvchilar (qidiruv, rol, bloklash, tarif), kurslar tasdig'i, to'lovlar, kutubxona moderatsiyasi, rasmiy ma'lumotlar, hisobotlar (CSV), audit jurnali, e'lonlar, modullar, sozlamalar (AI, to'lov, ulanishlar holati) | READY | E2E: himoya, rol, CSV, statistika |
 | Yon menyu/panel | soxta foydalanuvchi, demo bildirishnoma | Haqiqiy profil, bildirishnomalar, modul yoqish/o'chirish, chiqish; nom «USTOZ 360» | READY | 320px da tekshirilgan |
 | DARSYOR | toast va brauzer ichida | Dars ishlanmasi (AI/qo'lda, saqlash, qoralama, tarix, .txt/Word/chop etish), topshiriq generatori (8 tur, AI qoralamasi tasdiqsiz o'quvchi varag'iga kirmaydi), 7 ko'rgazma shabloni (saqlash, SVG/Word/chop etish), rubrika va kuzatuv varaqasi (server), fikr-mulohaza shabloni | READY (AI ulanmagan bo'lsa qo'lda ishlaydi) | 12 birlik testi + E2E (hujjatlar, egasi tekshiruvi) |
 | TOIFA | DEMO | Maqsad profildan, qoidali reja (diagnostika/natija/xatolar), kalendar (reja, seminar, imtihon, rasmiy sanalar), real yo'l xaritasi, shaxsiy cheklist, admin kiritadigan rasmiy ma'lumot (tekshirilgan/tekshirilmagan) | READY | 16 birlik testi + E2E |
@@ -25,7 +25,7 @@ Asos: audit ([AUDIT.md](AUDIT.md)), ish tarmog'i: `feat/platforma-yakunlash` (Gi
 
 ## 3. Yangi API
 Foydalanuvchi: `/api/settings/public`, `/api/notifications`, `/api/market/{catalog,order,orders/[id],purchases,author,author/[id],author/[id]/submit,author-request}`, `/api/payments/webhook`, `/api/docs`, `/api/docs/[id]`, `/api/ai/taskset`, `/api/toifa`, `/api/toifa/plan`, `/api/toifa/plan/[id]`, `/api/toifa/checklist`, `/api/toifa/checklist/[id]`, `/api/sinf` (+ `[id]`, `students`, `assessments`, `scores`), `/api/library` (+ `[id]`, `download`, `favorite`, `publish`, `ask`).
-Admin: `/api/admin/{stats,users,users/[id],courses,courses/[id],payments,payments/[id],reports,audit,settings,ai/test,ai/usage,official,official/[id],library,library/[id]}`.
+Admin: `/api/admin/{stats,stats/section,users,users/[id],courses,courses/[id],payments,payments/[id],reports,audit,settings,ai/test,ai/usage,official,official/[id],library,library/[id]}`.
 O'zgargan: `/api/me` (tarif), `/api/ai/lesson` (yagona AI kirish nuqtasi), `/api/dashboard` (reja va seminarlar).
 
 ## 4. Tashqi xizmatlar va nima kerak
@@ -40,9 +40,9 @@ O'zgargan: `/api/me` (tarif), `/api/ai/lesson` (yagona AI kirish nuqtasi), `/api
 Kalitlar bazada saqlanmaydi va admin sahifasida ko'rsatilmaydi: faqat «ulangan/ulanmagan».
 
 ## 5. Test natijalari
-- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 22 fayl, 308 test o'tdi. `npm run build`: o'tdi.
-- `npm run test:e2e:platform`: 9 blok o'tdi (himoya va rollar, MARKET/to'lov oqimi, tarif va AI limiti, DARSYOR, TOIFA, SINF, BILIMXONA, admin). Haqiqiy baza va sinov foydalanuvchilari bilan, so'ng o'chirilgan.
-- Brauzer: 320 va 375 px da gorizontal siljish yo'q (barcha asosiy sahifalar). Topilgan va tuzatilgan: sarlavha 320 px da toshishi, jadvaldagi yashirin matn sahifani kengaytirishi, kartochka sarlavhasi.
+- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 23 fayl, 314 test o'tdi. `npm run build`: o'tdi.
+- `npm run test:e2e:platform`: 10 blok o'tdi (himoya va rollar, MARKET/to'lov oqimi, tarif va AI limiti, DARSYOR, TOIFA, SINF, BILIMXONA, admin statistikasi, admin hisobot/qidiruv). Haqiqiy baza va sinov foydalanuvchilari bilan, so'ng o'chirilgan.
+- Brauzer: 320 va 375 px da gorizontal siljish yo'q (asosiy sahifalar va barcha yangi admin sahifalari). Topilgan va tuzatilgan: sarlavha 320 px da toshishi, jadvaldagi yashirin matn sahifani kengaytirishi, kartochka sarlavhasi, diagramma yorliqlari kaliti takrorlanishi, admin belgisi yorug' fonda ko'rinmasligi.
 
 ## 6. Xavfsizlik tekshiruvi
 - Har bir admin API'da `requireAdmin`; oddiy foydalanuvchi 403 oladi (E2E).
@@ -55,3 +55,10 @@ Kalitlar bazada saqlanmaydi va admin sahifasida ko'rsatilmaydi: faqat «ulangan/
 
 ## 7. Ishlab chiqarishga tayyorlik
 Kod va baza tayyor. Ishlatishdan oldin: (1) GitHub'da PR'ni ko'rib chiqish va birlashtirish (foydalanuvchi qarori), (2) hosting'da kerakli muhit o'zgaruvchilari, (3) AI kaliti va savollar bazasini haqiqiy savollar bilan to'ldirish (hozir 39 ta namunaviy savol), (4) to'lov provayderi bilan shartnoma, (5) rasmiy ma'lumotlarni admin orqali manba bilan kiritish.
+
+## 8. Admin sayti (alohida ko'rinish)
+- **Kim kiradi:** faqat `ADMIN`/`SUPERADMIN` roli. Bosh administrator: `hursanaliyevmadyor@gmail.com` (`prisma/make-admin.ts --super`). Qolganlarga rolni Admin → Foydalanuvchilar orqali bosh administrator beradi. Haqiqiy ruxsat har doim serverda (`requireAdmin`); brauzerdagi tekshiruv faqat qulaylik uchun.
+- **Ko'rinish:** admin kirganda ustoz bo'limi (dashboard, USTOZ AI, sinflar, hujjatlar...) ko'rinmaydi; o'z menyusi va yuqori paneli bor alohida sayt ochiladi (`AdminShell`, menyu: `src/lib/admin-nav.ts`: Boshqaruv, Foydalanuvchilar, Kontent, Savdo, Tizim). Ustoz yo'llariga kirsa, `/admin`ga qaytariladi.
+- **Ustoz ko'rinishi:** yuqoridagi menyudan almashtiriladi (tanlov brauzerda `u360-view` da saqlanadi). Bu ko'rinishda har sahifa tepasida admin paneli (`AdminBar`) chiqadi: shu bo'limni boshqarish havolasi va tezkor yangilik/e'lon qo'shish. Admin shaxsiy sinf, taxallus, ball, saqlangan hujjat va AI suhbatlarni ko'rmaydi: faqat yig'ma statistika va kontent.
+- **Statistika** (`/admin/statistika`, davr: 7/30/90 kun): Ustozlar, Adminlar, USTOZ AI, DARSYOR, TOIFA, SINF, MARKET, BILIMXONA, AI, Seminarlar. Har bo'lim alohida so'raladi (`/api/admin/stats/section?name=...&days=...`, mantiq `src/server/adminsections.ts`). Faqat sonlar va umumiy jadvallar chiqadi; bitta ustozning shaxsiy ma'lumoti chiqmaydi (E2E tekshiradi).
+- **Yangi admin sahifalari:** `/admin/statistika`, `/admin/audit` (admin va to'lov amallari jurnali), `/admin/elonlar` (yangilik va e'lonlar), `/admin/modullar` (modullarni yoqish/o'chirish).

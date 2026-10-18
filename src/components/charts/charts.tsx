@@ -15,7 +15,7 @@ export function LineChart({ data, labels, color = "#2563EB", height = 180 }: { d
       <polygon points={`${pad},${h - pad} ${pts} ${w - pad},${h - pad}`} fill={`url(#${id})`} />
       <polyline points={pts} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       {data.map((v, i) => <circle key={i} cx={x(i)} cy={y(v)} r="4" fill="#fff" stroke={color} strokeWidth="2.5" />)}
-      {labels.map((l, i) => <text key={l} x={x(i)} y={h - 6} textAnchor="middle" className="fill-muted-foreground text-[11px]">{l}</text>)}
+      {labels.map((l, i) => <text key={`${l}-${i}`} x={x(i)} y={h - 6} textAnchor="middle" className="fill-muted-foreground text-[11px]">{l}</text>)}
     </svg>
   );
 }
@@ -29,7 +29,7 @@ export function BarChart({ data, labels, colors = ["#2563EB", "#0D9488"], series
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="Ustunli diagramma">
       {[0, 1, 2, 3].map((i) => <line key={i} x1={pad} x2={w - pad} y1={pad + (i * (h - pad * 2)) / 3} y2={pad + (i * (h - pad * 2)) / 3} stroke="currentColor" className="text-border" />)}
       {labels.map((l, i) => (
-        <g key={l}>
+        <g key={`${l}-${i}`}>
           {Array.from({ length: series }).map((_, s) => {
             const v = data[s][i]; const bh = (v / max) * (h - pad * 2);
             return <rect key={s} x={pad + i * gw + (gw - bw * series) / 2 + s * bw} y={h - pad - bh} width={bw - 2} height={bh} rx="5" fill={colors[s]} />;

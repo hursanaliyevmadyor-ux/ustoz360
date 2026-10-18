@@ -72,7 +72,9 @@ export const adminModule: Module = {
   key: "admin", href: "/admin", name: "Admin panel", short: "Boshqaruv", icon: ShieldCheck, hex: "#122B49",
   bg: "bg-[#122B49]", text: "text-[#122B49] dark:text-[#9DB8DA]", soft: "bg-[#122B49]/10", bar: "bg-[#122B49]",
   subs: [
-    { href: "/admin", label: "Dashboard" }, { href: "/admin/imtihonlar", label: "Imtihonlar" }, { href: "/admin/mavzular", label: "Mavzular" },
+    { href: "/admin", label: "Dashboard" }, { href: "/admin/statistika", label: "Statistika" }, { href: "/admin/audit", label: "Audit jurnali" },
+    { href: "/admin/elonlar", label: "Yangilik va e'lonlar" }, { href: "/admin/modullar", label: "Modullar" },
+    { href: "/admin/imtihonlar", label: "Imtihonlar" }, { href: "/admin/mavzular", label: "Mavzular" },
     { href: "/admin/seminarlar", label: "Seminarlar" }, { href: "/admin/foydalanuvchilar", label: "Foydalanuvchilar" },
     { href: "/admin/savollar", label: "Savollar banki" }, { href: "/admin/kurslar", label: "Kurslar" }, { href: "/admin/kutubxona", label: "Kutubxona" }, { href: "/admin/rasmiy", label: "Rasmiy ma'lumotlar" },
     { href: "/admin/tolovlar", label: "To'lovlar" }, { href: "/admin/hisobotlar", label: "Hisobotlar" },

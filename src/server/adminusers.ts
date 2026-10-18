@@ -88,6 +88,6 @@ export async function updateUser(actor: { id: string; roles: { role: string }[] 
 }
 
 export async function auditTrail(take = 100) {
-  const rows = await db.auditLog.findMany({ where: { action: { startsWith: "admin." } }, orderBy: { createdAt: "desc" }, take: Math.min(take, 300), include: { user: { select: { name: true, email: true } } } });
+  const rows = await db.auditLog.findMany({ where: { OR: [{ action: { startsWith: "admin." } }, { action: { startsWith: "payment." } }, { action: { startsWith: "market." } }] }, orderBy: { createdAt: "desc" }, take: Math.min(take, 300), include: { user: { select: { name: true, email: true } } } });
   return { items: rows.map((r) => ({ id: r.id, action: r.action, actor: r.user?.name ?? r.user?.email ?? "—", meta: r.meta, createdAt: r.createdAt.toISOString() })) };
 }
