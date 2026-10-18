@@ -2,11 +2,11 @@
 import { clip, dayLabel, esc, fmtWhen } from "../botlogic";
 import type { Ctx } from "../ctx";
 import { digest, type Digest } from "../digest";
-import { b, type Btn, type Screen } from "../tg";
-import { heading } from "../ui";
+import { b, webApp, type Btn, type Screen } from "../tg";
+import { APP_BUTTON, heading } from "../ui";
 
 /** Bosh sahifa: bugungi reja (bosib belgilanadi), davom ettiriladigan test, takrorlash, yaqin seminar va e'lonlar. */
-export function homeScreen(name: string, d: Digest): Screen {
+export function homeScreen(name: string, d: Digest, origin = ""): Screen {
   const lines = [heading("🏠", "Bosh sahifa"), `Salom${name ? `, ${esc(name)}` : ""}!`, ""];
   lines.push(`📅 <b>Bugun, ${dayLabel(d.today)}</b>`);
   if (d.plan.length) for (const p of d.plan) lines.push(`${p.done ? "✅" : "⬜"} ${esc(clip(p.title, 80))}`);
@@ -18,6 +18,7 @@ export function homeScreen(name: string, d: Digest): Screen {
   for (const a of d.announcements) lines.push("", `📢 <b>${esc(clip(a.title, 80))}</b>${a.text ? `\n${esc(clip(a.text, 200))}` : ""}`);
 
   const kb: Btn[][] = d.plan.slice(0, 6).map((p) => [b(`${p.done ? "✅" : "⬜"} ${clip(p.title, 34)}`, `h.pt.${p.id}.${p.done ? 0 : 1}`)]);
+  if (origin.startsWith("https://")) kb.unshift([webApp(APP_BUTTON, origin)]);
   const row1: Btn[] = [];
   if (d.resume) row1.push(b("▶️ Davom ettirish", `t.n.${d.resume.id}`));
   else row1.push(b("⚡ Tezkor mashq", "t.q"));
@@ -29,7 +30,7 @@ export function homeScreen(name: string, d: Digest): Screen {
 
 export async function entry(ctx: Ctx) {
   await ctx.idle();
-  await ctx.show(homeScreen(ctx.name, await digest(ctx.userId)));
+  await ctx.show(homeScreen(ctx.name, await digest(ctx.userId), ctx.origin));
 }
 
 export async function onCb(ctx: Ctx, a: string[]) {

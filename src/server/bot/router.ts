@@ -14,8 +14,8 @@ import * as seminars from "./sections/seminars";
 import * as sinf from "./sections/sinf";
 import * as tests from "./sections/tests";
 import * as toifa from "./sections/toifa";
-import { answerCallback, sendScreen, type TgCallback, type TgMessage, type TgUser } from "./tg";
-import { HELP, MENU_MARKUP, SECTION_BY_COMMAND, SECTION_BY_TEXT, nav, type Sec } from "./ui";
+import { answerCallback, sendScreen, webApp, type TgCallback, type TgMessage, type TgUser } from "./tg";
+import { APP_BUTTON, HELP, SECTION_BY_COMMAND, SECTION_BY_TEXT, menuMarkup, nav, type Sec } from "./ui";
 
 /** Botdagi barcha xabar va tugmalarni bo'limlarga yo'naltiradi. Bo'limlar Telegram tafsilotini bilmaydi: faqat Ctx bilan ishlaydi. */
 export type BotUser = { id: string; name: string | null; onboarded: boolean };
@@ -58,7 +58,7 @@ async function openSection(ctx: Ctx, sec: Sec) {
 
 /** Bosh menyuni (pastdagi tugmalar bilan) ko'rsatadi va bosh sahifani ochadi. /start dan keyin ishlatiladi. */
 export async function showMenuAndHome(user: BotUser, chatId: number, origin: string) {
-  await sendScreen(chatId, { text: "Pastdagi menyudan bo'lim tanlang. Adashib qolsangiz: /menyu" }, { reply_markup: MENU_MARKUP });
+  await sendScreen(chatId, { text: "Pastdagi menyudan bo'lim tanlang yoki «📱 Ilovani ochish» bilan saytni Telegram ichida oching. Adashib qolsangiz: /menyu" }, { reply_markup: menuMarkup(origin) });
   await openSection(await makeCtx(user, chatId, origin), "h");
 }
 
@@ -85,6 +85,13 @@ export async function routeMessage(msg: TgMessage, user: BotUser, origin: string
       const s = SECTION_BY_COMMAND.get(cmd);
       if (s) return await openSection(ctx, s);
       if (cmd === "yordam" || cmd === "help") { await ctx.idle(); await ctx.say({ text: HELP, kb: [nav()] }); return; }
+      if (cmd === "ilova" || cmd === "app") {
+        await ctx.idle();
+        await ctx.say(origin.startsWith("https://")
+          ? { text: "📱 <b>USTOZ 360 ilovasi</b>\nSaytning to'liq ko'rinishi Telegram ichida ochiladi: kirish avtomatik.", kb: [[webApp(APP_BUTTON, origin)], nav()] }
+          : "Ilova faqat https manzilda ishlaydi.");
+        return;
+      }
       if (cmd === "yangi") { await ai.onCb(ctx, ["new"]); return; }
       if (cmd === "limit") { await ctx.say(await ai.limitLine(ctx.userId)); return; }
       await ctx.say("Bunday buyruq yo'q. /menyu ni bosing.");
@@ -96,7 +103,7 @@ export async function routeMessage(msg: TgMessage, user: BotUser, origin: string
       for (const [prefix, fn] of TEXT) if (mode === prefix || mode.startsWith(prefix)) { if (await fn(ctx, mode, text)) return; }
     }
     // Hech qaysi bo'lim kutmayotgan matn: AI'ga ketmaydi, yo'l ko'rsatiladi.
-    await sendScreen(msg.chat.id, { text: `Tushunmadim 🙂 Pastdagi menyudan bo'lim tanlang.\nSavol bermoqchi bo'lsangiz: «🤖 AI yordamchi».` }, { reply_markup: MENU_MARKUP });
+    await sendScreen(msg.chat.id, { text: `Tushunmadim 🙂 Pastdagi menyudan bo'lim tanlang.\nSavol bermoqchi bo'lsangiz: «🤖 AI yordamchi».` }, { reply_markup: menuMarkup(origin) });
   } catch (e) {
     await ctx.say(`⚠️ ${esc(errorText(e))}`);
   }

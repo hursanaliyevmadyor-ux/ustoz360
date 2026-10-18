@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 import { PrismaClient } from "@prisma/client";
+import { signInitData } from "../src/server/bot/webapp";
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:3000";
 const PORT = 8099;
@@ -260,6 +261,35 @@ async function main() {
     const nu = await db.user.findUnique({ where: { telegramId: String(TG_NEW) }, include: { profile: true } });
     assert.equal(nu?.phone, "+998900000092"); assert.equal(nu?.name, "Sinov Yangi"); assert.equal(nu?.profile?.region, "Andijon viloyati"); assert.ok(nu?.profile?.onboardedAt);
     await n.msg("🏠 Bosh sahifa"); assert.match(text(), /Bosh sahifa/);
+  });
+
+  await t("Mini App: initData tekshiruvi, avtomatik kirish, boshqa akkauntga almashish, ro'yxatdan o'tmaganga rad", async () => {
+    const TOKEN = "1:e2e"; // saytga berilgan TELEGRAM_BOT_TOKEN bilan bir xil
+    const init = (id: number, authDateMs = Date.now(), tokenUsed = TOKEN) => signInitData({ auth_date: String(Math.floor(authDateMs / 1000)), query_id: "AAE2E", user: JSON.stringify({ id, first_name: "Sinov" }) }, tokenUsed);
+    const auth = async (initData: string, cookie?: string) => {
+      const r = await fetch(`${BASE}/api/auth/telegram/webapp`, { method: "POST", headers: { "content-type": "application/json", ...(cookie && { cookie }) }, body: JSON.stringify({ initData }) });
+      const setCookie = (r.headers.getSetCookie?.() ?? []).find((c) => c.startsWith("u360_session="))?.split(";")[0];
+      return { status: r.status, json: (await r.json()) as any, cookie: setCookie };
+    };
+    const me = async (cookie: string) => (await (await fetch(`${BASE}/api/me`, { headers: { cookie } })).json()) as any;
+
+    assert.equal((await auth("hash=" + "0".repeat(64) + "&auth_date=1")).status, 401);
+    assert.equal((await auth(init(TG, Date.now(), "999:boshqa-bot"))).status, 401, "boshqa bot imzosi rad etilishi kerak");
+    assert.equal((await auth(init(TG, Date.now() - 26 * 3_600_000))).status, 401, "eskirgan ma'lumot rad etilishi kerak");
+    const stranger = await auth(init(91_000_099));
+    assert.equal(stranger.status, 404); assert.equal(stranger.json.code, "telegram_not_registered");
+
+    const first = await auth(init(TG));
+    assert.equal(first.status, 200); assert.equal(first.json.already, false); assert.ok(first.cookie, "sessiya cookie'si berilishi kerak");
+    assert.equal((await me(first.cookie!)).user?.name, "Bot Sinov");
+    const again = await auth(init(TG), first.cookie);
+    assert.equal(again.status, 200); assert.equal(again.json.already, true); assert.equal(again.cookie, undefined, "ikkinchi marta yangi sessiya ochilmasligi kerak");
+
+    // Shu qurilmada boshqa odamning sessiyasi qolgan bo'lsa, Telegram egasiga almashtiriladi
+    const other = await auth(init(TG_NEW), first.cookie);
+    assert.equal(other.status, 200); assert.equal(other.json.already, false); assert.ok(other.cookie && other.cookie !== first.cookie);
+    assert.equal((await me(other.cookie!)).user?.name, "Sinov Yangi");
+    assert.equal(await db.authSession.count({ where: { user: { telegramId: String(TG) } } }), 1);
   });
 
   console.log(`\n${pass} ta blok o'tdi.`);

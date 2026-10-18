@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 process.env.TELEGRAM_BOT_TOKEN = "123:ABC";
 
-import { b, editScreen, inline, link, sendPlain, sendScreen } from "./tg";
+import { b, editScreen, inline, link, sendPlain, sendScreen, webApp } from "./tg";
 
 const calls: { method: string; body: Record<string, unknown> }[] = [];
 let respond: (method: string, body: Record<string, unknown>) => { ok: boolean; description?: string; result?: unknown };
@@ -23,6 +23,11 @@ describe("Telegram qatlami", () => {
     expect(k.inline_keyboard).toEqual([[{ text: "A", callback_data: "a.1" }, { text: "Sayt", url: "https://x.uz" }], [{ text: "B", callback_data: "b" }]]);
     expect(inline(undefined)).toBeUndefined();
     expect(inline([[]])?.inline_keyboard).toEqual([]);
+  });
+
+  it("Mini App tugmasi web_app sifatida yuboriladi", () => {
+    const k = inline([[webApp("📱 Ilova", "https://site.uz")]])!;
+    expect(k.inline_keyboard).toEqual([[{ text: "📱 Ilova", web_app: { url: "https://site.uz" } }]]);
   });
 
   it("64 baytdan uzun callback_data dasturlash xatosi sifatida darhol aniqlanadi", () => {
