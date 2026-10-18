@@ -50,6 +50,23 @@ describe("runFreeAi zaxira (failover)", () => {
     expect(f).toHaveBeenCalledTimes(2); // har bir xizmatga bittadan
   });
 
+  it("10 tagacha bepul xizmat qo'llab-quvvatlanadi: 6-10 o'rinlar ham zaxira sifatida ishlaydi", async () => {
+    for (const k of ["FREE_LLM_API_KEY", "FREE_LLM2_API_KEY"]) delete process.env[k];
+    process.env.FREE_LLM10_BASE_URL = "https://j.example.com/v1"; process.env.FREE_LLM10_API_KEY = "kj"; process.env.FREE_LLM10_MODEL = "mj";
+    process.env.FREE_LLM6_BASE_URL = "https://f.example.com/v1"; process.env.FREE_LLM6_API_KEY = "kf";
+    const f = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 429 })).mockResolvedValueOnce(ok("o'ninchi"));
+    vi.stubGlobal("fetch", f);
+    try {
+      const { runFreeAi, aiHealth } = await import("./gateway");
+      const r = await runFreeAi("u1", [{ role: "user", content: "hi" }]);
+      expect(r.text).toBe("o'ninchi");
+      expect(f.mock.calls.map((c) => c[0])).toEqual(["https://f.example.com/v1/chat/completions", "https://j.example.com/v1/chat/completions"]);
+      expect(typeof aiHealth).toBe("function");
+    } finally {
+      for (const k of ["FREE_LLM10_BASE_URL", "FREE_LLM10_API_KEY", "FREE_LLM10_MODEL", "FREE_LLM6_BASE_URL", "FREE_LLM6_API_KEY"]) delete process.env[k];
+    }
+  });
+
   it("kalit yo'q bo'lsa sozlanmagan deb hisoblanadi", async () => {
     delete process.env.FREE_LLM_API_KEY; delete process.env.FREE_LLM2_API_KEY;
     const { freeConfigured } = await import("./gateway");

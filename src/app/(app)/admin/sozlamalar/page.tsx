@@ -17,7 +17,7 @@ import type { SettingsMap, SettingKey } from "@/server/settingsdef";
 import type { Integration } from "@/server/sysstatus";
 
 type Data = { settings: SettingsMap; integrations: Integration[] };
-type Health = { claude: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string }; free: { host: string; model: string; ok: boolean; ms: number; error?: string }[]; checkedAt: string };
+type Health = { claude: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string }; free: { host: string; model: string; ok: boolean; ms: number; error?: string }[]; web?: { gemini: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string }; tavily: { configured: boolean } }; checkedAt: string };
 const MODULE_NAMES: Record<keyof SettingsMap["modules"], string> = { ai: "USTOZ AI", darsyor: "DARSYOR", toifa: "TOIFA NAVIGATOR", market: "USTOZ MARKET", sinf: "SINF ANALITIKA", bilimxona: "BILIMXONA", bepul: "BEPUL AI" };
 
 function useSave() {
@@ -145,6 +145,47 @@ function UsageCard() {
   );
 }
 
+type WebStats = {
+  tavily: { configured: boolean; creditsMonth: number; monthlyCap: number; remaining: number; remote: { used: number; limit: number | null; plan: string | null } | null };
+  gemini: { configured: boolean; model: string | null; today: number; dailyCap: number };
+  searchesToday: number; cacheHitsMonth: number; kbAnswersMonth: number; cacheEntries: number; perUserLimit: number; auto: boolean;
+};
+
+/** Internet qidiruvi holati: Tavily ulanishi, sarflangan kreditlar, kesh va limitlar (kalitlar ko'rsatilmaydi). */
+function WebCard() {
+  const q = useQuery<WebStats>("/api/admin/ai/web");
+  const cell = (label: string, value: React.ReactNode, hint?: string) => <div className="rounded-xl border border-border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-0.5 text-lg font-extrabold">{value}</p>{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>;
+  return (
+    <Card className="lg:col-span-2"><CardHeader><CardTitle>Internetdan qidirish</CardTitle></CardHeader><CardContent>
+      <QueryView q={q} skeleton={<p className="text-sm text-muted-foreground">Yuklanmoqda...</p>}>{(w) => {
+        const pct = Math.min(100, Math.round((w.tavily.creditsMonth / Math.max(1, w.tavily.monthlyCap)) * 100));
+        return (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Badge>{w.tavily.configured ? "Tavily ulangan" : "Tavily ulanmagan"}</Badge>
+              <Badge>{w.gemini.configured ? `Zaxira: Gemini (${w.gemini.model})` : "Zaxira Gemini ulanmagan (ixtiyoriy)"}</Badge>
+              <Badge>{w.auto ? "Avtomatik qidirish yoqilgan" : "Avtomatik qidirish o'chiq"}</Badge>
+            </div>
+            {!w.tavily.configured && <p className="rounded-xl bg-muted p-3 text-sm">Tavily kaliti (TAVILY_API_KEY) hali Vercel'ga qo'yilmagan. Kalit qo'yilgach bu yerda sarflangan kreditlar ko'rinadi.</p>}
+            <div>
+              <div className="mb-1 flex justify-between text-sm"><span className="font-semibold">Shu oy sarflangan kreditlar</span><span>{w.tavily.creditsMonth} / {w.tavily.monthlyCap}</span></div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden><div className={`h-full rounded-full ${pct >= 90 ? "bg-danger" : "bg-primary"}`} style={{ width: `${pct}%` }} /></div>
+              <p className="mt-1 text-xs text-muted-foreground">Qolgan: {w.tavily.remaining}. Chegaraga yetsa, qidiruv zaxira xizmatga o'tadi (Gemini ulangan bo'lsa) yoki oddiy AI javob beradi.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {cell("Tavily hisobida (rasmiy)", w.tavily.remote ? `${w.tavily.remote.used}${w.tavily.remote.limit ? ` / ${w.tavily.remote.limit}` : ""}` : "—", w.tavily.remote?.plan ? `Reja: ${w.tavily.remote.plan}` : "Tavily bu ma'lumotni bermadi")}
+              {cell("Bugungi qidiruvli javoblar", w.searchesToday, `Har foydalanuvchiga kuniga ${w.perUserLimit} ta`)}
+              {cell("Keshdan berilgan (oy)", w.cacheHitsMonth, `Kesh yozuvlari: ${w.cacheEntries}. Kredit sarflanmagan`)}
+              {cell("Bilim bazasidan (oy)", w.kbAnswersMonth, "Internetga chiqilmagan")}
+            </div>
+            {w.gemini.configured && <p className="text-xs text-muted-foreground">Gemini zaxirasi bugun: {w.gemini.today} / {w.gemini.dailyCap} (bepul kvota kuniga ~500).</p>}
+          </div>
+        );
+      }}</QueryView>
+    </CardContent></Card>
+  );
+}
+
 function AiTab({ s, set, put, busy, integrations }: { s: SettingsMap; set: <K extends SettingKey>(k: K, v: SettingsMap[K]) => void; put: (k: SettingKey) => void; busy: boolean; integrations: Integration[] }) {
   const toast = useToast();
   const [h, setH] = React.useState<Health | null>(null); const [testing, setTesting] = React.useState(false);
@@ -159,11 +200,12 @@ function AiTab({ s, set, put, busy, integrations }: { s: SettingsMap; set: <K ex
       <Card><CardHeader><CardTitle>Limitlar va narx</CardTitle></CardHeader><CardContent className="space-y-4">
         <label className="flex min-h-11 items-center justify-between rounded-xl border border-border p-3.5 text-sm font-semibold">AI yoqilgan<Switch aria-label="AI yoqilgan" checked={a.enabled} onCheckedChange={(v) => set("ai", { ...a, enabled: v })} /></label>
         <label className="flex min-h-11 items-center justify-between rounded-xl border border-border p-3.5 text-sm font-semibold">Bepul AI yoqilgan<Switch aria-label="Bepul AI yoqilgan" checked={a.freeEnabled} onCheckedChange={(v) => set("ai", { ...a, freeEnabled: v })} /></label>
+        <label className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-border p-3.5 text-sm font-semibold"><span>Avtomatik internet qidiruvi<span className="block text-xs font-normal text-muted-foreground">Yangi/rasmiy ma'lumot yoki tayyor material so'ralganda AI o'zi qidiradi</span></span><Switch aria-label="Avtomatik internet qidiruvi" checked={a.webAuto} onCheckedChange={(v) => set("ai", { ...a, webAuto: v })} /></label>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Kunlik limit (FREE)" hint="Bo'sh: server standarti. PRO ×2, PREMIUM ×3"><Input type="number" min={1} value={a.dailyLimit ?? ""} onChange={(e) => set("ai", { ...a, dailyLimit: numOrNull(e.target.value) })} /></Field>
           <Field label="Bepul AI kunlik limiti" hint="Bo'sh: server standarti"><Input type="number" min={1} value={a.freeDailyLimit ?? ""} onChange={(e) => set("ai", { ...a, freeDailyLimit: numOrNull(e.target.value) })} /></Field>
           <Field label="Daqiqada so'rov"><Input type="number" min={1} max={120} value={a.perMinute} onChange={(e) => set("ai", { ...a, perMinute: Number(e.target.value) || 1 })} /></Field>
-          <span />
+          <Field label="Internetdan qidirish, kunlik limit" hint="Har foydalanuvchiga. Bepul qidiruv kvotasi (Gemini kuniga ~500, Tavily oyiga 1000) tez tugamasligi uchun kichik tuting"><Input type="number" min={1} max={200} value={a.webDailyLimit} onChange={(e) => set("ai", { ...a, webDailyLimit: Math.min(200, Math.max(1, Number(e.target.value) || 1)) })} /></Field>
           <Field label="Kirish narxi, USD / 1 mln token" hint="0: xarajat hisoblanmaydi"><Input type="number" min={0} step="0.01" value={a.priceInPerMTok} onChange={(e) => set("ai", { ...a, priceInPerMTok: Number(e.target.value) || 0 })} /></Field>
           <Field label="Chiqish narxi, USD / 1 mln token"><Input type="number" min={0} step="0.01" value={a.priceOutPerMTok} onChange={(e) => set("ai", { ...a, priceOutPerMTok: Number(e.target.value) || 0 })} /></Field>
         </div>
@@ -174,11 +216,14 @@ function AiTab({ s, set, put, busy, integrations }: { s: SettingsMap; set: <K ex
         <Button variant="outline" loading={testing} onClick={test}><Plug className="h-4 w-4" />Ulanishni sinash</Button>
         {h && (
           <div className="space-y-1.5 rounded-xl bg-muted p-3 text-sm" aria-live="polite">
-            {!h.claude.configured && h.free.length === 0 && <p>Hech qaysi AI xizmati ulanmagan: sinash uchun xizmat yo'q.</p>}
+            {!h.claude.configured && h.free.length === 0 && !h.web?.gemini.configured && !h.web?.tavily.configured && <p>Hech qaysi AI xizmati ulanmagan: sinash uchun xizmat yo'q.</p>}
+            {h.web?.gemini.configured && <p>Gemini qidiruvi{h.web.gemini.model ? ` (${h.web.gemini.model})` : ""}: <b className={h.web.gemini.ok ? "text-success" : "text-danger"}>{h.web.gemini.ok ? "ishlayapti" : `xato (${h.web.gemini.error ?? "?"})`}</b> · {h.web.gemini.ms} ms</p>}
+            {h.web?.tavily.configured && <p>Tavily qidiruvi: <b className="text-success">ulangan</b> <span className="text-muted-foreground">(kredit sarflamaslik uchun sinab ko'rilmaydi)</span></p>}
             {h.claude.configured && <p>Claude{h.claude.model ? ` (${h.claude.model})` : ""}: <b className={h.claude.ok ? "text-success" : "text-danger"}>{h.claude.ok ? "ishlayapti" : `xato (${h.claude.error ?? "?"})`}</b> · {h.claude.ms} ms</p>}
             {h.free.map((f) => <p key={f.host}>{f.host} ({f.model}): <b className={f.ok ? "text-success" : "text-danger"}>{f.ok ? "ishlayapti" : `xato (${f.error ?? "?"})`}</b> · {f.ms} ms</p>)}
           </div>)}
       </CardContent></Card>
+      <WebCard />
       <UsageCard />
     </div>
   );

@@ -31,7 +31,8 @@ O'zgargan: `/api/me` (tarif), `/api/ai/lesson` (yagona AI kirish nuqtasi), `/api
 ## 4. Tashqi xizmatlar va nima kerak
 | Xizmat | Holat | Kerak |
 |---|---|---|
-| AI (Claude yoki bepul OpenAI-mos xizmat) | BLOCKED: kalit yo'q | `ANTHROPIC_API_KEY` yoki `FREE_LLM_BASE_URL`, `FREE_LLM_API_KEY`, `FREE_LLM_MODEL` (OpenRouter uchun `:free` model nomi). Keyin Admin → Sozlamalar → AI → «Ulanishni sinash» |
+| AI (Claude yoki bepul OpenAI-mos xizmat) | BLOCKED: kalit yo'q | `ANTHROPIC_API_KEY` yoki `FREE_LLM_BASE_URL`, `FREE_LLM_API_KEY`, `FREE_LLM_MODEL` (OpenRouter uchun `:free` model nomi; zaxira uchun `FREE_LLM2_*` ... `FREE_LLM10_*`). Keyin Admin → Sozlamalar → AI → «Ulanishni sinash» |
+| Internet qidiruvi (Tavily, zaxirada Gemini) | Kod tayyor; kalit yo'q | `TAVILY_API_KEY` (bepul oyiga 1000 kredit), ixtiyoriy `GEMINI_API_KEY`. Oqim, limitlar va admin ko'rsatkichlari: [INTERNET-QIDIRUV.md](INTERNET-QIDIRUV.md). Baza: `prisma/supabase-update-web-cache.sql` (qo'llangan) |
 | Fayl saqlash | BLOCKED | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (faqat serverda), ixtiyoriy `SUPABASE_STORAGE_BUCKET` (shaxsiy bucket o'zi yaratiladi) |
 | To'lov provayderi | BLOCKED | Click/Payme shartnomasi va kalitlari. Tayyor umumiy webhook: `PAYMENT_WEBHOOK_SECRET`, `PAYMENT_CHECKOUT_URL`. Hozir «Bank o'tkazmasi» (admin tasdiqlaydi): Admin → Sozlamalar → To'lov |
 | Email (SMTP) | BLOCKED | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` |
@@ -41,9 +42,10 @@ O'zgargan: `/api/me` (tarif), `/api/ai/lesson` (yagona AI kirish nuqtasi), `/api
 Kalitlar bazada saqlanmaydi va admin sahifasida ko'rsatilmaydi: faqat «ulangan/ulanmagan».
 
 ## 5. Test natijalari
-- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 28 fayl, 410 test o'tdi. `npm run build`: o'tdi.
+- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 36 fayl, 504 test o'tdi. `npm run build`: o'tdi.
 - `npm run test:e2e:platform`: 10 blok o'tdi (himoya va rollar, MARKET/to'lov oqimi, tarif va AI limiti, DARSYOR, TOIFA, SINF, BILIMXONA, admin statistikasi, admin hisobot/qidiruv). Haqiqiy baza va sinov foydalanuvchilari bilan, so'ng o'chirilgan.
 - `npm run test:e2e:bot`: 13 blok o'tdi (bot menyusi, testlar, TOIFA, SINF, DARSYOR, AI, kurslar, kutubxona, profil, kunlik eslatma, ro'yxatdan o'tish, Mini App kirishi). Mini App brauzerda haqiqiy Telegram skripti bilan ham sinalgan: avtomatik kirish, noto'g'ri imzoni rad etish, oddiy brauzerga ta'sir qilmasligi. Haqiqiy baza va soxta Telegram serveri bilan; Telegram talablari (HTML, 4096 belgi, `callback_data`) ham tekshiriladi. Sinov foydalanuvchilari oxirida o'chiriladi.
+- `npm run test:e2e:websearch`: 9 blok o'tdi (internet qidiruvi: bilim bazasi birinchi, rasmiy domenlar, ishonchlilik, qat'iy javob, tayyor material yaratilmasligi, kesh, limitlar, admin ko'rsatkichlari). Haqiqiy baza va soxta Tavily serveri bilan, kredit sarflanmaydi.
 - Brauzer: 320 va 375 px da gorizontal siljish yo'q (asosiy sahifalar va barcha yangi admin sahifalari). Topilgan va tuzatilgan: sarlavha 320 px da toshishi, jadvaldagi yashirin matn sahifani kengaytirishi, kartochka sarlavhasi, diagramma yorliqlari kaliti takrorlanishi, admin belgisi yorug' fonda ko'rinmasligi.
 
 ## 6. Xavfsizlik tekshiruvi

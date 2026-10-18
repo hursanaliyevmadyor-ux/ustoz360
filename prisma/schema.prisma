@@ -108,6 +108,15 @@ model BotState {
   updatedAt   DateTime @updatedAt
 }
 
+/// Internet qidiruvi natijalarining vaqtinchalik keshi (Tavily kreditini tejash uchun). Kalit: so'rov va sozlamalarning xeshi. Foydalanuvchi ma'lumoti yo'q.
+model WebSearchCache {
+  key       String   @id
+  query     String
+  results   Json
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+
 model Profile {
   userId        String    @id
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
