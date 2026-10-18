@@ -1,7 +1,9 @@
 import { ApiError } from "../../auth";
 import { db } from "../../db";
 import { saveExchange } from "../../ai/chats";
-import { freeConfigured, freeUsageToday, runFreeAi } from "../../ai/gateway";
+import { freeConfigured, freeUsageToday } from "../../ai/gateway";
+import { smartFreeChat } from "../../ai/smart";
+import { encodeSources, sourcesPlain } from "../../../lib/websources";
 import type { Ctx } from "../ctx";
 import { b, typing } from "../tg";
 import { heading, nav } from "../ui";
@@ -52,9 +54,11 @@ export async function onText(ctx: Ctx, mode: string, text: string): Promise<bool
   const history = (chat?.messages ?? []).slice().reverse().map((m) => ({ role: m.role as "user" | "assistant", content: m.content.slice(0, 4000) }));
   const messages = [...history, { role: "user" as const, content: text.slice(0, 4000) }].slice(-20);
   try {
-    const r = await runFreeAi(ctx.userId, messages);
-    await saveExchange(ctx.userId, chat?.id, "telegram", text.slice(0, 4000), r.text);
-    await ctx.plain(r.text, AI_KB);
+    // Yangi/rasmiy ma'lumot yoki tayyor material so'ralsa, avtomatik internet qidiruvi (manbalar bilan); aks holda oddiy AI.
+    const r = await smartFreeChat(ctx.userId, messages, { origin: ctx.origin });
+    await saveExchange(ctx.userId, chat?.id, "telegram", text.slice(0, 4000), encodeSources(r.reply, r.sources, r.queries));
+    const src = sourcesPlain(r.sources);
+    await ctx.plain(src ? `${r.reply}\n\n${src}` : r.reply, AI_KB);
   } catch (e) {
     if (e instanceof ApiError) await ctx.plain(e.message, AI_KB);
     else { console.error("Bot AI xato", (e as Error).message); await ctx.plain("Xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.", AI_KB); }

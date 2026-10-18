@@ -46,14 +46,14 @@ const startOfDay = () => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); retu
 
 export async function usageToday(userId: string) {
   const [used, l] = await Promise.all([
-    db.aiRequest.count({ where: { userId, createdAt: { gte: startOfDay() }, feature: { notIn: ["free-chat", "health"] }, status: { not: "blocked" } } }),
+    db.aiRequest.count({ where: { userId, createdAt: { gte: startOfDay() }, feature: { notIn: ["free-chat", "health", "web-search"] }, status: { not: "blocked" } } }),
     limitsFor(userId),
   ]);
   return { used, limit: l.daily, remaining: Math.max(0, l.daily - used) };
 }
 
 /** Daqiqalik chegara: bir foydalanuvchi bir daqiqada ko'pi bilan `perMinute` ta so'rov yuboradi. */
-async function checkRate(userId: string, perMinute: number) {
+export async function checkRate(userId: string, perMinute: number) {
   const n = await db.aiRequest.count({ where: { userId, createdAt: { gte: new Date(Date.now() - 60_000) }, status: { not: "blocked" }, feature: { not: "health" } } });
   if (n >= perMinute) throw new ApiError(429, "Juda tez-tez so'rayapsiz. Bir daqiqadan so'ng qayta urinib ko'ring.", "rate_limited");
 }
@@ -67,8 +67,8 @@ export async function runAi(c: Call): Promise<AiResult> {
   const l = await limitsFor(c.userId);
   if (!l.enabled) throw new ApiError(503, "AI xizmati administrator tomonidan vaqtincha o'chirilgan.", "ai_disabled");
   await checkRate(c.userId, l.perMinute);
-  const used0 = await db.aiRequest.count({ where: { userId: c.userId, createdAt: { gte: startOfDay() }, feature: { notIn: ["free-chat", "health"] }, status: { not: "blocked" } } });
-  if (used0 >= l.daily || (await db.aiRequest.count({ where: { createdAt: { gte: startOfDay() }, feature: { notIn: ["free-chat", "health"] } } })) >= globalDailyCap()) {
+  const used0 = await db.aiRequest.count({ where: { userId: c.userId, createdAt: { gte: startOfDay() }, feature: { notIn: ["free-chat", "health", "web-search"] }, status: { not: "blocked" } } });
+  if (used0 >= l.daily || (await db.aiRequest.count({ where: { createdAt: { gte: startOfDay() }, feature: { notIn: ["free-chat", "health", "web-search"] } } })) >= globalDailyCap()) {
     await db.aiRequest.create({ data: { userId: c.userId, feature: c.feature, model: aiModel(), status: "blocked" } });
     throw new ApiError(429, `Bugungi AI limiti tugadi (${l.daily} ta so'rov). Ertaga qayta urinib ko'ring.`, "daily_limit");
   }
@@ -108,9 +108,10 @@ export const lessonSchema = {
 };
 
 // ---- Bepul AI: OpenAI-mos endpoint (masalan, o'zingiz joylagan FreeLLMAPI yoki boshqa shlyuz) ----
-/** Bir nechta bepul xizmat: FREE_LLM_*, FREE_LLM2_*, FREE_LLM3_*. Birinchisi xato bersa yoki limitga yetsa, keyingisi sinaladi. */
+/** Bir nechta bepul xizmat: FREE_LLM_*, FREE_LLM2_* ... FREE_LLM10_* (10 tagacha). Birinchisi xato bersa yoki limitga yetsa, keyingisi sinaladi. */
 type FreeProvider = { base: string; key: string; model: string };
-const freeProviders = (): FreeProvider[] => ["", "2", "3", "4", "5"].flatMap((n) => {
+const FREE_SLOTS = ["", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+const freeProviders = (): FreeProvider[] => FREE_SLOTS.flatMap((n) => {
   const base = process.env[`FREE_LLM${n}_BASE_URL`], key = process.env[`FREE_LLM${n}_API_KEY`];
   return base && key ? [{ base: base.replace(/\/+$/, ""), key, model: process.env[`FREE_LLM${n}_MODEL`] || "auto" }] : [];
 });

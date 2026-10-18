@@ -21,7 +21,7 @@ Saytning to'liq ko'rinishi Telegram ichida ochiladi (alohida brauzer yoki parol 
 | 📖 Kutubxona | Qidirish, hammasi/mening/sevimlilar, yuklab olish havolasi, hujjatdan so'rash, chatga PDF/DOCX/TXT yuborib yuklash (saqlash xizmati ulangan bo'lsa) |
 | 🛒 Kurslar | Katalog, sotib olish (buyurtma, to'lov kodi, ko'rsatma), mening kurslarim, obuna tariflari, buyurtmalarim |
 | 📅 Seminarlar | Yaqin tadbirlar, batafsil va qatnashish havolasi |
-| 🤖 AI yordamchi | Faqat shu tugma bosilganda yoqiladi: shundan keyingi matn AI'ga ketadi. Boshqa bo'limga o'tilsa, AI o'chadi (tasodifiy matn limitni sarflamaydi) |
+| 🤖 AI yordamchi | Faqat shu tugma bosilganda yoqiladi: shundan keyingi matn AI'ga ketadi. Boshqa bo'limga o'tilsa, AI o'chadi (tasodifiy matn limitni sarflamaydi). Yangi/rasmiy ma'lumot yoki tayyor material so'ralsa, avtomatik internet qidiruvi (manbalar ro'yxati bilan): [INTERNET-QIDIRUV.md](INTERNET-QIDIRUV.md) |
 | 👤 Profil | Tarif, AI limit, kurslar, eslatmani yoqish/o'chirish, maqsad, ism va hudud, yordam |
 
 Buyruqlar: `/ilova`, `/menyu`, `/bosh`, `/testlar`, `/reja`, `/sinflar`, `/darsyor`, `/kutubxona`, `/kurslar`, `/seminarlar`, `/ai`, `/profil`, `/yordam`, `/yangi` (yangi AI suhbat), `/limit`.

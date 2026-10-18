@@ -3,16 +3,17 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowUp, BarChart3, BookOpen, Check, ClipboardList, Copy, FileText, GraduationCap, Home, Lightbulb, Mail, Menu, MessageSquare, Plus, Sparkles, Trash2, X, Zap,
+  ArrowUp, BarChart3, BookOpen, Check, ClipboardList, Copy, ExternalLink, FileText, Globe, GraduationCap, Home, Lightbulb, Mail, Menu, MessageSquare, Plus, Sparkles, Trash2, X, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { TRUST_NAMES, encodeSources, splitSources } from "@/lib/websources";
 
 type Role = "user" | "assistant";
 type Msg = { role: Role; content: string; error?: boolean };
 type Chat = { id: string; title: string; model: string };
 type ModelKey = "free" | "claude";
-type Status = { configured: boolean; remaining: number; limit: number; free: { configured: boolean; remaining: number; limit: number } };
+type Status = { configured: boolean; remaining: number; limit: number; free: { configured: boolean; remaining: number; limit: number }; web?: { configured: boolean; remaining: number; limit: number } };
 type Me = { id: string; name: string | null; email: string | null } | null;
 
 const TOOLS = [
@@ -62,6 +63,39 @@ function Rich({ text }: { text: string }) {
   );
 }
 
+/** Assistent javobi: matn, undan keyin (internetdan qidirilgan bo'lsa) manbalar va qidiruv so'zlari. */
+function Answer({ content }: { content: string }) {
+  const { text, sources, queries } = splitSources(content);
+  return (
+    <>
+      <Rich text={text} />
+      {sources.length > 0 && (
+        <div className="mt-3 rounded-xl border border-border bg-muted/50 p-3 text-sm">
+          <p className="mb-1.5 flex items-center gap-1.5 font-semibold"><Globe className="h-4 w-4" aria-hidden />Manbalar</p>
+          <ol className="space-y-1">
+            {sources.map((s, i) => (
+              <li key={s.url} className="flex gap-2">
+                <span className="text-muted-foreground">{i + 1}.</span>
+                <span className="min-w-0 break-words">
+                  <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" className="text-primary hover:underline">{s.title}<ExternalLink className="ml-1 inline h-3 w-3" aria-hidden /></a>
+                  {s.trust && TRUST_NAMES[s.trust] && <span className={cn("ml-2 rounded-full px-2 py-0.5 text-xs", s.trust === "official" || s.trust === "kb" ? "bg-success/15 text-success" : s.trust === "social" ? "bg-danger/10 text-danger" : "bg-muted text-muted-foreground")}>{TRUST_NAMES[s.trust]}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {queries.length > 0 && (
+        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span>Google qidiruvi:</span>
+          {queries.map((q) => <a key={q} href={`https://www.google.com/search?q=${encodeURIComponent(q)}`} target="_blank" rel="noopener noreferrer nofollow" className="rounded-full border border-border px-2 py-0.5 hover:bg-muted">{q}</a>)}
+        </p>
+      )}
+      <div className="mt-1"><CopyBtn text={text} /></div>
+    </>
+  );
+}
+
 function CopyBtn({ text }: { text: string }) {
   const [ok, setOk] = React.useState(false);
   return (
@@ -80,6 +114,7 @@ export default function Page() {
   const [chats, setChats] = React.useState<Chat[]>([]);
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [model, setModel] = React.useState<ModelKey>("free");
+  const [web, setWeb] = React.useState(false);
   const [input, setInput] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [drawer, setDrawer] = React.useState(false);
@@ -112,8 +147,11 @@ export default function Page() {
 
   const active = chats.find((c) => c.id === activeId) ?? null;
   const modelOk = (m: ModelKey) => (m === "free" ? !!status?.free.configured : !!status?.configured);
-  const remaining = status ? (model === "free" ? status.free.remaining : status.remaining) : null;
-  const limit = status ? (model === "free" ? status.free.limit : status.limit) : null;
+  const webOk = !!status?.web?.configured;
+  /** Internetdan qidirish yoqilgan bo'lsa, javob uchun alohida kunlik limit ishlatiladi. */
+  const canSend = web ? webOk : modelOk(model);
+  const remaining = status ? (web && status.web ? status.web.remaining : model === "free" ? status.free.remaining : status.remaining) : null;
+  const limit = status ? (web && status.web ? status.web.limit : model === "free" ? status.free.limit : status.limit) : null;
 
   const newChat = () => { setActiveId(null); setMessages([]); setInput(""); setDrawer(false); taRef.current?.focus(); };
   const openChat = async (c: Chat) => {
@@ -137,13 +175,14 @@ export default function Page() {
     setMessages(history); setInput(""); setBusy(true);
     const append = (m: Msg) => setMessages((s) => [...s, m]);
     try {
-      const r = await fetch(model === "free" ? "/api/ai/free-chat" : "/api/ai/chat", {
+      const r = await fetch(web ? "/api/ai/web-chat" : model === "free" ? "/api/ai/free-chat" : "/api/ai/chat", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: history.slice(-20).map((m) => ({ role: m.role, content: m.content.slice(0, 4000) })), save: true, chatId: activeId ?? undefined }),
+        // Oldingi javoblardagi manbalar ro'yxati AI'ga yuborilmaydi: faqat matn.
+        body: JSON.stringify({ messages: history.slice(-20).map((m) => ({ role: m.role, content: splitSources(m.content).text.slice(0, 4000) })), save: true, chatId: activeId ?? undefined }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) append({ role: "assistant", error: true, content: r.status === 401 ? "Davom etish uchun tizimga kiring." : d.error ?? "Xatolik yuz berdi. Qayta urinib ko'ring." });
-      else { append({ role: "assistant", content: d.reply }); if (d.chatId) { setActiveId(d.chatId); loadChats(); } }
+      else { append({ role: "assistant", content: encodeSources(d.reply, d.sources ?? [], d.queries ?? []) }); if (d.chatId) { setActiveId(d.chatId); loadChats(); } }
     } catch { append({ role: "assistant", error: true, content: "Server bilan aloqa yo'q. Internetni tekshirib, qayta urinib ko'ring." }); }
     setBusy(false); loadStatus();
   };
@@ -245,13 +284,13 @@ export default function Page() {
               <ul className="mt-8 grid gap-3 sm:grid-cols-2">
                 {SUGGEST.map((s) => (
                   <li key={s.t}>
-                    <button onClick={() => send(s.p)} disabled={busy || !status || !modelOk(model)} className="h-full w-full rounded-2xl border border-border bg-card p-4 text-left shadow-soft transition hover:border-primary disabled:opacity-60">
+                    <button onClick={() => send(s.p)} disabled={busy || !status || !canSend} className="h-full w-full rounded-2xl border border-border bg-card p-4 text-left shadow-soft transition hover:border-primary disabled:opacity-60">
                       <b className="block text-sm">{s.t}</b><span className="mt-1 block text-sm text-muted-foreground">{s.d}</span>
                     </button>
                   </li>
                 ))}
               </ul>
-              {status && !modelOk(model) && !status.free.configured && !status.configured && (
+              {status && !modelOk(model) && !status.free.configured && !status.configured && !webOk && (
                 <p className="mt-6 rounded-xl bg-amber/15 p-3 text-sm">AI xizmati hali serverga ulanmagan, shuning uchun javob berilmaydi. Administrator kalitni qo'yishi kerak.</p>
               )}
             </div>
@@ -261,13 +300,13 @@ export default function Page() {
                 <div key={i} className={cn("flex gap-3", m.role === "user" && "justify-end")}>
                   {m.role === "assistant" && <span className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary text-white"><Sparkles className="h-4 w-4" /></span>}
                   <div className={cn("min-w-0", m.role === "user" ? "max-w-[85%] whitespace-pre-wrap rounded-2xl bg-muted px-4 py-2.5 text-[15px] leading-7" : "flex-1")}>
-                    {m.role === "user" ? m.content : m.error ? <p className="rounded-xl bg-danger/10 p-3 text-sm text-danger" role="alert">{m.content}</p> : (<><Rich text={m.content} /><div className="mt-1"><CopyBtn text={m.content} /></div></>)}
+                    {m.role === "user" ? m.content : m.error ? <p className="rounded-xl bg-danger/10 p-3 text-sm text-danger" role="alert">{m.content}</p> : <Answer content={m.content} />}
                   </div>
                 </div>
               ))}
               {busy && (
                 <div className="flex gap-3"><span className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary text-white"><Sparkles className="h-4 w-4" /></span>
-                  <p className="pt-1.5 text-sm text-muted-foreground" aria-live="polite">AI o'ylamoqda<span className="animate-pulse">...</span></p></div>
+                  <p className="pt-1.5 text-sm text-muted-foreground" aria-live="polite">{web ? "Internetdan qidirilmoqda" : "AI o'ylamoqda"}<span className="animate-pulse">...</span></p></div>
               )}
               <div ref={endRef} />
             </div>
@@ -282,15 +321,21 @@ export default function Page() {
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(input); } }}
                 className="max-h-[200px] w-full resize-none bg-transparent px-2 py-1.5 text-[15px] leading-6 placeholder:text-muted-foreground focus:outline-none" />
               <div className="mt-2 flex items-center justify-between gap-2">
-                <div role="group" aria-label="AI modeli" className="flex gap-1 rounded-xl bg-muted p-1">
-                  {(["free", "claude"] as const).map((k) => (
-                    <button key={k} type="button" disabled={!modelOk(k)} aria-pressed={model === k} onClick={() => setModel(k)} title={modelOk(k) ? undefined : "Hali sozlanmagan"}
-                      className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-40", model === k ? "bg-card shadow-soft" : "text-muted-foreground")}>{k === "free" ? "Bepul AI" : "Claude"}</button>
-                  ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div role="group" aria-label="AI modeli" className={cn("flex gap-1 rounded-xl bg-muted p-1", web && "opacity-50")}>
+                    {(["free", "claude"] as const).map((k) => (
+                      <button key={k} type="button" disabled={!modelOk(k) || web} aria-pressed={model === k} onClick={() => setModel(k)} title={modelOk(k) ? undefined : "Hali sozlanmagan"}
+                        className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-40", model === k ? "bg-card shadow-soft" : "text-muted-foreground")}>{k === "free" ? "Bepul AI" : "Claude"}</button>
+                    ))}
+                  </div>
+                  <button type="button" disabled={!webOk} aria-pressed={web} onClick={() => setWeb((v) => !v)} title={webOk ? "Javobni internetdan qidirib, manbalar bilan beradi" : "Hali sozlanmagan"}
+                    className={cn("flex min-h-9 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold disabled:opacity-40", web ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}>
+                    <Globe className="h-3.5 w-3.5" aria-hidden />Internetdan qidirish{web && status?.web ? ` (${status.web.remaining}/${status.web.limit})` : ""}
+                  </button>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex"><Zap className="h-3.5 w-3.5" />{remaining === null ? "…" : remaining}</span>
-                  <button type="submit" disabled={busy || !input.trim() || !modelOk(model)} aria-label="Yuborish" className="grid h-10 w-10 place-items-center rounded-full bg-primary text-white transition disabled:bg-muted disabled:text-muted-foreground"><ArrowUp className="h-5 w-5" /></button>
+                  <button type="submit" disabled={busy || !input.trim() || !canSend} aria-label="Yuborish" className="grid h-10 w-10 place-items-center rounded-full bg-primary text-white transition disabled:bg-muted disabled:text-muted-foreground"><ArrowUp className="h-5 w-5" /></button>
                 </div>
               </div>
             </form>
