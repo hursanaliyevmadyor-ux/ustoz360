@@ -55,6 +55,14 @@ describe("saytdan Telegram orqali kirish", () => {
     expect(String(hook.body.secret_token)).toMatch(/^[\w-]{20,}$/);
   });
 
+  it("bot nomi '@' bilan yozilgan bo'lsa ham havola to'g'ri chiqadi", async () => {
+    db.telegramLogin.create.mockResolvedValue({ id: "L1" });
+    const old = process.env.TELEGRAM_BOT_USERNAME;
+    process.env.TELEGRAM_BOT_USERNAME = " @Test_bot ";
+    try { expect((await createTelegramLogin("https://site.example")).url).toMatch(/^https:\/\/t\.me\/Test_bot\?start=/); }
+    finally { process.env.TELEGRAM_BOT_USERNAME = old; }
+  });
+
   it("brauzer kalitisiz yoki noto'g'ri kalit bilan kira olmaydi", async () => {
     db.telegramLogin.create.mockResolvedValue({ id: "L1" });
     const { pollKey } = await createTelegramLogin("https://site.example");

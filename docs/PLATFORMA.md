@@ -35,7 +35,8 @@ O'zgargan: `/api/me` (tarif), `/api/ai/lesson` (yagona AI kirish nuqtasi), `/api
 | Fayl saqlash | BLOCKED | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (faqat serverda), ixtiyoriy `SUPABASE_STORAGE_BUCKET` (shaxsiy bucket o'zi yaratiladi) |
 | To'lov provayderi | BLOCKED | Click/Payme shartnomasi va kalitlari. Tayyor umumiy webhook: `PAYMENT_WEBHOOK_SECRET`, `PAYMENT_CHECKOUT_URL`. Hozir «Bank o'tkazmasi» (admin tasdiqlaydi): Admin → Sozlamalar → To'lov |
 | Email (SMTP) | BLOCKED | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` |
-| Telegram, Yandex | sozlanmagan | `.env.example`ga qarang |
+| Telegram bot (kirish va AI) | READY: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` ulangan, webhook sayt o'zi o'rnatadi. Bot nomi `@` bilan yozilsa ham havola to'g'ri chiqadi | Sinash: Kirish → Telegram tugmasi |
+| Yandex | sozlanmagan | `.env.example`ga qarang |
 
 Kalitlar bazada saqlanmaydi va admin sahifasida ko'rsatilmaydi: faqat «ulangan/ulanmagan».
 

@@ -9,7 +9,9 @@ const API = "https://api.telegram.org";
 const LOGIN_TTL_MS = 10 * 60_000;
 const CHAT_IDLE_MS = 30 * 60_000;
 
-export const botConfigured = () => Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_USERNAME);
+export const botConfigured = () => Boolean(process.env.TELEGRAM_BOT_TOKEN && botUsername());
+/** Bot nomi "@" bilan yozilgan bo'lsa ham to'g'ri havola chiqishi uchun "@" va bo'shliqlar olib tashlanadi. */
+export const botUsername = () => (process.env.TELEGRAM_BOT_USERNAME ?? "").trim().replace(/^@+/, "");
 /** Webhook sirini alohida o'zgaruvchi kerak bo'lmasligi uchun AUTH_SECRET'dan hosil qilamiz (Telegram faqat A-Z a-z 0-9 _ - ruxsat beradi). */
 export const webhookSecret = () => signValue("telegram-webhook").slice(0, 48);
 
@@ -60,7 +62,7 @@ export async function createTelegramLogin(origin: string) {
   const code = randomBytes(18).toString("base64url");
   const pollSecret = randomBytes(24).toString("base64url");
   const row = await db.telegramLogin.create({ data: { code, pollHash: signValue(`tgpoll:${pollSecret}`), expiresAt: new Date(Date.now() + LOGIN_TTL_MS) } });
-  return { url: `https://t.me/${process.env.TELEGRAM_BOT_USERNAME}?start=l_${code}`, pollKey: `${row.id}.${pollSecret}` };
+  return { url: `https://t.me/${botUsername()}?start=l_${code}`, pollKey: `${row.id}.${pollSecret}` };
 }
 
 export type PollResult = { status: "pending" } | { status: "expired" } | { status: "ok"; next: string };
