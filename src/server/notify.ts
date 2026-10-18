@@ -1,14 +1,26 @@
+import { api } from "./bot/tg";
 import { db } from "./db";
 import { getSetting } from "./settings";
 
 /** Bildirishnoma xizmati: boshqa modullar shu yerdan chaqiradi. Yuborilmasa asosiy amal buzilmaydi. */
 export type NotifyInput = { kind: string; title: string; text: string; href?: string };
 
+/** Muhim shaxsiy xabarlar (to'lov tasdig'i kabi) botga ham yuboriladi: foydalanuvchi saytga kirmasa ham ko'radi. */
+const PUSH_KINDS = new Set(["payment", "market"]);
+
+async function pushTelegram(userId: string, n: NotifyInput) {
+  if (!PUSH_KINDS.has(n.kind) || !process.env.TELEGRAM_BOT_TOKEN) return;
+  const u = await db.user.findUnique({ where: { id: userId }, select: { telegramId: true, deletedAt: true } });
+  if (!u?.telegramId || u.deletedAt) return;
+  await api("sendMessage", { chat_id: u.telegramId, text: `🔔 ${n.title}\n${n.text}`.slice(0, 1000), disable_web_page_preview: true }, 4000);
+}
+
 export async function notify(userId: string, n: NotifyInput) {
   try {
     if (!(await getSetting("notifications")).enabled) return;
     await db.notification.create({ data: { userId, kind: n.kind, title: n.title.slice(0, 120), text: n.text.slice(0, 400), href: n.href ?? null } });
-  } catch (e) { console.error("notify", (e as Error).message); }
+  } catch (e) { console.error("notify", (e as Error).message); return; }
+  await pushTelegram(userId, n).catch((e) => console.error("notify telegram", (e as Error).message));
 }
 
 /** Hamma faol foydalanuvchiga (masalan, yangi seminar e'loni). */

@@ -35,14 +35,15 @@ O'zgargan: `/api/me` (tarif), `/api/ai/lesson` (yagona AI kirish nuqtasi), `/api
 | Fayl saqlash | BLOCKED | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (faqat serverda), ixtiyoriy `SUPABASE_STORAGE_BUCKET` (shaxsiy bucket o'zi yaratiladi) |
 | To'lov provayderi | BLOCKED | Click/Payme shartnomasi va kalitlari. Tayyor umumiy webhook: `PAYMENT_WEBHOOK_SECRET`, `PAYMENT_CHECKOUT_URL`. Hozir «Bank o'tkazmasi» (admin tasdiqlaydi): Admin → Sozlamalar → To'lov |
 | Email (SMTP) | BLOCKED | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` |
-| Telegram bot (kirish va AI) | READY: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` ulangan, webhook sayt o'zi o'rnatadi. Bot nomi `@` bilan yozilsa ham havola to'g'ri chiqadi | Sinash: Kirish → Telegram tugmasi |
+| Telegram bot (kirish, to'liq menyu, AI) | READY: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` ulangan, webhook sayt o'zi o'rnatadi. Hamma bo'lim botda ([BOT.md](BOT.md)). Kunlik eslatma uchun `CRON_SECRET` kerak | Sinash: botga `/start` |
 | Yandex | sozlanmagan | `.env.example`ga qarang |
 
 Kalitlar bazada saqlanmaydi va admin sahifasida ko'rsatilmaydi: faqat «ulangan/ulanmagan».
 
 ## 5. Test natijalari
-- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 23 fayl, 314 test o'tdi. `npm run build`: o'tdi.
+- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 27 fayl, 396 test o'tdi. `npm run build`: o'tdi.
 - `npm run test:e2e:platform`: 10 blok o'tdi (himoya va rollar, MARKET/to'lov oqimi, tarif va AI limiti, DARSYOR, TOIFA, SINF, BILIMXONA, admin statistikasi, admin hisobot/qidiruv). Haqiqiy baza va sinov foydalanuvchilari bilan, so'ng o'chirilgan.
+- `npm run test:e2e:bot`: 12 blok o'tdi (bot menyusi, testlar, TOIFA, SINF, DARSYOR, AI, kurslar, kutubxona, profil, kunlik eslatma, ro'yxatdan o'tish). Haqiqiy baza va soxta Telegram serveri bilan; Telegram talablari (HTML, 4096 belgi, `callback_data`) ham tekshiriladi. Sinov foydalanuvchilari oxirida o'chiriladi.
 - Brauzer: 320 va 375 px da gorizontal siljish yo'q (asosiy sahifalar va barcha yangi admin sahifalari). Topilgan va tuzatilgan: sarlavha 320 px da toshishi, jadvaldagi yashirin matn sahifani kengaytirishi, kartochka sarlavhasi, diagramma yorliqlari kaliti takrorlanishi, admin belgisi yorug' fonda ko'rinmasligi.
 
 ## 6. Xavfsizlik tekshiruvi
@@ -63,3 +64,6 @@ Kod va baza tayyor. Ishlatishdan oldin: (1) GitHub'da PR'ni ko'rib chiqish va bi
 - **Ustoz ko'rinishi:** yuqoridagi menyudan almashtiriladi (tanlov brauzerda `u360-view` da saqlanadi). Bu ko'rinishda har sahifa tepasida admin paneli (`AdminBar`) chiqadi: shu bo'limni boshqarish havolasi va tezkor yangilik/e'lon qo'shish. Admin shaxsiy sinf, taxallus, ball, saqlangan hujjat va AI suhbatlarni ko'rmaydi: faqat yig'ma statistika va kontent.
 - **Statistika** (`/admin/statistika`, davr: 7/30/90 kun): Ustozlar, Adminlar, USTOZ AI, DARSYOR, TOIFA, SINF, MARKET, BILIMXONA, AI, Seminarlar. Har bo'lim alohida so'raladi (`/api/admin/stats/section?name=...&days=...`, mantiq `src/server/adminsections.ts`). Faqat sonlar va umumiy jadvallar chiqadi; bitta ustozning shaxsiy ma'lumoti chiqmaydi (E2E tekshiradi).
 - **Yangi admin sahifalari:** `/admin/statistika`, `/admin/audit` (admin va to'lov amallari jurnali), `/admin/elonlar` (yangilik va e'lonlar), `/admin/modullar` (modullarni yoqish/o'chirish).
+
+## 9. Telegram bot (to'liq menyu)
+Bot saytning hamma bo'limini tugmalar bilan beradi: bosh sahifa, testlar, TOIFA reja, sinflar (ball kiritish), DARSYOR (AI bilan dars ishlanmasi va topshiriqlar), kutubxona, kurslar va obuna, seminarlar, AI yordamchi, profil; ro'yxatdan o'tish (ism, viloyat, tuman) botning o'zida; kunlik eslatma (reja, seminar, takrorlash). To'liq tavsif, sozlash va tekshiruv: [BOT.md](BOT.md). Baza: yangi `BotState` jadvali (`prisma/supabase-update-bot-state.sql`, faqat qo'shimcha, haqiqiy bazada qo'llangan).

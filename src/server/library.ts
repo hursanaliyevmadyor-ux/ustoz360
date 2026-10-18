@@ -87,6 +87,13 @@ export async function downloadUrl(viewer: Viewer, id: string) {
   return { url: await storage().signedUrl(d.storagePath, 300), fileName: d.fileName };
 }
 
+/** Bitta hujjat kartochkasi (ruxsat tekshiriladi): Telegram bot va boshqa ixcham ko'rinishlar uchun. */
+export async function getLibraryDoc(viewer: Viewer, id: string) {
+  await accessible(viewer, id);
+  const d = await db.libraryDoc.findUniqueOrThrow({ where: { id }, include: { owner: { select: { name: true } }, favorites: { where: { userId: viewer.id }, select: { userId: true } } } });
+  return view(d, viewer.id);
+}
+
 export async function toggleFavorite(viewer: Viewer, id: string) {
   await accessible(viewer, id);
   const key = { userId_docId: { userId: viewer.id, docId: id } };
