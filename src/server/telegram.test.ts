@@ -54,6 +54,17 @@ describe("saytdan Telegram orqali kirish", () => {
     const hook = calls.find((c) => c.method === "setWebhook")!;
     expect(hook.body.url).toBe("https://site.example/api/telegram/webhook");
     expect(String(hook.body.secret_token)).toMatch(/^[\w-]{20,}$/);
+    expect(hook.body.allowed_updates).toEqual(["message", "callback_query"]);
+  });
+
+  it("webhook bilan birga yozish maydoni yonidagi Mini App tugmasi va /ilova buyrug'i o'rnatiladi", async () => {
+    db.telegramLogin.create.mockResolvedValue({ id: "L1" });
+    await createTelegramLogin("https://site.example");
+    // modul holati: webhook ikkinchi marta o'rnatilmasligi mumkin, shuning uchun oldingi sinovlarda o'rnatilgan bo'lsa ham tekshiramiz
+    const menu = calls.find((c) => c.method === "setChatMenuButton");
+    if (menu) expect(menu.body.menu_button).toEqual({ type: "web_app", text: "📱 Ilova", web_app: { url: "https://site.example" } });
+    const cmds = calls.find((c) => c.method === "setMyCommands");
+    if (cmds) expect((cmds.body.commands as { command: string }[])[0].command).toBe("ilova");
   });
 
   it("bot nomi '@' bilan yozilgan bo'lsa ham havola to'g'ri chiqadi", async () => {

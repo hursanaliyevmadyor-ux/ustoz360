@@ -41,9 +41,9 @@ O'zgargan: `/api/me` (tarif), `/api/ai/lesson` (yagona AI kirish nuqtasi), `/api
 Kalitlar bazada saqlanmaydi va admin sahifasida ko'rsatilmaydi: faqat «ulangan/ulanmagan».
 
 ## 5. Test natijalari
-- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 27 fayl, 396 test o'tdi. `npm run build`: o'tdi.
+- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 28 fayl, 410 test o'tdi. `npm run build`: o'tdi.
 - `npm run test:e2e:platform`: 10 blok o'tdi (himoya va rollar, MARKET/to'lov oqimi, tarif va AI limiti, DARSYOR, TOIFA, SINF, BILIMXONA, admin statistikasi, admin hisobot/qidiruv). Haqiqiy baza va sinov foydalanuvchilari bilan, so'ng o'chirilgan.
-- `npm run test:e2e:bot`: 12 blok o'tdi (bot menyusi, testlar, TOIFA, SINF, DARSYOR, AI, kurslar, kutubxona, profil, kunlik eslatma, ro'yxatdan o'tish). Haqiqiy baza va soxta Telegram serveri bilan; Telegram talablari (HTML, 4096 belgi, `callback_data`) ham tekshiriladi. Sinov foydalanuvchilari oxirida o'chiriladi.
+- `npm run test:e2e:bot`: 13 blok o'tdi (bot menyusi, testlar, TOIFA, SINF, DARSYOR, AI, kurslar, kutubxona, profil, kunlik eslatma, ro'yxatdan o'tish, Mini App kirishi). Mini App brauzerda haqiqiy Telegram skripti bilan ham sinalgan: avtomatik kirish, noto'g'ri imzoni rad etish, oddiy brauzerga ta'sir qilmasligi. Haqiqiy baza va soxta Telegram serveri bilan; Telegram talablari (HTML, 4096 belgi, `callback_data`) ham tekshiriladi. Sinov foydalanuvchilari oxirida o'chiriladi.
 - Brauzer: 320 va 375 px da gorizontal siljish yo'q (asosiy sahifalar va barcha yangi admin sahifalari). Topilgan va tuzatilgan: sarlavha 320 px da toshishi, jadvaldagi yashirin matn sahifani kengaytirishi, kartochka sarlavhasi, diagramma yorliqlari kaliti takrorlanishi, admin belgisi yorug' fonda ko'rinmasligi.
 
 ## 6. Xavfsizlik tekshiruvi
@@ -65,5 +65,5 @@ Kod va baza tayyor. Ishlatishdan oldin: (1) GitHub'da PR'ni ko'rib chiqish va bi
 - **Statistika** (`/admin/statistika`, davr: 7/30/90 kun): Ustozlar, Adminlar, USTOZ AI, DARSYOR, TOIFA, SINF, MARKET, BILIMXONA, AI, Seminarlar. Har bo'lim alohida so'raladi (`/api/admin/stats/section?name=...&days=...`, mantiq `src/server/adminsections.ts`). Faqat sonlar va umumiy jadvallar chiqadi; bitta ustozning shaxsiy ma'lumoti chiqmaydi (E2E tekshiradi).
 - **Yangi admin sahifalari:** `/admin/statistika`, `/admin/audit` (admin va to'lov amallari jurnali), `/admin/elonlar` (yangilik va e'lonlar), `/admin/modullar` (modullarni yoqish/o'chirish).
 
-## 9. Telegram bot (to'liq menyu)
-Bot saytning hamma bo'limini tugmalar bilan beradi: bosh sahifa, testlar, TOIFA reja, sinflar (ball kiritish), DARSYOR (AI bilan dars ishlanmasi va topshiriqlar), kutubxona, kurslar va obuna, seminarlar, AI yordamchi, profil; ro'yxatdan o'tish (ism, viloyat, tuman) botning o'zida; kunlik eslatma (reja, seminar, takrorlash). To'liq tavsif, sozlash va tekshiruv: [BOT.md](BOT.md). Baza: yangi `BotState` jadvali (`prisma/supabase-update-bot-state.sql`, faqat qo'shimcha, haqiqiy bazada qo'llangan).
+## 9. Telegram bot (Mini App va to'liq menyu)
+Sayt Telegram ichida to'liq ilova (Mini App) sifatida ochiladi, kirish avtomatik (imzolangan initData tekshiriladi). Bundan tashqari bot saytning hamma bo'limini tugmalar bilan beradi: bosh sahifa, testlar, TOIFA reja, sinflar (ball kiritish), DARSYOR (AI bilan dars ishlanmasi va topshiriqlar), kutubxona, kurslar va obuna, seminarlar, AI yordamchi, profil; ro'yxatdan o'tish (ism, viloyat, tuman) botning o'zida; kunlik eslatma (reja, seminar, takrorlash). To'liq tavsif, sozlash va tekshiruv: [BOT.md](BOT.md). Baza: yangi `BotState` jadvali (`prisma/supabase-update-bot-state.sql`, faqat qo'shimcha, haqiqiy bazada qo'llangan).

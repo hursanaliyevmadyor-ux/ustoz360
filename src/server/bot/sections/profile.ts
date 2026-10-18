@@ -5,8 +5,8 @@ import { getEntitlements } from "../../entitlements";
 import { esc, fmtDate, personName } from "../botlogic";
 import { saveRemind, type Ctx } from "../ctx";
 import { EXAM_LABEL, saveProfile } from "../profile";
-import { b, link, sendScreen, type Btn } from "../tg";
-import { HELP, heading, MENU_MARKUP, nav } from "../ui";
+import { b, link, sendScreen, webApp, type Btn } from "../tg";
+import { APP_BUTTON, HELP, heading, menuMarkup, nav } from "../ui";
 
 /** Profil va ro'yxatdan o'tishni yakunlash (ism, viloyat, tuman): saytdagi /royxat bilan bir xil talablar. */
 
@@ -34,7 +34,7 @@ export async function entry(ctx: Ctx) {
     [b(ctx.state.remind ? "🔕 Eslatmani o'chirish" : "🔔 Eslatmani yoqish", "u.rm")],
     [b("🎯 Imtihon maqsadi", "p.goal"), b("✏️ Ism va hudud", "u.edit")],
     [b("💳 Tariflar", "m.pl"), b("❓ Yordam", "u.help")],
-    [link("🌐 Saytni ochish", ctx.origin)], nav(),
+    [...(ctx.origin.startsWith("https://") ? [webApp(APP_BUTTON, ctx.origin)] : []), link("🌐 Brauzerda", ctx.origin)], nav(),
   ];
   await ctx.show({ text: lines.join("\n"), kb });
 }
@@ -98,7 +98,7 @@ export async function onboardText(ctx: Ctx, mode: string, text: string): Promise
     const d = ctx.state.data as { name?: string; region?: string };
     await saveProfile(ctx.userId, { name: d.name, region: d.region, district, complete: true });
     await ctx.idle();
-    await sendScreen(ctx.chatId, { text: "🎉 <b>Tayyor!</b> Ro'yxatdan o'tish yakunlandi.\n\nPastdagi menyudan bo'lim tanlang. Adashib qolsangiz: /menyu" }, { reply_markup: MENU_MARKUP });
+    await sendScreen(ctx.chatId, { text: "🎉 <b>Tayyor!</b> Ro'yxatdan o'tish yakunlandi.\n\nPastdagi menyudan bo'lim tanlang yoki «📱 Ilovani ochish» bilan saytni Telegram ichida oching. Adashib qolsangiz: /menyu" }, { reply_markup: menuMarkup(ctx.origin) });
     return true;
   }
   return false;

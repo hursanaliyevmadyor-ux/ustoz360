@@ -11,13 +11,16 @@ import { PrismaClient } from "@prisma/client";
 const db = new PrismaClient();
 // --second: ikkinchi sinov foydalanuvchisi (masalan, xaridor); --remove ikkalasini ham o'chiradi.
 const SECOND = process.argv.includes("--second");
-const EMAIL = SECOND ? "mashq-sinov2@example.invalid" : "mashq-sinov@example.invalid";
+// --telegram: Telegram bilan bog'langan sinov foydalanuvchisi (Mini App kirishini sinash uchun); imzolangan initData ham chiqariladi.
+const TELEGRAM = process.argv.includes("--telegram");
+const TG_ID = "91000050";
+const EMAIL = TELEGRAM ? "mashq-sinov-tg@example.invalid" : SECOND ? "mashq-sinov2@example.invalid" : "mashq-sinov@example.invalid";
 
 async function main() {
   const existing = await db.user.findUnique({ where: { email: EMAIL } });
   if (process.argv.includes("--remove")) {
     // Javoblar, sessiyalar, kurslar, to'lovlar, sinflar va hujjatlar foydalanuvchi o'chganda kaskad bilan o'chadi.
-    for (const email of ["mashq-sinov@example.invalid", "mashq-sinov2@example.invalid"]) {
+    for (const email of ["mashq-sinov@example.invalid", "mashq-sinov2@example.invalid", "mashq-sinov-tg@example.invalid"]) {
       const u = await db.user.findUnique({ where: { email } });
       if (!u) { console.log(`${email}: yo'q.`); continue; }
       await db.questionReport.deleteMany({ where: { userId: u.id } });
@@ -32,7 +35,8 @@ async function main() {
   const admin = process.argv.includes("--admin");
   const user = existing ?? await db.user.create({
     data: {
-      email: EMAIL, name: "Sinov Foydalanuvchi", googleSub: SECOND ? "dev-test-mashq-2" : "dev-test-mashq", emailVerifiedAt: new Date(),
+      email: EMAIL, name: "Sinov Foydalanuvchi", googleSub: TELEGRAM ? "dev-test-mashq-tg" : SECOND ? "dev-test-mashq-2" : "dev-test-mashq", emailVerifiedAt: new Date(),
+      ...(TELEGRAM && { telegramId: TG_ID, phone: "+998900000050" }),
       roles: { create: { role: admin ? "ADMIN" : "TEACHER" } },
       profile: { create: { onboardedAt: new Date(), region: "Toshkent", district: "Yunusobod" } },
     },
@@ -41,5 +45,11 @@ async function main() {
   const token = randomBytes(32).toString("base64url");
   await db.authSession.create({ data: { tokenHash: createHmac("sha256", secret).update(token).digest("hex"), userId: user.id, expiresAt: new Date(Date.now() + 86_400_000) } });
   console.log(`TOKEN=${token}`);
+  if (TELEGRAM) {
+    const { signInitData } = await import("../src/server/bot/webapp");
+    const botToken = process.env.TELEGRAM_BOT_TOKEN ?? "1:e2e";
+    const initData = signInitData({ auth_date: String(Math.floor(Date.now() / 1000)), query_id: "AAE2E", user: JSON.stringify({ id: Number(TG_ID), first_name: "Sinov" }) }, botToken);
+    console.log(`INITDATA=${initData}`);
+  }
 }
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => db.$disconnect());

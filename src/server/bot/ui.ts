@@ -1,5 +1,5 @@
 import { esc } from "./botlogic";
-import { b, replyKeyboard, type Btn } from "./tg";
+import { b, type Btn } from "./tg";
 
 /** Bot interfeysi: pastdagi doimiy menyu, har ekrandagi "Orqaga / Menyu" tugmalari va umumiy matnlar. */
 
@@ -22,10 +22,14 @@ export const SECTION_BY_TEXT = new Map<string, Sec>(MENU_ITEMS.map((m) => [m.tex
 /** /testlar, /reja ... buyruqlari; /menyu ham bosh sahifani ochadi. */
 export const SECTION_BY_COMMAND = new Map<string, Sec>([...MENU_ITEMS.map((m) => [m.cmd, m.sec] as [string, Sec]), ["menyu", "h"]]);
 
-export const MENU_MARKUP = replyKeyboard(
-  Array.from({ length: MENU_ITEMS.length / 2 }, (_, i) => [MENU_ITEMS[i * 2].text, MENU_ITEMS[i * 2 + 1].text]),
-  "Bo'limni tanlang yoki /menyu",
-);
+export const APP_BUTTON = "📱 Ilovani ochish";
+
+/** Pastdagi doimiy menyu: birinchi qatorda Mini App (sayt Telegram ichida), keyin bo'limlar. Mini App faqat https manzilda ishlaydi. */
+export function menuMarkup(origin: string) {
+  const rows = Array.from({ length: MENU_ITEMS.length / 2 }, (_, i) => [{ text: MENU_ITEMS[i * 2].text }, { text: MENU_ITEMS[i * 2 + 1].text }]);
+  const app = origin.startsWith("https://") ? [[{ text: APP_BUTTON, web_app: { url: origin } }]] : [];
+  return { keyboard: [...app, ...rows], resize_keyboard: true, is_persistent: true, input_field_placeholder: "Bo'limni tanlang yoki /menyu" };
+}
 
 /** Har ekran ostidagi tugmalar: orqaga (bo'lsa) va bosh sahifa. Foydalanuvchi hech qachon "tuynuk"da qolmaydi. */
 export const nav = (back?: string): Btn[] => [...(back ? [b("⬅️ Orqaga", back)] : []), b("🏠 Menyu", "h")];
@@ -35,7 +39,8 @@ export const heading = (icon: string, title: string) => `${icon} <b>${esc(title)
 export const HELP = [
   heading("❓", "Yordam"),
   "",
-  "Pastdagi tugmalardan bo'lim tanlang, har bir bo'limda yo'l-yo'riq tugmalar bilan beriladi.",
+  "📱 «Ilovani ochish» tugmasi saytning to'liq ko'rinishini Telegram ichida ochadi (yozish maydoni yonidagi «Ilova» tugmasi ham shu).",
+  "Yoki pastdagi tugmalardan bo'lim tanlang, har bir bo'limda yo'l-yo'riq tugmalar bilan beriladi.",
   "",
   "🏠 Bosh sahifa: bugungi reja, seminar va yangiliklar",
   "📚 Testlar: tezkor mashq, mavzu bo'yicha test, xatolar ustida ishlash",

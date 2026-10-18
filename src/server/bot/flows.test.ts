@@ -162,6 +162,40 @@ describe("menyu va navigatsiya", () => {
   });
 });
 
+describe("Mini App (sayt Telegram ichida)", () => {
+  const webButtons = (b?: Record<string, any>) => ((b?.reply_markup?.inline_keyboard ?? []) as { text: string; web_app?: { url: string } }[][]).flat().filter((x) => x.web_app);
+
+  it("bosh sahifada birinchi tugma — Ilovani ochish (https manzil bilan)", async () => {
+    await say("/menyu");
+    const first = (lastSend()?.reply_markup.inline_keyboard as { text: string; web_app?: { url: string } }[][])[0][0];
+    expect(first).toEqual({ text: "📱 Ilovani ochish", web_app: { url: ORIGIN } });
+  });
+
+  it("/ilova buyrug'i Mini App tugmasini yuboradi", async () => {
+    await say("/ilova");
+    expect(webButtons(lastSend())).toEqual([{ text: "📱 Ilovani ochish", web_app: { url: ORIGIN } }]);
+    expect(lastText()).toContain("USTOZ 360 ilovasi");
+  });
+
+  it("doimiy menyuning birinchi qatorida Mini App tugmasi bor, bo'limlar o'z joyida", async () => {
+    await say("salom");
+    const kb = lastSend()?.reply_markup.keyboard as { text: string; web_app?: { url: string } }[][];
+    expect(kb[0]).toEqual([{ text: "📱 Ilovani ochish", web_app: { url: ORIGIN } }]);
+    expect(kb.flat().map((k) => k.text)).toEqual(expect.arrayContaining(["📚 Testlar", "🤖 AI yordamchi", "👤 Profil"]));
+  });
+
+  it("menyu tugmasi matni bo'lim sifatida ochilmaydi: 'Ilovani ochish' matn bo'lib kelsa menyuga yo'naltiriladi", async () => {
+    await say("📱 Ilovani ochish");
+    expect(lastText()).toContain("Tushunmadim");
+  });
+
+  it("http (xavfsiz emas) manzilda Mini App tugmasi chiqmaydi", async () => {
+    await routeMessage({ chat: { id: 77, type: "private" }, from: { id: 5 }, text: "/ilova" }, USER, "http://localhost:3000");
+    expect(webButtons(lastSend())).toEqual([]);
+    expect(lastText()).toContain("https");
+  });
+});
+
 describe("xatolar", () => {
   it("tugma bosilganda xizmat xatosi qisqa ogohlantirish (toast) bo'ladi", async () => {
     h.practice.homeData.mockResolvedValue({ active: null, errorsOpen: 0, errorsDue: 0, approved: 0, history: [] });

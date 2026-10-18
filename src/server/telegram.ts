@@ -21,6 +21,7 @@ export const sendText = (chatId: number | string, text: string, replyMarkup?: un
 
 /** Telegram "Menu" ro'yxati (yozish maydoni yonidagi tugma). */
 const COMMANDS = [
+  { command: "ilova", description: "Ilovani ochish (sayt Telegram ichida)" },
   { command: "menyu", description: "Asosiy menyu" },
   { command: "bosh", description: "Bosh sahifa" },
   { command: "testlar", description: "Testlar" },
@@ -45,6 +46,8 @@ export async function ensureWebhook(origin: string): Promise<boolean> {
     const r = await api("setWebhook", { url, secret_token: webhookSecret(), allowed_updates: ["message", "callback_query"] });
     if (!r.ok) { console.error("Telegram setWebhook xato:", r.description); return false; }
     await api("setMyCommands", { commands: COMMANDS });
+    // Yozish maydoni yonidagi tugma: sayt Telegram ichida (Mini App) ochiladi. Faqat https manzil uchun.
+    if (origin.startsWith("https://")) await api("setChatMenuButton", { menu_button: { type: "web_app", text: "📱 Ilova", web_app: { url: origin } } });
     hookReady = true; return true;
   } catch (e) { console.error("Telegram webhook ulanmadi", (e as Error).message); return false; }
 }

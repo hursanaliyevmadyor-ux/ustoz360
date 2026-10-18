@@ -1,6 +1,13 @@
-# Telegram bot: to'liq menyu
+# Telegram bot: Mini App va to'liq menyu
 
-Bot saytdagi hamma bo'limni tugmalar bilan beradi. Foydalanuvchi adashmasligi uchun: pastda doimiy menyu, har ekranda «Orqaga» va «Menyu» tugmalari, tugma bosilganda xabar yangilanadi (chat to'lib ketmaydi), buyruqlar `/menyu` bilan har doim boshiga qaytaradi.
+Sayt Telegram ichida to'liq ilova sifatida ochiladi (Mini App), shuningdek bot saytdagi hamma bo'limni tugmalar bilan ham beradi. Foydalanuvchi adashmasligi uchun: pastda doimiy menyu, har ekranda «Orqaga» va «Menyu» tugmalari, tugma bosilganda xabar yangilanadi (chat to'lib ketmaydi), buyruqlar `/menyu` bilan har doim boshiga qaytaradi.
+
+## Mini App: sayt bot ichida
+Saytning to'liq ko'rinishi Telegram ichida ochiladi (alohida brauzer yoki parol kerak emas). Ochish yo'llari: yozish maydoni yonidagi **«📱 Ilova»** tugmasi, pastdagi menyuning birinchi tugmasi **«📱 Ilovani ochish»**, bosh sahifa va profildagi tugma, `/ilova` buyrug'i.
+- **Kirish avtomatik.** Telegram ilovaga imzolangan ma'lumot (initData) beradi; server uni bot tokeni bilan tekshiradi (`src/server/bot/webapp.ts`, imzo, 24 soatdan eski bo'lmasligi). Telegram akkaunti botda telefon bilan ro'yxatdan o'tgan bo'lsa, sessiya ochiladi (`POST /api/auth/telegram/webapp`). Ro'yxatdan o'tmagan bo'lsa: «Avval botda /start bosib, telefon raqamingizni yuboring».
+- **Qurilmada boshqa odamning sessiyasi qolgan bo'lsa** (Telegram brauzeri qurilma bo'yicha umumiy), u Telegram egasining sessiyasiga almashtiriladi: boshqa odamning ma'lumoti ochilib qolmaydi.
+- **Ilova ichida:** to'liq ekranga kengayadi, Telegram «Orqaga» tugmasi sahifalar bo'ylab ishlaydi, «Chiqish» bosilsa ilova yopiladi (keyingi ochishda yana avtomatik kiriladi). Kod: `src/components/telegram-mini-app.tsx`. Telegram skripti faqat Telegram ichida yuklanadi, oddiy brauzerga ta'sir qilmaydi.
+- **Sozlash:** qo'shimcha kalit kerak emas. Menyu tugmasi va buyruqlarni sayt o'zi o'rnatadi (faqat https manzilda). Ixtiyoriy: BotFather → `/newapp` bilan botning profilida «Open app» tugmasi va `t.me/bot/ilova` havolasi (URL: sayt manzili).
 
 ## Menyu (pastdagi doimiy tugmalar)
 
@@ -17,7 +24,7 @@ Bot saytdagi hamma bo'limni tugmalar bilan beradi. Foydalanuvchi adashmasligi uc
 | 🤖 AI yordamchi | Faqat shu tugma bosilganda yoqiladi: shundan keyingi matn AI'ga ketadi. Boshqa bo'limga o'tilsa, AI o'chadi (tasodifiy matn limitni sarflamaydi) |
 | 👤 Profil | Tarif, AI limit, kurslar, eslatmani yoqish/o'chirish, maqsad, ism va hudud, yordam |
 
-Buyruqlar: `/menyu`, `/bosh`, `/testlar`, `/reja`, `/sinflar`, `/darsyor`, `/kutubxona`, `/kurslar`, `/seminarlar`, `/ai`, `/profil`, `/yordam`, `/yangi` (yangi AI suhbat), `/limit`.
+Buyruqlar: `/ilova`, `/menyu`, `/bosh`, `/testlar`, `/reja`, `/sinflar`, `/darsyor`, `/kutubxona`, `/kurslar`, `/seminarlar`, `/ai`, `/profil`, `/yordam`, `/yangi` (yangi AI suhbat), `/limit`.
 
 ## Ro'yxatdan o'tish
 `/start` → telefon raqami (Telegram tasdiqlaydi) → ism-familiya → viloyat → tuman → menyu. Yakunlamaguncha boshqa bo'limlar yopiq. Saytdagi «Telegram» tugmasi bilan kirish avvalgidek ishlaydi (bir xil akkaunt).

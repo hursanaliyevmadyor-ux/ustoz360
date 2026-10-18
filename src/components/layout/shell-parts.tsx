@@ -96,5 +96,8 @@ export function ThemeToggle() {
 export async function signOut() {
   await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
   try { localStorage.removeItem("u360-admin-hint"); } catch { /* */ }
+  // Telegram Mini App ichida kirish sahifasiga o'tilmaydi (u yerda avtomatik qayta kiriladi): ilova yopiladi.
+  const tg = (window as { Telegram?: { WebApp?: { initData?: string; close(): void } } }).Telegram?.WebApp;
+  if (tg?.initData) { tg.close(); return; }
   window.location.href = "/kirish";
 }

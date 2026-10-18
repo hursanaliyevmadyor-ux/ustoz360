@@ -14,7 +14,8 @@ export type TgChat = { id: number; type: string };
 export type TgMessage = { message_id?: number; chat: TgChat; from?: TgUser; text?: string; contact?: TgContact; document?: TgDocument };
 export type TgCallback = { id: string; from: TgUser; message?: { message_id: number; chat: TgChat }; data?: string };
 export type TgUpdate = { update_id: number; message?: TgMessage; callback_query?: TgCallback };
-export type Btn = { text: string; data?: string; url?: string };
+/** Tugma: callback (data), oddiy havola (url) yoki Telegram ichida ochiladigan Mini App (web). */
+export type Btn = { text: string; data?: string; url?: string; web?: string };
 /** Bitta ekran: HTML matn va ixtiyoriy tugmalar qatorlari. */
 export type Screen = { text: string; kb?: Btn[][] };
 
@@ -27,6 +28,8 @@ export async function api<T = unknown>(method: string, body?: unknown, timeoutMs
 
 export const b = (text: string, data: string): Btn => ({ text, data });
 export const link = (text: string, url: string): Btn => ({ text, url });
+/** Mini App tugmasi: sayt Telegram ichida ochiladi (faqat https va faqat shaxsiy chatda ishlaydi). */
+export const webApp = (text: string, url: string): Btn => ({ text, web: url });
 
 /** Ichki tugmalar (xabar ostida). callback_data 64 baytdan oshsa xato: bu dasturlash xatosi, shuning uchun darhol aniqlanadi. */
 export function inline(kb: Btn[][] | undefined) {
@@ -34,6 +37,7 @@ export function inline(kb: Btn[][] | undefined) {
   return {
     inline_keyboard: kb.filter((row) => row.length).map((row) => row.map((x) => {
       if (x.url) return { text: x.text, url: x.url };
+      if (x.web) return { text: x.text, web_app: { url: x.web } };
       if (!x.data || !cbOk(x.data)) throw new Error(`callback_data noto'g'ri: ${x.data}`);
       return { text: x.text, callback_data: x.data };
     })),
