@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { Prisma } from "@prisma/client";
 import { ApiError, requireVerified } from "../auth";
 import { db } from "../db";
 import { DEFAULT_AI_DAILY, DEFAULT_FREE_AI_DAILY, getEntitlements } from "../entitlements";
@@ -43,6 +44,19 @@ async function limitsFor(userId: string): Promise<Limits> {
 }
 
 const startOfDay = () => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); return d; };
+
+let providerColumnWarned = false;
+/**
+ * Jurnal yozuvi. `provider` ustuni bazaga hali qo'shilmagan bo'lsa (prisma/supabase-update-knowledge-hub.sql qo'llanmagan) yozuv ustunsiz qayta uriniladi:
+ * kunlik va daqiqalik limit hisobi yo'qolmasin. Xato asosiy javobga ta'sir qilmaydi.
+ */
+async function logRequest(data: Prisma.AiRequestUncheckedCreateInput) {
+  try { await db.aiRequest.create({ data, select: { id: true } }); return; } catch (e) {
+    if (!data.provider) return;
+    if (!providerColumnWarned) { providerColumnWarned = true; console.error("AiRequest.provider yozilmadi (SQL qo'llanganmi?):", (e as Error).message); }
+  }
+  await db.aiRequest.create({ data: { ...data, provider: undefined }, select: { id: true } }).catch(() => {});
+}
 
 export async function usageToday(userId: string) {
   const [used, l] = await Promise.all([
@@ -96,7 +110,7 @@ export async function runAi(c: Call): Promise<AiResult> {
     console.error("AI error", (e as Error).message);
     throw new ApiError(502, "AI xizmatidan javob olinmadi. Birozdan so'ng urinib ko'ring.");
   } finally {
-    await db.aiRequest.create({ data: { userId: c.userId, feature: c.feature, model: used, inputTokens: input, outputTokens: output, status, latencyMs: Date.now() - t0, promptVersion: c.promptVersion ?? `${c.feature}@1`, costMicro: costMicro(input, output, l.priceIn, l.priceOut) } }).catch(() => {});
+    await logRequest({ userId: c.userId, feature: c.feature, model: used, inputTokens: input, outputTokens: output, status, latencyMs: Date.now() - t0, promptVersion: c.promptVersion ?? `${c.feature}@1`, costMicro: costMicro(input, output, l.priceIn, l.priceOut), provider: "claude" });
   }
 }
 
@@ -109,11 +123,12 @@ export const lessonSchema = {
 
 // ---- Bepul AI: OpenAI-mos endpoint (masalan, o'zingiz joylagan FreeLLMAPI yoki boshqa shlyuz) ----
 /** Bir nechta bepul xizmat: FREE_LLM_*, FREE_LLM2_* ... FREE_LLM10_* (10 tagacha). Birinchisi xato bersa yoki limitga yetsa, keyingisi sinaladi. */
-type FreeProvider = { base: string; key: string; model: string };
+type FreeProvider = { id: string; base: string; key: string; model: string };
 const FREE_SLOTS = ["", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+/** `id` jurnal uchun: "free1" (FREE_LLM_*), "free2" (FREE_LLM2_*) ... Kalit emas, faqat slot raqami. */
 const freeProviders = (): FreeProvider[] => FREE_SLOTS.flatMap((n) => {
   const base = process.env[`FREE_LLM${n}_BASE_URL`], key = process.env[`FREE_LLM${n}_API_KEY`];
-  return base && key ? [{ base: base.replace(/\/+$/, ""), key, model: process.env[`FREE_LLM${n}_MODEL`] || "auto" }] : [];
+  return base && key ? [{ id: `free${n || "1"}`, base: base.replace(/\/+$/, ""), key, model: process.env[`FREE_LLM${n}_MODEL`] || "auto" }] : [];
 });
 export const freeConfigured = () => freeProviders().length > 0;
 export const freeLimit = DEFAULT_FREE_AI_DAILY;
@@ -165,12 +180,12 @@ export async function runFreeAi(userId: string, messages: { role: "user" | "assi
     await db.aiRequest.create({ data: { userId, feature: "free-chat", model, status: "blocked" } });
     throw new ApiError(429, `Bugungi bepul AI limiti tugadi (${l.freeDaily} ta). Ertaga qayta urinib ko'ring.`, "daily_limit");
   }
-  let status = "ok", input = 0, output = 0, used = model;
+  let status = "ok", input = 0, output = 0, used = model, provider: string | undefined;
   const t0 = Date.now();
   try {
     for (const p of providers) {
       const r = await callFree(p, { model: p.model, max_tokens: opts.maxTokens ?? 1200, messages: [{ role: "system", content: opts.system ?? SYSTEM }, ...messages] }, 45_000);
-      if (r) { input = r.input; output = r.output; used = r.model; return { text: r.text, model: r.model }; }
+      if (r) { input = r.input; output = r.output; used = r.model; provider = p.id; return { text: r.text, model: r.model }; }
     }
     status = "error";
     throw new ApiError(503, "Bepul AI hozir band yoki limitga yetgan. Birozdan so'ng urinib ko'ring.");
@@ -180,7 +195,7 @@ export async function runFreeAi(userId: string, messages: { role: "user" | "assi
     throw new ApiError(502, "Bepul AI bilan aloqa yo'q. Birozdan so'ng urinib ko'ring.");
   } finally {
     // Funksiyalar (feature) farqi uchun promptVersion'da saqlanadi; kunlik limit hisobi "free-chat" bo'yicha qoladi.
-    await db.aiRequest.create({ data: { userId, feature: "free-chat", model: used, inputTokens: input, outputTokens: output, status, latencyMs: Date.now() - t0, promptVersion: opts.promptVersion ?? `${opts.feature ?? "chat"}@1`, costMicro: costMicro(input, output, l.priceIn, l.priceOut) } }).catch(() => {});
+    await logRequest({ userId, feature: "free-chat", model: used, inputTokens: input, outputTokens: output, status, latencyMs: Date.now() - t0, promptVersion: opts.promptVersion ?? `${opts.feature ?? "chat"}@1`, costMicro: costMicro(input, output, l.priceIn, l.priceOut), provider });
   }
 }
 

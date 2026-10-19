@@ -79,6 +79,7 @@ model User {
   auditLogs  AuditLog[]
   aiRequests AiRequest[]
   aiChats    AiChat[]
+  knowledgeConsents KnowledgeConsent[]
   examAttempts ExamAttempt[]
   notifications Notification[]
   subscriptions Subscription[]
@@ -308,9 +309,24 @@ model AiRequest {
   latencyMs     Int?
   promptVersion String?
   costMicro     Int?
+  /// Javobni qaysi xizmat berdi: "claude" yoki "free1".."free10" (FREE_LLM, FREE_LLM2_... slotlari). Provayder bo'yicha statistika uchun; eski qatorlarda bo'sh.
+  provider      String?
   createdAt    DateTime @default(now())
   @@index([userId, createdAt])
   @@index([createdAt])
+}
+
+/// Umumiy bilimni yaxshilash uchun ixtiyoriy rozilik (Knowledge Hub, docs/KNOWLEDGE-HUB.md). Qator yo'q yoki revokedAt to'ldirilgan: rozilik YO'Q (standart).
+/// Faqat rozilik bo'lsa tozalangan, umumlashtirilgan savol admin ko'rib chiqishiga nomzod bo'lishi mumkin; chat matni hech qachon ko'chirilmaydi.
+model KnowledgeConsent {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose       String
+  policyVersion String
+  grantedAt     DateTime  @default(now())
+  revokedAt     DateTime?
+  @@unique([userId, purpose])
 }
 
 /// /ai sahifasidagi chatlar: foydalanuvchi o'zi ko'radi va o'chira oladi. Matn saqlanadi (AiRequest jurnalidan farqli).
