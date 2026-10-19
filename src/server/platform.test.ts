@@ -109,6 +109,14 @@ describe("sozlamalar", () => {
     expect(mergeSetting("modules", { market: false }).market).toBe(false);
     expect(mergeSetting("modules", { market: false }).ai).toBe(true);
   });
+  it("markaziy bilim xizmati standart bo'yicha o'chiq (hubMode=off); eski saqlangan AI sozlamasi buzilmaydi", () => {
+    expect(SETTING_DEFAULTS.ai.hubMode).toBe("off");
+    const { hubMode: _omit, ...old } = SETTING_DEFAULTS.ai; void _omit; // hubMode qo'shilishidan oldin saqlangan qiymat
+    expect(mergeSetting("ai", { ...old, perMinute: 9 })).toMatchObject({ perMinute: 9, hubMode: "off" });
+    expect(mergeSetting("ai", { hubMode: "shadow" }).hubMode).toBe("shadow");
+    expect(mergeSetting("ai", { hubMode: "sharpa" }).hubMode).toBe("off");
+    expect(settingSchemas.ai.safeParse({ ...SETTING_DEFAULTS.ai, hubMode: "yoq" }).success).toBe(false);
+  });
   it("to'lov rejimi faqat ruxsat etilgan qiymatlar", () => {
     expect(settingSchemas.payments.safeParse({ mode: "stripe", manualInstructions: "", minPriceUzs: 0 }).success).toBe(false);
   });

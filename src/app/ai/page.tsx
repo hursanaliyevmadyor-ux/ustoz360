@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 import { TRUST_NAMES, encodeSources, splitSources } from "@/lib/websources";
 
 type Role = "user" | "assistant";
-type Msg = { role: Role; content: string; error?: boolean };
+/** entryId: javob tasdiqlangan bilim bazasidan kelgan (baholash tugmalari uchun). Saqlangan tarixda yo'q. */
+type Msg = { role: Role; content: string; error?: boolean; entryId?: string };
 type Chat = { id: string; title: string; model: string };
 type ModelKey = "free" | "claude";
 type Status = { configured: boolean; remaining: number; limit: number; free: { configured: boolean; remaining: number; limit: number }; web?: { configured: boolean; remaining: number; limit: number } };
@@ -63,8 +64,55 @@ function Rich({ text }: { text: string }) {
   );
 }
 
+/** Tasdiqlangan bilim javobini baholash: bir foydalanuvchi bir yozuvga bitta ovoz; ovoz foydalanuvchiga bog'lanmaydi. 3 ta alohida «noto'g'ri» yozuvni qidiruvdan chiqaradi. */
+function Rate({ entryId }: { entryId: string }) {
+  const [done, setDone] = React.useState<string | null>(null);
+  const [err, setErr] = React.useState("");
+  const vote = async (rating: 1 | -1, reason?: string) => {
+    setErr("");
+    try {
+      const r = await fetch("/api/ai/knowledge-feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ entryId, rating, ...(reason && { reason }) }) });
+      if (r.ok) setDone(rating === 1 ? "Rahmat! Fikringiz bilimni yaxshilashga yordam beradi." : "Rahmat! Administrator bu javobni qayta tekshiradi.");
+      else setErr((await r.json().catch(() => ({}))).error ?? "Baholab bo'lmadi.");
+    } catch { setErr("Server bilan aloqa yo'q."); }
+  };
+  if (done) return <p className="mt-2 text-xs text-success" role="status">{done}</p>;
+  const b = "rounded-full border border-border px-2.5 py-1 text-xs font-semibold hover:bg-muted";
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      <span>Tasdiqlangan javob foydali bo'ldimi?</span>
+      <button type="button" className={b} onClick={() => vote(1)}>👍 Ha</button>
+      <button type="button" className={b} onClick={() => vote(-1, "wrong")}>Noto'g'ri</button>
+      <button type="button" className={b} onClick={() => vote(-1, "outdated")}>Eskirgan</button>
+      {err && <span role="alert" className="text-danger">{err}</span>}
+    </div>
+  );
+}
+
+/** Umumiy bilimni yaxshilash uchun ixtiyoriy rozilik (standart: o'chiq). Administrator Bilim markazini yoqmagan bo'lsa ko'rinmaydi. */
+function ConsentBox() {
+  const [c, setC] = React.useState<{ enabled: boolean; active: boolean; available: boolean; text: string } | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => { fetch("/api/ai/hub-consent").then((r) => (r.ok ? r.json() : null)).then(setC).catch(() => {}); }, []);
+  if (!c || !c.active || !c.available) return null;
+  const toggle = async () => {
+    setBusy(true);
+    try { const r = await fetch("/api/ai/hub-consent", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: !c.enabled }) }); if (r.ok) setC(await r.json()); } catch {}
+    setBusy(false);
+  };
+  return (
+    <div className="mb-3 rounded-xl border border-border p-3 text-sm">
+      <label className="flex cursor-pointer items-start gap-2.5">
+        <input type="checkbox" className="mt-1 h-4 w-4" checked={c.enabled} disabled={busy} onChange={toggle} />
+        <span className="font-semibold leading-snug">Savollarimni (shaxsiy ma'lumotsiz) umumiy bilimni yaxshilashga berish</span>
+      </label>
+      <details className="mt-1.5 text-xs text-muted-foreground"><summary className="cursor-pointer">Bu qanday ishlaydi?</summary><p className="mt-1.5 leading-relaxed">{c.text}</p></details>
+    </div>
+  );
+}
+
 /** Assistent javobi: matn, undan keyin (internetdan qidirilgan bo'lsa) manbalar va qidiruv so'zlari. */
-function Answer({ content }: { content: string }) {
+function Answer({ content, entryId }: { content: string; entryId?: string }) {
   const { text, sources, queries } = splitSources(content);
   return (
     <>
@@ -91,6 +139,7 @@ function Answer({ content }: { content: string }) {
           {queries.map((q) => <a key={q} href={`https://www.google.com/search?q=${encodeURIComponent(q)}`} target="_blank" rel="noopener noreferrer nofollow" className="rounded-full border border-border px-2 py-0.5 hover:bg-muted">{q}</a>)}
         </p>
       )}
+      {entryId && <Rate entryId={entryId} />}
       <div className="mt-1"><CopyBtn text={text} /></div>
     </>
   );
@@ -182,7 +231,7 @@ export default function Page() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) append({ role: "assistant", error: true, content: r.status === 401 ? "Davom etish uchun tizimga kiring." : d.error ?? "Xatolik yuz berdi. Qayta urinib ko'ring." });
-      else { append({ role: "assistant", content: encodeSources(d.reply, d.sources ?? [], d.queries ?? []) }); if (d.chatId) { setActiveId(d.chatId); loadChats(); } }
+      else { append({ role: "assistant", content: encodeSources(d.reply, d.sources ?? [], d.queries ?? []), ...(d.entryId && { entryId: d.entryId }) }); if (d.chatId) { setActiveId(d.chatId); loadChats(); } }
     } catch { append({ role: "assistant", error: true, content: "Server bilan aloqa yo'q. Internetni tekshirib, qayta urinib ko'ring." }); }
     setBusy(false); loadStatus();
   };
@@ -233,6 +282,7 @@ export default function Page() {
         </ul>
       </nav>
       <div className="border-t border-border p-3">
+        {me && <ConsentBox />}
         {me ? (
           <div className="flex items-center gap-3 rounded-xl bg-muted p-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-bold text-primary">{initials}</span>
@@ -300,7 +350,7 @@ export default function Page() {
                 <div key={i} className={cn("flex gap-3", m.role === "user" && "justify-end")}>
                   {m.role === "assistant" && <span className="mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary text-white"><Sparkles className="h-4 w-4" /></span>}
                   <div className={cn("min-w-0", m.role === "user" ? "max-w-[85%] whitespace-pre-wrap rounded-2xl bg-muted px-4 py-2.5 text-[15px] leading-7" : "flex-1")}>
-                    {m.role === "user" ? m.content : m.error ? <p className="rounded-xl bg-danger/10 p-3 text-sm text-danger" role="alert">{m.content}</p> : <Answer content={m.content} />}
+                    {m.role === "user" ? m.content : m.error ? <p className="rounded-xl bg-danger/10 p-3 text-sm text-danger" role="alert">{m.content}</p> : <Answer content={m.content} entryId={m.entryId} />}
                   </div>
                 </div>
               ))}

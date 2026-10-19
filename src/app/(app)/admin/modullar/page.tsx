@@ -24,7 +24,7 @@ const INFO: Record<string, { stat: string; manage: { href: string; label: string
   market: { stat: "market", manage: [{ href: "/admin/kurslar", label: "Kurslar" }, { href: "/admin/tolovlar", label: "To'lovlar" }, { href: "/admin/sozlamalar", label: "To'lov rejimi" }] },
   sinf: { stat: "sinf", manage: [], note: "Sinflar, o'quvchi taxalluslari va ballari ustozga tegishli: admin faqat yig'ma statistikani ko'radi." },
   bilimxona: { stat: "bilimxona", manage: [{ href: "/admin/kutubxona", label: "Kutubxona" }] },
-  bepul: { stat: "ai", manage: [{ href: "/admin/sozlamalar", label: "AI sozlamalari" }] },
+  bepul: { stat: "ai", manage: [{ href: "/admin/sozlamalar", label: "AI sozlamalari" }, { href: "/admin/ai-bilim", label: "AI Bilim markazi" }] },
 };
 
 function List({ initial }: { initial: Mods }) {

@@ -18,5 +18,5 @@ export const POST = (req: Request) => handle(async () => {
   if (messages[messages.length - 1].role !== "user") throw new ApiError(400, "Oxirgi xabar foydalanuvchidan bo'lishi kerak.");
   const r = await smartFreeChat(user.id, messages, { origin: appOrigin(req) });
   const savedId = save ? await saveExchange(user.id, chatId, "free", messages[messages.length - 1].content, encodeSources(r.reply, r.sources, r.queries)) : null;
-  return { reply: r.reply, sources: r.sources, queries: r.queries, searched: r.searched, chatId: savedId, ...(await freeUsageToday(user.id)) };
+  return { reply: r.reply, sources: r.sources, queries: r.queries, searched: r.searched, origin: r.origin, entryId: r.entryId, chatId: savedId, ...(await freeUsageToday(user.id)) };
 });
