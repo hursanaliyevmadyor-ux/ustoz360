@@ -17,7 +17,7 @@ beforeEach(() => {
   process.env.ALLOW_EMAIL_SIGNUP = "1"; process.env.AI_RETRY_MS = "0";
   process.env.FREE_LLM_BASE_URL = "https://a.example.com/v1"; process.env.FREE_LLM_API_KEY = "k"; process.env.FREE_LLM_MODEL = "m";
 });
-afterEach(() => { vi.unstubAllGlobals(); for (const k of ["ALLOW_EMAIL_SIGNUP", "AI_RETRY_MS", "FREE_LLM_BASE_URL", "FREE_LLM_API_KEY", "FREE_LLM_MODEL"]) delete process.env[k]; });
+afterEach(() => { vi.unstubAllGlobals(); for (const k of ["ALLOW_EMAIL_SIGNUP", "AI_RETRY_MS", "FREE_LLM_BASE_URL", "FREE_LLM_API_KEY", "FREE_LLM_MODEL", "FREE_LLM2_BASE_URL", "FREE_LLM2_API_KEY", "FREE_LLM2_MODEL"]) delete process.env[k]; });
 
 describe("AI shlyuzi: limitlar va jurnal", () => {
   it("daqiqalik chegara oshsa 429 (rate_limited) va tashqi xizmatga murojaat qilinmaydi", async () => {
@@ -64,6 +64,45 @@ describe("AI shlyuzi: limitlar va jurnal", () => {
     const { runFreeAi } = await import("./gateway");
     await runFreeAi("u1", [{ role: "user", content: "salom" }]);
     expect((h.create.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data.costMicro).toBeNull();
+  });
+  it("javob bergan xizmatning slot nomi jurnalga yoziladi (kalit emas)", async () => {
+    h.count.mockResolvedValue(0);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok("javob")));
+    const { runFreeAi } = await import("./gateway");
+    await runFreeAi("u1", [{ role: "user", content: "salom" }]);
+    const row = (h.create.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data;
+    expect(row.provider).toBe("free1");
+    expect(JSON.stringify(row)).not.toContain('"k"');
+  });
+  it("birinchi xizmat limitga yetsa, ikkinchisi javob beradi va jurnalda free2 turadi", async () => {
+    h.count.mockResolvedValue(0);
+    process.env.FREE_LLM2_BASE_URL = "https://b.example.com/v1"; process.env.FREE_LLM2_API_KEY = "k2"; process.env.FREE_LLM2_MODEL = "m2";
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => (String(url).startsWith("https://a.") ? new Response("{}", { status: 429 }) : ok("ikkinchi"))));
+    const { runFreeAi } = await import("./gateway");
+    await expect(runFreeAi("u1", [{ role: "user", content: "salom" }])).resolves.toMatchObject({ text: "ikkinchi" });
+    expect((h.create.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data.provider).toBe("free2");
+  });
+  it("hamma xizmat xato bersa provayder nomi yozilmaydi (bo'sh)", async () => {
+    h.count.mockResolvedValue(0);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 429 })));
+    const { runFreeAi } = await import("./gateway");
+    await expect(runFreeAi("u1", [{ role: "user", content: "salom" }])).rejects.toMatchObject({ status: 503 });
+    const row = (h.create.mock.calls.at(-1) as unknown as [{ data: Record<string, unknown> }])[0].data;
+    expect(row).toMatchObject({ status: "error" }); expect(row.provider).toBeUndefined();
+  });
+  it("'provider' ustuni bazada hali yo'q bo'lsa, yozuv ustunsiz qayta uriniladi: javob va limit hisobi buzilmaydi", async () => {
+    h.count.mockResolvedValue(0);
+    h.create.mockRejectedValueOnce(new Error("column \"provider\" does not exist"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok("javob")));
+    const { runFreeAi } = await import("./gateway");
+    await expect(runFreeAi("u1", [{ role: "user", content: "salom" }])).resolves.toMatchObject({ text: "javob" });
+    expect(h.create).toHaveBeenCalledTimes(2);
+    const calls = h.create.mock.calls as unknown as [{ data: Record<string, unknown> }][];
+    expect(calls[0][0].data.provider).toBe("free1");
+    expect(calls[1][0].data.provider).toBeUndefined();
+    expect(calls[1][0].data).toMatchObject({ userId: "u1", status: "ok", feature: "free-chat" });
+    err.mockRestore();
   });
 });
 

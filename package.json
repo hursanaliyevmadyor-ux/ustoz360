@@ -14,6 +14,7 @@
     "test:e2e:platform": "tsx e2e/platform.e2e.ts",
     "test:e2e:bot": "tsx --env-file=.env.local e2e/bot.e2e.ts",
     "test:e2e:websearch": "tsx --env-file=.env.local e2e/websearch.e2e.ts",
+    "test:e2e:knowledge": "tsx --env-file=.env.local e2e/knowledge.e2e.ts",
     "test:e2e:yandex": "tsx e2e/yandex.e2e.ts",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",

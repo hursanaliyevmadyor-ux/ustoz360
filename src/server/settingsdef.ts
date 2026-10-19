@@ -28,6 +28,10 @@ export const settingSchemas = {
     /** Narx (USD / 1 mln token), xarajatni taxmin qilish uchun. 0: hisoblanmaydi. */
     priceInPerMTok: z.number().min(0).max(1000),
     priceOutPerMTok: z.number().min(0).max(1000),
+    /** AI Bilim markazi (docs/KNOWLEDGE-HUB.md): off: ishlatilmaydi | shadow: faqat o'lchanadi (topildi/topilmadi, ehtiyoj), javobga ta'sir yo'q | on: tasdiqlangan bilim javobga qo'llanadi. */
+    hubMode: z.enum(["off", "shadow", "on"]),
+    /** Bepul xizmatlar roli: kalit "free1".."free10" (FREE_LLM, FREE_LLM2_... slotlari). Bo'sh: hamma xizmat tabiiy tartibda. */
+    providerRoles: z.record(z.string().regex(/^free([1-9]|10)$/), z.enum(["primary", "fallback", "verifier", "disabled"])),
   }),
   payments: z.object({
     /** off: to'lov yo'q | manual: bank o'tkazmasi, admin tasdiqlaydi | provider: Click/Payme (kalitlar ulangach) */
@@ -64,7 +68,7 @@ export const SETTING_KEYS = Object.keys(settingSchemas) as SettingKey[];
 export const SETTING_DEFAULTS: SettingsMap = {
   general: { siteName: "USTOZ 360", supportContact: "" },
   modules: { ai: true, darsyor: true, toifa: true, market: true, sinf: true, bilimxona: true, bepul: true },
-  ai: { enabled: true, freeEnabled: true, dailyLimit: null, freeDailyLimit: null, webDailyLimit: 5, webAuto: true, perMinute: 6, priceInPerMTok: 0, priceOutPerMTok: 0 },
+  ai: { enabled: true, freeEnabled: true, dailyLimit: null, freeDailyLimit: null, webDailyLimit: 5, webAuto: true, perMinute: 6, priceInPerMTok: 0, priceOutPerMTok: 0, hubMode: "off", providerRoles: {} },
   payments: { mode: "off", manualInstructions: "", minPriceUzs: 0 },
   content: { aiDisclaimer: "AI matni noto'g'ri bo'lishi mumkin: ishlatishdan oldin tekshiring.", policy: "" },
   notifications: { enabled: true, seminarAnnouncements: true },
