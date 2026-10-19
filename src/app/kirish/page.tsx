@@ -5,6 +5,7 @@ import { BarChart3, BookOpenCheck, Eye, EyeOff, Sparkles } from "lucide-react";
 import { Field, Input } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { BrandMark } from "@/components/brand-mark";
 import { cn } from "@/lib/utils";
 
 const ERRORS: Record<string, string> = {
@@ -38,7 +39,7 @@ function TelegramIcon() {
 function Brand({ light }: { light?: boolean }) {
   return (
     <div className="flex items-center gap-2.5" aria-label="USTOZ 360">
-      <span className={cn("grid h-10 w-10 place-items-center rounded-xl text-base font-extrabold", light ? "bg-white text-navy" : "bg-primary text-white")}>U</span>
+      <BrandMark dark={light} className="h-11 w-11" />
       <span className={cn("text-xl font-extrabold tracking-tight", light && "text-white")}>USTOZ <span className={light ? "text-teal" : "text-primary"}>360</span></span>
     </div>
   );

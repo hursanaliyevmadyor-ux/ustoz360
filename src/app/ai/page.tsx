@@ -6,6 +6,7 @@ import {
   ArrowUp, BarChart3, BookOpen, Check, ClipboardList, Copy, ExternalLink, FileText, Globe, GraduationCap, Home, Lightbulb, Mail, Menu, MessageSquare, Plus, Sparkles, Trash2, X, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/brand-mark";
 import { cn } from "@/lib/utils";
 import { TRUST_NAMES, encodeSources, splitSources } from "@/lib/websources";
 
@@ -85,28 +86,6 @@ function Rate({ entryId }: { entryId: string }) {
       <button type="button" className={b} onClick={() => vote(-1, "wrong")}>Noto'g'ri</button>
       <button type="button" className={b} onClick={() => vote(-1, "outdated")}>Eskirgan</button>
       {err && <span role="alert" className="text-danger">{err}</span>}
-    </div>
-  );
-}
-
-/** Umumiy bilimni yaxshilash uchun ixtiyoriy rozilik (standart: o'chiq). Administrator Bilim markazini yoqmagan bo'lsa ko'rinmaydi. */
-function ConsentBox() {
-  const [c, setC] = React.useState<{ enabled: boolean; active: boolean; available: boolean; text: string } | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => { fetch("/api/ai/hub-consent").then((r) => (r.ok ? r.json() : null)).then(setC).catch(() => {}); }, []);
-  if (!c || !c.active || !c.available) return null;
-  const toggle = async () => {
-    setBusy(true);
-    try { const r = await fetch("/api/ai/hub-consent", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: !c.enabled }) }); if (r.ok) setC(await r.json()); } catch {}
-    setBusy(false);
-  };
-  return (
-    <div className="mb-3 rounded-xl border border-border p-3 text-sm">
-      <label className="flex cursor-pointer items-start gap-2.5">
-        <input type="checkbox" className="mt-1 h-4 w-4" checked={c.enabled} disabled={busy} onChange={toggle} />
-        <span className="font-semibold leading-snug">Savollarimni (shaxsiy ma'lumotsiz) umumiy bilimni yaxshilashga berish</span>
-      </label>
-      <details className="mt-1.5 text-xs text-muted-foreground"><summary className="cursor-pointer">Bu qanday ishlaydi?</summary><p className="mt-1.5 leading-relaxed">{c.text}</p></details>
     </div>
   );
 }
@@ -245,7 +224,7 @@ export default function Page() {
     <div className="flex h-full flex-col bg-card">
       <div className="flex items-center justify-between gap-2 p-4 pb-2">
         <Link href="/dashboard" className="flex items-center gap-2.5" aria-label="USTOZ 360">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-sm font-extrabold text-white">U</span>
+          <BrandMark className="h-10 w-10" />
           <span className="text-base font-extrabold tracking-tight">USTOZ <span className="text-primary">360</span></span>
         </Link>
         <button className="grid h-9 w-9 place-items-center rounded-lg hover:bg-muted lg:hidden" onClick={() => setDrawer(false)} aria-label="Yopish"><X className="h-5 w-5" /></button>
@@ -282,7 +261,6 @@ export default function Page() {
         </ul>
       </nav>
       <div className="border-t border-border p-3">
-        {me && <ConsentBox />}
         {me ? (
           <div className="flex items-center gap-3 rounded-xl bg-muted p-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-bold text-primary">{initials}</span>

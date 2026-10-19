@@ -40,7 +40,7 @@ const STATUS: Record<string, { label: string; v: "success" | "amber" | "danger" 
 const FLAG: Record<string, string> = { no_source: "Manba yo'q", weak_source: "Manba ishonchsiz", old_year: "Eski yil bor", copied_text: "Matn manbadan ko'chirilgan", injection_suspect: "Shubhali ko'rsatma", duplicate: "Takror bo'lishi mumkin" };
 const MODE: Record<Mode, { label: string; text: string }> = {
   off: { label: "O'chiq", text: "Bilim markazi javobga umuman ta'sir qilmaydi va hech narsa yig'ilmaydi." },
-  shadow: { label: "Kuzatuv", text: "Javob avvalgidek AI'dan keladi. Markaz faqat «topilarmidi?» ni o'lchaydi va (rozilik bergan foydalanuvchilardan) nomzod yig'adi." },
+  shadow: { label: "Kuzatuv", text: "Javob avvalgidek AI'dan keladi. Markaz faqat «topilarmidi?» ni o'lchaydi va aniq javob olingan savollarni nomzod sifatida avtomatik yig'adi." },
   on: { label: "Yoqiq", text: "Tasdiqlangan bilim mos kelsa, AI chaqirilmasdan manbali javob beriladi; qisman mos bo'lsa AI'ga tayanch bo'ladi. Telefon, email kabi shaxsiy ma'lumot AI'ga ketishdan oldin niqoblanadi." },
 };
 const dateOf = (s: string | null | undefined) => (s ? new Date(s).toISOString().slice(0, 10) : "");
@@ -105,8 +105,8 @@ export function OverviewTab({ q, providers, go }: { q: ReturnType<typeof useQuer
                   {o.demand.subjects.map((s) => <tr key={`s${s.subject}`}><Td className="font-semibold capitalize">{s.subject}</Td><Td>{s.asked}</Td><Td>{s.fromKb}</Td><Td>{s.unanswered}</Td></tr>)}
                   {o.demand.topics.map((t) => <tr key={`t${t.subject}${t.topic}`}><Td><span className="capitalize text-muted-foreground">{t.subject ? `${t.subject}: ` : ""}</span>{t.topic}</Td><Td>{t.asked}</Td><Td>{t.fromKb}</Td><Td>{t.unanswered}</Td></tr>)}
                 </tbody></Table>)}</CardContent></Card>
-            <Card><CardHeader><div><CardTitle>Javobi yetishmayotgan savollar</CardTitle><CardDescription>Faqat rozilik bergan foydalanuvchilarning tozalangan savollari; ko'p so'ralgani yuqorida.</CardDescription></div></CardHeader>
-              <CardContent>{o.missing.length === 0 ? <EmptyState title="Hozircha yo'q" text="Rozilik bergan foydalanuvchilar savoli shu yerda to'planadi." /> : (
+            <Card><CardHeader><div><CardTitle>Javobi yetishmayotgan savollar</CardTitle><CardDescription>Foydalanuvchilarning shaxsiy ma'lumotdan tozalangan savollari; ko'p so'ralgani yuqorida.</CardDescription></div></CardHeader>
+              <CardContent>{o.missing.length === 0 ? <EmptyState title="Hozircha yo'q" text="Foydalanuvchilar savoli shu yerda avtomatik to'planadi." /> : (
                 <ul className="space-y-2">{o.missing.map((m) => (
                   <li key={m.id} className="flex items-start justify-between gap-3 rounded-xl bg-muted/50 p-3 text-sm"><span>{m.question}{m.subject && <span className="ml-1 text-xs capitalize text-muted-foreground">· {m.subject}</span>}</span><Badge variant={m.status === "NEEDS_SOURCE" ? "amber" : "blue"}>{m.askCount} marta</Badge></li>))}</ul>)}
                 {o.missing.length > 0 && <Button className="mt-3" variant="outline" size="sm" onClick={() => go("review")}>Ko'rib chiqishga o'tish</Button>}</CardContent></Card>
@@ -201,7 +201,7 @@ export function ReviewTab({ onChanged }: { onChanged: () => void }) {
   return (
     <>
       <p className="mb-4 rounded-xl bg-amber/10 px-3.5 py-2.5 text-sm">Bu yerdagi javoblar AI yozgan va hali <b>bilim emas</b>: siz manbani tekshirib tasdiqlamaguncha hech kimga ko'rsatilmaydi. Avtomatik tasdiq yo'q. Foydalanuvchi izi (xesh) ko'rib chiqilgach o'chiriladi.</p>
-      <QueryView q={q}>{(d) => d.items.length === 0 ? <EmptyState title="Tekshiruv kutayotgan javob yo'q" text="Foydalanuvchi rozilik bersa va AI bazada yo'q savolga javob bersa, nomzod shu yerda paydo bo'ladi." /> : (
+      <QueryView q={q}>{(d) => d.items.length === 0 ? <EmptyState title="Tekshiruv kutayotgan javob yo'q" text="AI bazada yo'q savolga aniq javob bersa, nomzod shu yerda avtomatik paydo bo'ladi." /> : (
         <div className="space-y-4">{d.items.map((c) => (
           <Card key={c.id}><CardContent className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-2">

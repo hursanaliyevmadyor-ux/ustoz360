@@ -2,10 +2,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, BookOpen, Moon, Sun } from "lucide-react";
+import { Bell, Moon, Sun } from "lucide-react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/brand-mark";
 import { useShell } from "./shell-context";
 
 /** Ikkala qobiq (ustoz va admin) uchun umumiy qismlar. */
@@ -19,7 +20,7 @@ export function Logo({ className, dark, href = "/dashboard", suffix }: { classNa
   const tail = parts.length > 1 ? parts[parts.length - 1] : "";
   return (
     <Link href={href} className={cn("flex shrink-0 items-center gap-2.5 whitespace-nowrap", className)} aria-label={`${name}${suffix ? ` ${suffix}` : ""} bosh sahifa`}>
-      <BookOpen className={cn("h-8 w-8", dark ? "text-[#7FA2FF]" : "text-primary")} strokeWidth={2.2} aria-hidden />
+      <BrandMark dark={dark} className="h-9 w-9" />
       <span className={cn("text-lg font-black tracking-tight min-[380px]:text-xl", dark ? "text-white" : "text-foreground")}>{head}{tail && <> <span className={dark ? "text-[#7FA2FF]" : "text-primary"}>{tail}</span></>}</span>
       {suffix && <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", dark ? "bg-white/15 text-white" : "bg-primary/10 text-primary")}>{suffix}</span>}
     </Link>

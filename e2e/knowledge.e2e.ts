@@ -1,6 +1,6 @@
 /**
  * AI Bilim markazi E2E: ishga tushirilgan sayt va HAQIQIY baza bilan, lekin AI va embedding o'rniga soxta server (hech qanday kalit/kredit ketmaydi).
- * Tekshiriladi: faqat tasdiqlangan va muddati o'tmagan bilim javobga chiqishi, off/shadow/on rejimlari, maxfiylik niqobi, rozilik va nomzod oqimi,
+ * Tekshiriladi: faqat tasdiqlangan va muddati o'tmagan bilim javobga chiqishi, off/shadow/on rejimlari, maxfiylik niqobi, avtomatik nomzod oqimi (rozilik so'ralmaydi),
  * admin tasdiq/rad/arxiv/xato belgisi (holat o'tishlari, audit jurnali o'zgarmasligi), foydalanuvchi baholari, provayder rollari, shaxssiz statistika.
  *
  * Tayyorgarlik:
@@ -45,7 +45,10 @@ const fake = createServer((req, res) => {
     res.setHeader("content-type", "application/json");
     if (String(req.url).includes(":embedContent")) return res.end(JSON.stringify({ embedding: { values: fakeVec(String(body.content?.parts?.[0]?.text ?? "")) } }));
     aiCalls.push({ messages: body.messages ?? [] });
-    res.end(JSON.stringify({ model: "fake-model", usage: { prompt_tokens: 11, completion_tokens: 22 }, choices: [{ message: { content: "E2E AI javobi: bu javob sinov uchun soxta server tomonidan yozildi va yetarlicha uzun." } }] }));
+    // Savolda BILMAYMAN_SINOV bo'lsa, soxta AI «aniq javob yo'q» deb javob beradi (nomzod saqlanmasligini tekshirish uchun).
+    const unsure = usersOf(aiCalls.at(-1)).includes("BILMAYMAN_SINOV");
+    const content = unsure ? "E2E AI javobi: bu haqda aniq ma'lumot yo'q, shuning uchun javob bera olmayman. Iltimos rasmiy manbaga murojaat qiling." : "E2E AI javobi: bu javob sinov uchun soxta server tomonidan yozildi va yetarlicha uzun.";
+    res.end(JSON.stringify({ model: "fake-model", usage: { prompt_tokens: 11, completion_tokens: 22 }, choices: [{ message: { content } }] }));
   });
 });
 
@@ -227,17 +230,9 @@ async function main() {
       assert.ok(await db.knowledgeAudit.findUnique({ where: { id: a.id } }), "audit qatori joyida");
     });
 
-    await t("rozilik: standart O'CHIQ; rozilik yo'q bo'lsa nomzod yaratilmaydi", async () => {
-      const c = (await user.get("/api/ai/hub-consent")).json;
-      assert.equal(c.enabled, false); assert.equal(c.active, true); assert.match(c.text, /qaytarib olsangiz/);
+    await t("rozilik so'ralmaydi: aniq javob olingan savol o'zi nomzod bo'lib saqlanadi; shaxsiy ma'lumotli savol, bazada bor savol yoki «bilmayman» javobi saqlanmaydi; bitta foydalanuvchi sonni oshirmaydi", async () => {
       const r = await ask(user, Q_NEW);
       assert.match(r.json.reply, /^E2E AI javobi/);
-      assert.equal(await db.knowledgeCandidate.count({ where: { normalizedQuestion: { contains: M } } }), 0);
-    });
-
-    await t("rozilik bilan: tozalangan savol nomzod bo'ladi; shaxsiy ma'lumotli savol yoki bazada bor savol nomzod bo'lmaydi; bitta foydalanuvchi sonni oshirmaydi", async () => {
-      assert.equal((await user.put("/api/ai/hub-consent", { enabled: true })).json.enabled, true);
-      await ask(user, Q_NEW);
       const c = await db.knowledgeCandidate.findFirstOrThrow({ where: { normalizedQuestion: { contains: M } } });
       assert.equal(c.reviewStatus, "PENDING_REVIEW"); assert.equal(c.askCount, 1); assert.equal(c.generatedByProvider, "free1"); assert.equal(c.contributorRefs.length, 1);
       assert.ok(!c.contributorRefs[0].includes(userRow.id), "foydalanuvchi id si saqlanmaydi");
@@ -247,10 +242,10 @@ async function main() {
       const n = await db.knowledgeCandidate.count({ where: { normalizedQuestion: { contains: M } } });
       await ask(user, `Skripka ${M} musiqa asbobi haqida: menga +998 90 123 45 67 yoki ali@mail.uz ga yozing`);
       await ask(user, Q_ENTRY);
-      assert.equal(await db.knowledgeCandidate.count({ where: { normalizedQuestion: { contains: M } } }), n, "PII va bazada bor savol nomzod bo'lmasligi kerak");
+      await ask(user, `Nay ${M} BILMAYMAN_SINOV musiqa asbobini sozlash tartibi qanday bo'ladi`);
+      assert.equal(await db.knowledgeCandidate.count({ where: { normalizedQuestion: { contains: M } } }), n, "PII, bazada bor savol va «bilmayman» javobi nomzod bo'lmasligi kerak");
       assert.equal(await db.knowledgeCandidate.count({ where: { OR: [{ normalizedQuestion: { contains: "998" } }, { proposedAnswer: { contains: "ali@mail" } }] } }), 0);
-      // ikkinchi foydalanuvchi (admin akkaunti) rozilik bilan shu savolni so'rasa, son oshadi
-      await admin.put("/api/ai/hub-consent", { enabled: true });
+      // ikkinchi foydalanuvchi (admin akkaunti) shu savolni so'rasa, son oshadi (rozilik so'ralmaydi)
       await ask(admin, Q_NEW);
       assert.equal((await db.knowledgeCandidate.findUniqueOrThrow({ where: { id: c.id } })).askCount, 2);
     });
@@ -286,16 +281,11 @@ async function main() {
       assert.equal(r.json.origin, "kb"); assert.equal(aiCalls.length, n); assert.match(r.json.reply, /kvinta oralig'ida/);
     });
 
-    await t("rozilikni qaytarib olish: ko'rib chiqilmagan nomzodlar o'chadi, tasdiqlangan bilim qoladi", async () => {
+    await t("yangi aniq javob yana avtomatik nomzod bo'ladi; tasdiqlangan bilim joyida qoladi", async () => {
       const q2 = `Nay ${M} musiqa sinfida qanday o'rgatish kerak`;
       await ask(user, q2);
       assert.equal(await db.knowledgeCandidate.count({ where: { normalizedQuestion: q2 } }), 1);
-      assert.equal((await user.put("/api/ai/hub-consent", { enabled: false })).json.enabled, false);
-      assert.equal(await db.knowledgeCandidate.count({ where: { normalizedQuestion: q2 } }), 0, "nomzod o'chishi kerak");
       assert.ok(await db.knowledgeEntry.findFirst({ where: { questionCanonical: Q_NEW } }), "tasdiqlangan bilim qoladi");
-      await ask(user, q2);
-      assert.equal(await db.knowledgeCandidate.count({ where: { normalizedQuestion: q2 } }), 0, "rozilik yo'q: qayta yaratilmaydi");
-      await admin.put("/api/ai/hub-consent", { enabled: false });
     });
 
     await t("baholash: bir ovoz, ovoz o'zgartiriladi; 3 ta alohida «noto'g'ri» yozuvni qidiruvdan chiqaradi (audit bilan)", async () => {

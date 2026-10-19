@@ -174,15 +174,19 @@ export const visibleDemand = <T extends { asked: number }>(rows: T[], min = MIN_
 
 // ---------- Nomzod ----------
 export type Mode = "off" | "shadow" | "on";
-export type Gate = { mode: Mode; consent: boolean; question: string; answer: string; privateContext?: boolean; kb: "direct" | "grounded" | "none"; piiFound: boolean };
-export type GateResult = { ok: true } | { ok: false; reason: "mode_off" | "no_consent" | "private_context" | "pii" | "kb_hit" | "short_question" | "short_answer" | "long_answer" | "no_answer" };
+export type Gate = { mode: Mode; question: string; answer: string; privateContext?: boolean; kb: "direct" | "grounded" | "none"; piiFound: boolean };
+export type GateResult = { ok: true } | { ok: false; reason: "mode_off" | "private_context" | "pii" | "kb_hit" | "short_question" | "short_answer" | "long_answer" | "no_answer" };
 
-const UNSURE = /(bilmayman|aniq ma'lumot yo'q|ma'lumot topilmadi|javob bera olmayman|tasdiqlay olmayman|ishonchim komil emas)/;
+/** «Aniq javob emas» belgilari: AI bilmasligini, taxmin qilayotganini yoki manba topa olmaganini aytgan javob saqlanmaydi. */
+const UNSURE = /(bilmayman|aniq ma'lumot yo'q|ma'lumot topilmadi|javob bera olmayman|tasdiqlay olmayman|ishonchim komil emas|aniq emas|taxminiy|topa olmadim|afsuski)/;
 
-/** AI javobi umumiy bilimga NOMZOD bo'la oladimi (nomzod haligacha bilim emas: admin ko'rib chiqadi). */
+/**
+ * AI javobi umumiy bilimga NOMZOD bo'la oladimi (nomzod haligacha bilim emas: admin ko'rib chiqadi).
+ * Foydalanuvchidan rozilik so'ralmaydi: aniq javob olingan savol avtomatik saqlanadi, lekin shaxsiy ma'lumotli savol/javob, shaxsiy kontekst,
+ * bazada allaqachon bor savol va «bilmayman/taxminan» kabi javoblar hech qachon saqlanmaydi.
+ */
 export function candidateGate(g: Gate): GateResult {
   if (g.mode === "off") return { ok: false, reason: "mode_off" };
-  if (!g.consent) return { ok: false, reason: "no_consent" };
   if (g.privateContext) return { ok: false, reason: "private_context" };
   if (g.piiFound) return { ok: false, reason: "pii" };
   if (g.kb !== "none") return { ok: false, reason: "kb_hit" };

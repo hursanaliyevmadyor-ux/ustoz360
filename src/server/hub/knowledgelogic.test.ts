@@ -151,17 +151,21 @@ describe("foydalanuvchi baholari va yig'ma statistika", () => {
 });
 
 describe("nomzod shartlari", () => {
-  const ok = { mode: "on" as const, consent: true, question: "Kasrlarni qo'shish qoidasini qanday tushuntiraman", answer: "Kasrlarni qo'shishda avval umumiy maxraj topiladi, keyin suratlar qo'shiladi va natija qisqartiriladi.", kb: "none" as const, piiFound: false };
-  it("hamma shart bajarilsa nomzod bo'la oladi", () => { expect(candidateGate(ok)).toEqual({ ok: true }); });
-  it("har bir shart buzilsa rad: rejim, rozilik, shaxsiy kontekst, shaxsiy ma'lumot, bazada bor", () => {
+  const ok = { mode: "on" as const, question: "Kasrlarni qo'shish qoidasini qanday tushuntiraman", answer: "Kasrlarni qo'shishda avval umumiy maxraj topiladi, keyin suratlar qo'shiladi va natija qisqartiriladi.", kb: "none" as const, piiFound: false };
+  it("aniq javob olingan savol rozilik so'ralmasdan nomzod bo'la oladi", () => { expect(candidateGate(ok)).toEqual({ ok: true }); });
+  it("har bir shart buzilsa rad: rejim, shaxsiy kontekst, shaxsiy ma'lumot, bazada bor", () => {
     expect(candidateGate({ ...ok, mode: "off" })).toEqual({ ok: false, reason: "mode_off" });
-    expect(candidateGate({ ...ok, consent: false })).toEqual({ ok: false, reason: "no_consent" });
     expect(candidateGate({ ...ok, privateContext: true })).toEqual({ ok: false, reason: "private_context" });
     expect(candidateGate({ ...ok, piiFound: true })).toEqual({ ok: false, reason: "pii" });
     expect(candidateGate({ ...ok, kb: "direct" })).toEqual({ ok: false, reason: "kb_hit" });
     expect(candidateGate({ ...ok, kb: "grounded" })).toEqual({ ok: false, reason: "kb_hit" });
   });
-  it("shadow rejimida ham (rozilik bo'lsa) nomzod bo'ladi; qisqa savol/javob va «bilmayman» rad", () => {
+  it("aniq bo'lmagan javob («aniq emas», «taxminiy», «afsuski», «topa olmadim») saqlanmaydi", () => {
+    for (const hedge of ["Bu savolga aniq emas, lekin kasrlar qo'shilganda umumiy maxraj topilishi kerak deb o'ylayman.", "Taxminiy javob: kasrlarni qo'shishda avval umumiy maxraj topiladi va suratlar qo'shiladi.", "Afsuski, bu mavzu bo'yicha tayyor qoida yo'q, lekin umumiy maxrajga keltirish tavsiya etiladi.", "Men bu qoidani topa olmadim, ammo umumiy maxraj topiladi va suratlar qo'shiladi deb hisoblayman."]) {
+      expect(candidateGate({ ...ok, answer: hedge })).toEqual({ ok: false, reason: "no_answer" });
+    }
+  });
+  it("shadow rejimida ham nomzod bo'ladi; qisqa savol/javob va «bilmayman» rad", () => {
     expect(candidateGate({ ...ok, mode: "shadow" }).ok).toBe(true);
     expect(candidateGate({ ...ok, question: "salom" })).toEqual({ ok: false, reason: "short_question" });
     expect(candidateGate({ ...ok, answer: "Ha." })).toEqual({ ok: false, reason: "short_answer" });
