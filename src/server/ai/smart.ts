@@ -66,7 +66,8 @@ export async function smartFreeChat(userId: string, messages: { role: "user" | "
 
   // 3) Oddiy bepul AI
   try {
-    const r = system ? await runFreeAi(userId, outgoing, { system }) : await runFreeAi(userId, outgoing);
+    // `on` rejimida bilim shu yerda allaqachon qidirilgan: gateway qayta qidirmasin (`knowledge: false`).
+    const r = mode === "on" ? await runFreeAi(userId, outgoing, { ...(system && { system }), knowledge: false }) : await runFreeAi(userId, outgoing);
     return await finish({ reply: r.text, sources: [], queries: [], searched: false }, { provider: r.provider, model: r.model });
   } catch (e) { await failed(e); throw e; }
 }

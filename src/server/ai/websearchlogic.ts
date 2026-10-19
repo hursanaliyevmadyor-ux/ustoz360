@@ -23,8 +23,8 @@ export function buildContext(kb: KbHit[], web: Ranked[], origin = "", maxChars =
   const items: CtxItem[] = [
     ...kb.map((k) => ({
       title: k.title, text: k.text, trust: "kb",
-      url: k.url ?? (https ? `${origin}${k.kind === "official" ? "/toifa/hujjatlar" : "/bilimxona"}` : null),
-      label: k.kind === "official" ? (k.verified ? "tekshirilgan rasmiy ma'lumot (bilim bazasi)" : "bilim bazasi, hali tekshirilmagan") : "tasdiqlangan kutubxona hujjati",
+      url: k.url ?? (https ? `${origin}${k.kind === "official" ? "/toifa/hujjatlar" : k.kind === "hub" ? "/ai" : "/bilimxona"}` : null),
+      label: k.kind === "official" ? (k.verified ? "tekshirilgan rasmiy ma'lumot (bilim bazasi)" : "bilim bazasi, hali tekshirilmagan") : k.kind === "hub" ? "administrator tasdiqlagan bilim (AI Bilim markazi)" : "tasdiqlangan kutubxona hujjati",
     })),
     ...web.map((w) => ({ title: w.title, text: w.content, trust: w.trust as string, url: w.url, label: `${hostOf(w.url)}: ${TRUST_LABEL[w.trust].toLowerCase()}` })),
   ];

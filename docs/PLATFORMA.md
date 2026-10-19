@@ -42,11 +42,11 @@ O'zgargan: `/api/me` (tarif), `/api/ai/lesson` (yagona AI kirish nuqtasi), `/api
 Kalitlar bazada saqlanmaydi va admin sahifasida ko'rsatilmaydi: faqat «ulangan/ulanmagan».
 
 ## 5. Test natijalari
-- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 41 fayl, 574 test o'tdi. `npm run build`: o'tdi.
+- `npm run lint` (`tsc --noEmit`): xatosiz. `npm test`: 45 fayl, 595 test o'tdi. `npm run build`: o'tdi.
 - `npm run test:e2e:platform`: 10 blok o'tdi (himoya va rollar, MARKET/to'lov oqimi, tarif va AI limiti, DARSYOR, TOIFA, SINF, BILIMXONA, admin statistikasi, admin hisobot/qidiruv). Haqiqiy baza va sinov foydalanuvchilari bilan, so'ng o'chirilgan.
 - `npm run test:e2e:bot`: 13 blok o'tdi (bot menyusi, testlar, TOIFA, SINF, DARSYOR, AI, kurslar, kutubxona, profil, kunlik eslatma, ro'yxatdan o'tish, Mini App kirishi). Mini App brauzerda haqiqiy Telegram skripti bilan ham sinalgan: avtomatik kirish, noto'g'ri imzoni rad etish, oddiy brauzerga ta'sir qilmasligi. Haqiqiy baza va soxta Telegram serveri bilan; Telegram talablari (HTML, 4096 belgi, `callback_data`) ham tekshiriladi. Sinov foydalanuvchilari oxirida o'chiriladi.
 - `npm run test:e2e:websearch`: 9 blok o'tdi (internet qidiruvi: bilim bazasi birinchi, rasmiy domenlar, ishonchlilik, qat'iy javob, tayyor material yaratilmasligi, kesh, limitlar, admin ko'rsatkichlari). Haqiqiy baza va soxta Tavily serveri bilan, kredit sarflanmaydi.
-- `npm run test:e2e:knowledge`: 18 blok o'tdi (AI Bilim markazi: faqat tasdiqlangan va muddati o'tmagan bilim javobga chiqishi, off/shadow/on, maxfiylik niqobi, rozilik va nomzod oqimi, tasdiq/rad/arxiv/xato belgisi, audit jurnali o'zgarmasligi, baholash, provayder rollari, shaxssiz statistika). Haqiqiy baza va soxta AI serveri bilan; vektor bloki ixtiyoriy (`E2E_VECTOR=1`) va hali ishga tushirilmagan. Admin sahifasi 375 px da gorizontal siljishsiz.
+- `npm run test:e2e:knowledge`: 19 blok o'tdi, shu jumladan «yagona manba» (DARSYOR ham bilimni oladi) (AI Bilim markazi: faqat tasdiqlangan va muddati o'tmagan bilim javobga chiqishi, off/shadow/on, maxfiylik niqobi, rozilik va nomzod oqimi, tasdiq/rad/arxiv/xato belgisi, audit jurnali o'zgarmasligi, baholash, provayder rollari, shaxssiz statistika). Haqiqiy baza va soxta AI serveri bilan; vektor bloki ixtiyoriy (`E2E_VECTOR=1`) va hali ishga tushirilmagan. Admin sahifasi 375 px da gorizontal siljishsiz.
 - Brauzer: 320 va 375 px da gorizontal siljish yo'q (asosiy sahifalar va barcha yangi admin sahifalari). Topilgan va tuzatilgan: sarlavha 320 px da toshishi, jadvaldagi yashirin matn sahifani kengaytirishi, kartochka sarlavhasi, diagramma yorliqlari kaliti takrorlanishi, admin belgisi yorug' fonda ko'rinmasligi.
 
 ## 6. Xavfsizlik tekshiruvi

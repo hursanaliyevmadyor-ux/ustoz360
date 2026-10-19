@@ -5,6 +5,7 @@ import { db } from "../db";
 import { DEFAULT_AI_DAILY, DEFAULT_FREE_AI_DAILY, getEntitlements } from "../entitlements";
 import { getSettings } from "../settings";
 import { SETTING_DEFAULTS } from "../settingsdef";
+import { withHubKnowledge } from "../hub/context";
 import { Breaker, orderProviders, type Role } from "../hub/routing";
 import { costMicro, isRetryableStatus, retryDelayMs } from "./gatewaylogic";
 
@@ -76,7 +77,8 @@ export async function checkRate(userId: string, perMinute: number) {
   if (n >= perMinute) throw new ApiError(429, "Juda tez-tez so'rayapsiz. Bir daqiqadan so'ng qayta urinib ko'ring.", "rate_limited");
 }
 
-type Call = { userId: string; feature: AiFeature; messages: { role: "user" | "assistant"; content: string }[]; maxTokens: number; effort?: "low" | "medium" | "high"; schema?: Record<string, unknown>; system?: string; promptVersion?: string };
+/** `knowledge`: AI Bilim markazidan bilim qo'shish: berilmasa oxirgi foydalanuvchi xabari bo'yicha, matn berilsa shu matn bo'yicha, false bo'lsa qo'shilmaydi (src/server/hub/context.ts). */
+type Call = { userId: string; feature: AiFeature; messages: { role: "user" | "assistant"; content: string }[]; maxTokens: number; effort?: "low" | "medium" | "high"; schema?: Record<string, unknown>; system?: string; promptVersion?: string; knowledge?: string | false };
 /** `provider`: javobni bergan bepul xizmat ("free1"...): bilim markazi nomzodiga yoziladi. */
 export type AiResult = { text: string; model: string; provider?: string };
 
@@ -92,8 +94,10 @@ export async function runAi(c: Call): Promise<AiResult> {
     throw new ApiError(429, `Bugungi AI limiti tugadi (${l.daily} ta so'rov). Ertaga qayta urinib ko'ring.`, "daily_limit");
   }
   const model = aiModel();
+  // Yagona bilim manbasi: tasdiqlangan bilim (hubMode=on bo'lsa) har qanday AI chaqiruviga «ma'lumot bloki» sifatida qo'shiladi.
+  const sys = await withHubKnowledge(c.system ?? SYSTEM, c.messages, c.knowledge);
   const params: Record<string, unknown> = {
-    model, max_tokens: c.maxTokens, system: c.system ?? SYSTEM, messages: c.messages,
+    model, max_tokens: c.maxTokens, system: sys.system, messages: c.messages,
     output_config: { effort: c.effort ?? "medium", ...(c.schema ? { format: { type: "json_schema", schema: c.schema } } : {}) },
   };
   if (FALLBACK_MODELS.includes(model)) { params.fallbacks = "default"; params.betas = ["server-side-fallback-2026-07-01"]; }
@@ -177,7 +181,7 @@ async function callFree(p: FreeProvider, body: unknown, timeoutMs: number): Prom
   return null;
 }
 
-export async function runFreeAi(userId: string, messages: { role: "user" | "assistant"; content: string }[], opts: { system?: string; maxTokens?: number; feature?: AiFeature; promptVersion?: string } = {}): Promise<AiResult> {
+export async function runFreeAi(userId: string, messages: { role: "user" | "assistant"; content: string }[], opts: { system?: string; maxTokens?: number; feature?: AiFeature; promptVersion?: string; knowledge?: string | false } = {}): Promise<AiResult> {
   if (!freeConfigured()) throw new ApiError(503, "Bepul AI hali sozlanmagan (FREE_LLM_BASE_URL va FREE_LLM_API_KEY yo'q).", "ai_unconfigured");
   await requireVerified(userId);
   const l = await limitsFor(userId);
@@ -195,8 +199,10 @@ export async function runFreeAi(userId: string, messages: { role: "user" | "assi
   let status = "ok", input = 0, output = 0, used = model, provider: string | undefined;
   const t0 = Date.now();
   try {
+    // Yagona bilim manbasi (Claude yo'li bilan bir xil): tasdiqlangan bilim «ma'lumot bloki» sifatida qo'shiladi.
+    const sys = await withHubKnowledge(opts.system ?? SYSTEM, messages, opts.knowledge);
     for (const p of providers) {
-      const r = await callFree(p, { model: p.model, max_tokens: opts.maxTokens ?? 1200, messages: [{ role: "system", content: opts.system ?? SYSTEM }, ...messages] }, 45_000);
+      const r = await callFree(p, { model: p.model, max_tokens: opts.maxTokens ?? 1200, messages: [{ role: "system", content: sys.system }, ...messages] }, 45_000);
       if (r) { breaker.ok(p.id); input = r.input; output = r.output; used = r.model; provider = p.id; return { text: r.text, model: r.model, provider: p.id }; }
       breaker.fail(p.id);
     }

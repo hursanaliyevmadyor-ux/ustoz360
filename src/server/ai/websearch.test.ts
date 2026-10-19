@@ -64,6 +64,7 @@ describe("1) tekshirilgan bilim bazasi birinchi", () => {
     expect(r.sources).toEqual([{ title: "Attestatsiya muddatlari", url: "https://lex.uz/docs/55", trust: "kb" }]);
     expect(rows()).toEqual([expect.objectContaining({ model: "kb", status: "kb", feature: "web-search" })]);
     expect(h.llm.mock.calls[0][0].system).toMatch(/FAQAT shu manbalarda tasdiqlangan/);
+    expect(h.llm.mock.calls[0][0].knowledge).toBe(false); // bilim (AI Bilim markazi ham) kontekstga allaqachon kiritilgan: gateway qayta qo'shmaydi
   });
 
   it("yangilik muhim savolda yozuv yaqinda tekshirilgan bo'lsa (fresh) ham baza yetadi: internetga chiqilmaydi", async () => {
