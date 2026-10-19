@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Field, Input, Select } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { BrandMark } from "@/components/brand-mark";
 import { REGIONS } from "@/lib/regions";
 
 /** Google/Telegram bilan birinchi kirishdan keyin: ism-familiya va yashash joyi. */
@@ -46,7 +47,7 @@ export default function Page() {
     <div className="grid min-h-screen place-items-center bg-background px-5 py-10">
       <main className="w-full max-w-md">
         <div className="mb-8 flex items-center gap-2.5" aria-label="USTOZ 360">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-base font-extrabold text-white">U</span>
+          <BrandMark className="h-11 w-11" />
           <span className="text-xl font-extrabold tracking-tight">USTOZ <span className="text-primary">360</span></span>
         </div>
         <h1 className="text-3xl font-extrabold tracking-tight">Deyarli tayyor!</h1>

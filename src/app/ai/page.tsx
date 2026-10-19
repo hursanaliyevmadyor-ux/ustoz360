@@ -6,6 +6,7 @@ import {
   ArrowUp, BarChart3, BookOpen, Check, ClipboardList, Copy, ExternalLink, FileText, Globe, GraduationCap, Home, Lightbulb, Mail, Menu, MessageSquare, Plus, Sparkles, Trash2, X, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/brand-mark";
 import { cn } from "@/lib/utils";
 import { TRUST_NAMES, encodeSources, splitSources } from "@/lib/websources";
 
@@ -245,7 +246,7 @@ export default function Page() {
     <div className="flex h-full flex-col bg-card">
       <div className="flex items-center justify-between gap-2 p-4 pb-2">
         <Link href="/dashboard" className="flex items-center gap-2.5" aria-label="USTOZ 360">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-sm font-extrabold text-white">U</span>
+          <BrandMark className="h-10 w-10" />
           <span className="text-base font-extrabold tracking-tight">USTOZ <span className="text-primary">360</span></span>
         </Link>
         <button className="grid h-9 w-9 place-items-center rounded-lg hover:bg-muted lg:hidden" onClick={() => setDrawer(false)} aria-label="Yopish"><X className="h-5 w-5" /></button>
