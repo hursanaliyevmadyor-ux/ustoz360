@@ -149,6 +149,6 @@ export async function askDoc(viewer: Viewer, id: string, question: string) {
   if (!hits.length) return { answer: null as string | null, grounded: false, sources, note: "Hujjatda bu savolga mos joy topilmadi. Savolni boshqacha so'zlar bilan yozib ko'ring." };
   if (!aiAvailable().any) return { answer: null, grounded: false, sources, note: "AI ulanmagan: hujjatdan topilgan mos parchalar ko'rsatildi." };
   const { system, user } = buildGroundedPrompt(question, hits);
-  const r = await runAnyAi({ userId: viewer.id, feature: "chat", messages: [{ role: "user", content: user }], system, maxTokens: 900, promptVersion: "docqa@1" });
+  const r = await runAnyAi({ userId: viewer.id, feature: "chat", messages: [{ role: "user", content: user }], system, maxTokens: 900, promptVersion: "docqa@1", knowledge: false /* hujjat ichidan javob: manba faqat hujjat; shaxsiy hujjat matni bilim qidiruviga ketmaydi */ });
   return { answer: r.text, grounded: true, sources, note: null as string | null };
 }

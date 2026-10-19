@@ -54,7 +54,7 @@ const record = (userId: string, model: string, status: string, latencyMs: number
 async function strictAnswer(userId: string, question: string, built: ReturnType<typeof buildContext>) {
   try {
     const p = strictPrompt(question, built.context);
-    const r = await runAnyAi({ userId, feature: "chat", messages: [{ role: "user", content: p.user }], system: p.system, maxTokens: 1200, promptVersion: "websearch-strict@1" });
+    const r = await runAnyAi({ userId, feature: "chat", messages: [{ role: "user", content: p.user }], system: p.system, maxTokens: 1200, promptVersion: "websearch-strict@1", knowledge: false /* bilim bazasi (AI Bilim markazi ham) kontekstga allaqachon kiritilgan */ });
     return { text: hasCitations(r.text) ? r.text : `${r.text}\n\n(Manbalar quyida keltirilgan.)`, model: r.model };
   } catch (e) {
     console.error("Manbali javob:", (e as Error).message);

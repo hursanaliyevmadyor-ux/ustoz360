@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ db: { officialInfo: { findMany: vi.fn() }, libraryDoc: { findMany: vi.fn() }, libraryChunk: { findMany: vi.fn() } } }));
+const h = vi.hoisted(() => ({ db: { officialInfo: { findMany: vi.fn() }, libraryDoc: { findMany: vi.fn() }, libraryChunk: { findMany: vi.fn() } }, mode: vi.fn(), lookup: vi.fn() }));
 vi.mock("../db", () => ({ db: h.db }));
+vi.mock("../hub/lookup", () => ({ hubMode: h.mode, hubLookup: h.lookup }));
 
 import { kbScore, kbStrong, questionTokenCount, searchKnowledge } from "./kb";
 
@@ -29,6 +30,42 @@ describe("bilim bazasini qidirish", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     h.db.officialInfo.findMany.mockResolvedValue([]); h.db.libraryDoc.findMany.mockResolvedValue([]); h.db.libraryChunk.findMany.mockResolvedValue([]);
+    h.mode.mockResolvedValue("off"); h.lookup.mockResolvedValue(null);
+  });
+
+  const HUB = (over: Record<string, unknown> = {}) => ({
+    id: "h1", questionCanonical: "Attestatsiya muddatlari qachon boshlanadi", answer: "Muddatlar vazirlik buyrug'i bilan e'lon qilinadi.", subject: null, topic: null, category: "normative", status: "APPROVED", scope: "GLOBAL",
+    expiresAt: new Date(Date.now() + 30 * 86_400_000), reviewedAt: new Date(Date.now() - 100 * 86_400_000), sourceReferences: [{ title: "Qonun", url: "https://lex.uz/docs/9" }], ...over,
+  });
+  const hit = (entry: unknown) => ({ entry, matched: 3, dice: 0.9, ratio: 0.9, answerRatio: 0.9 });
+
+  it("AI Bilim markazi (on): tasdiqlangan bilim internet qidiruviga «tekshirilgan baza» sifatida kiradi (muddatli yozuv yangi)", async () => {
+    h.mode.mockResolvedValue("on");
+    h.lookup.mockResolvedValue({ decision: { kind: "direct", hit: hit(HUB()) }, subject: "", topic: "", needsFresh: true });
+    const r = await searchKnowledge("Attestatsiya muddatlari qachon boshlanadi?");
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ kind: "hub", title: "Attestatsiya muddatlari qachon boshlanadi", url: "https://lex.uz/docs/9", verified: true, fresh: true });
+    expect(r[0].text).toContain("Muddatlar vazirlik");
+    expect(h.lookup).toHaveBeenCalledWith("Attestatsiya muddatlari qachon boshlanadi?", { topic: false });
+  });
+
+  it("AI Bilim markazi: muddatsiz va uzoq vaqt ko'rilmagan yozuv «yangi» emas; qisman mos bir nechta yozuv qo'shiladi", async () => {
+    h.mode.mockResolvedValue("on");
+    h.lookup.mockResolvedValue({ decision: { kind: "grounded", hits: [hit(HUB({ id: "a", expiresAt: null })), hit(HUB({ id: "b", questionCanonical: "Attestatsiya hujjatlari ro'yxati", reviewedAt: new Date() }))] }, subject: "", topic: "", needsFresh: false });
+    const r = await searchKnowledge("attestatsiya muddatlari");
+    expect(r.filter((x) => x.kind === "hub")).toHaveLength(2);
+    expect(Object.fromEntries(r.map((x) => [x.title, x.fresh]))).toMatchObject({ "Attestatsiya muddatlari qachon boshlanadi": false, "Attestatsiya hujjatlari ro'yxati": true });
+  });
+
+  it("AI Bilim markazi o'chiq (off/shadow) bo'lsa yoki mos bilim yo'q/xato bo'lsa qo'shilmaydi va boshqa manbalar buzilmaydi", async () => {
+    for (const mode of ["off", "shadow"]) { h.mode.mockResolvedValue(mode); await searchKnowledge("attestatsiya muddatlari"); }
+    expect(h.lookup).not.toHaveBeenCalled();
+    h.mode.mockResolvedValue("on");
+    h.lookup.mockResolvedValue({ decision: { kind: "none" }, subject: "", topic: "", needsFresh: false });
+    expect(await searchKnowledge("attestatsiya muddatlari")).toEqual([]);
+    h.lookup.mockRejectedValue(new Error("baza"));
+    h.db.officialInfo.findMany.mockResolvedValue([{ title: "Attestatsiya muddatlari", note: "Mart", sourceName: null, url: null, verified: true, verifiedAt: new Date(), updatedAt: new Date() }]);
+    expect((await searchKnowledge("attestatsiya muddatlari")).map((x) => x.kind)).toEqual(["official"]);
   });
 
   it("rasmiy ma'lumotlardan mos yozuvlar; tekshirilgan belgisi va faqat https havola saqlanadi", async () => {

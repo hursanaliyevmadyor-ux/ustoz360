@@ -1,13 +1,16 @@
 import { httpsUrl } from "../../lib/websources";
 import { db } from "../db";
+import { entrySources, scoreEntry } from "../hub/knowledgelogic";
+import { hubLookup, hubMode } from "../hub/lookup";
 import { tokens } from "../rag";
 
 /**
- * Tekshirilgan bilim bazasi: administrator manba bilan kiritgan rasmiy ma'lumotlar (OfficialInfo) va admin tasdiqlagan ommaviy kutubxona hujjatlari.
+ * Tekshirilgan bilim bazasi: administrator manba bilan kiritgan rasmiy ma'lumotlar (OfficialInfo), admin tasdiqlagan ommaviy kutubxona hujjatlari
+ * va AI Bilim markazidagi tasdiqlangan bilimlar (hubMode=on bo'lsa: bilim bitta joyda, internet qidiruvi ham shuni ishlatadi).
  * Internetga chiqishdan oldin shu yerdan qidiriladi: topilsa kredit sarflanmaydi.
  */
 export type KbHit = {
-  kind: "official" | "library"; title: string; text: string; url: string | null; verified: boolean; ratio: number; matched: number;
+  kind: "official" | "library" | "hub"; title: string; text: string; url: string | null; verified: boolean; ratio: number; matched: number;
   /** Tekshirilgan va yaqinda (45 kun ichida) yangilangan: yangilik muhim savolda ham internetga chiqmasdan ishonish mumkin. */
   fresh: boolean;
 };
@@ -68,6 +71,23 @@ export async function searchKnowledge(question: string, origin = ""): Promise<Kb
       }
     }
   } catch (e) { console.error("KB kutubxona:", (e as Error).message); }
+
+  // AI Bilim markazi: faqat tasdiqlangan, muddati o'tmagan yozuvlar (hubLookup shuni kafolatlaydi). Bazadagi muddat belgilangan yoki yaqinda ko'rilgan yozuv «yangi».
+  try {
+    if ((await hubMode()) === "on") {
+      const hub = await hubLookup(question, { topic: false });
+      const hits = !hub || hub.decision.kind === "none" ? [] : hub.decision.kind === "direct" ? [hub.decision.hit] : hub.decision.hits;
+      for (const h of hits) {
+        const e = h.entry;
+        const s = scoreEntry(question, e);
+        const stamp = e.reviewedAt.getTime();
+        out.push({
+          kind: "hub", title: e.questionCanonical, text: e.answer.slice(0, 700), url: entrySources(e.sourceReferences)[0]?.url ?? null, verified: true,
+          fresh: !!e.expiresAt || Date.now() - stamp <= FRESH_DAYS * 86_400_000, matched: Math.max(s.matched, h.matched), ratio: Math.max(s.ratio, h.ratio),
+        });
+      }
+    }
+  } catch (e) { console.error("KB bilim markazi:", (e as Error).message); }
 
   return out.sort((a, b) => b.matched - a.matched || b.ratio - a.ratio).slice(0, 4);
 }

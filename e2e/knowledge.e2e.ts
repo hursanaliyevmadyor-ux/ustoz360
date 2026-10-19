@@ -331,6 +331,19 @@ async function main() {
       assert.equal((await setAi({ providerRoles: {} })).status, 200);
     });
 
+    await t("yagona manba: DARSYOR kabi boshqa AI funksiyalari ham tasdiqlangan bilimni oladi (hubMode=on); off bo'lsa olmaydi", async () => {
+      const lesson = { subject: "musiqa", grade: 5, topic: `Nota yozuvi asoslari ${M}`, duration: 45 };
+      let n = aiCalls.length;
+      await user.post("/api/ai/lesson", lesson); // soxta AI JSON qaytarmaydi (502 bo'lishi mumkin): muhimi AI'ga qanday ko'rsatma ketgani
+      assert.ok(aiCalls.length > n, "AI chaqirilishi kerak");
+      assert.match(sysOf(aiCalls[n]), /<tasdiqlangan_bilim>[\s\S]*ritm mashqlari[\s\S]*<\/tasdiqlangan_bilim>/, "dars ishlanmasi so'rovi ham bilimni olishi kerak");
+      assert.equal((await setAi({ hubMode: "off" })).status, 200);
+      n = aiCalls.length;
+      await user.post("/api/ai/lesson", lesson);
+      assert.ok(aiCalls.length > n); assert.ok(!/tasdiqlangan_bilim/.test(sysOf(aiCalls[n])), "off rejimda bilim qo'shilmaydi");
+      assert.equal((await setAi({ hubMode: "on" })).status, 200);
+    });
+
     await t("admin umumiy ko'rinish: sonlar, shaxssiz ehtiyoj (kichik guruh yashirin), audit ro'yxati", async () => {
       const o = (await admin.get("/api/admin/knowledge")).json.overview;
       assert.equal(o.available, true); assert.equal(o.mode, "on");
