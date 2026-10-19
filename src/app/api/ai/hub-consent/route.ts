@@ -5,8 +5,8 @@ import { consentInput } from "@/server/hub/knowledgevalid";
 export const dynamic = "force-dynamic";
 
 /**
- * Umumiy bilimni yaxshilash uchun ixtiyoriy rozilik (standart: o'chiq). Tushuntirish matni bilan.
- * `active`: administrator Bilim markazini yoqqan (aks holda rozilik hech narsaga ta'sir qilmaydi va interfeysda ko'rsatilmaydi).
+ * ESKIRGAN: AI sahifasida rozilik so'rovi olib tashlangan, aniq javob olingan savol endi avtomatik nomzod bo'ladi (rozilik hisobga olinmaydi).
+ * Bu manzil faqat eski mijozlar xato olmasligi uchun qoldirilgan.
  */
 const view = async (userId: string) => ({ ...(await consentState(userId)), active: (await hubMode()) !== "off", text: CONSENT_TEXT });
 export const GET = () => handle(async () => view((await requireUser()).id));

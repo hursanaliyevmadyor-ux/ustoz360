@@ -119,7 +119,7 @@ describe("chat: AI Bilim markazi (hubMode)", () => {
     expect(h.record).toHaveBeenCalledWith({ subject: "matematika", topic: "Kasrlar", outcome: "grounded" });
   });
 
-  it("on: topilmasa AI javob beradi va nomzod taklif qilinadi (rozilik va qolgan shartlarni nomzod funksiyasi tekshiradi)", async () => {
+  it("on: topilmasa AI javob beradi va nomzod taklif qilinadi (shartlarni nomzod funksiyasi tekshiradi)", async () => {
     h.mode.mockResolvedValue("on"); h.lookup.mockResolvedValue(lookup({ kind: "none" }));
     h.free.mockResolvedValue({ text: "Yangi AI javobi", model: "m", provider: "free2" });
     const r = await smartFreeChat("u1", Q("Kasrlarni qo'shish qoidasi nima?"));

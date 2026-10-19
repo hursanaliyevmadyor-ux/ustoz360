@@ -90,28 +90,6 @@ function Rate({ entryId }: { entryId: string }) {
   );
 }
 
-/** Umumiy bilimni yaxshilash uchun ixtiyoriy rozilik (standart: o'chiq). Administrator Bilim markazini yoqmagan bo'lsa ko'rinmaydi. */
-function ConsentBox() {
-  const [c, setC] = React.useState<{ enabled: boolean; active: boolean; available: boolean; text: string } | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => { fetch("/api/ai/hub-consent").then((r) => (r.ok ? r.json() : null)).then(setC).catch(() => {}); }, []);
-  if (!c || !c.active || !c.available) return null;
-  const toggle = async () => {
-    setBusy(true);
-    try { const r = await fetch("/api/ai/hub-consent", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: !c.enabled }) }); if (r.ok) setC(await r.json()); } catch {}
-    setBusy(false);
-  };
-  return (
-    <div className="mb-3 rounded-xl border border-border p-3 text-sm">
-      <label className="flex cursor-pointer items-start gap-2.5">
-        <input type="checkbox" className="mt-1 h-4 w-4" checked={c.enabled} disabled={busy} onChange={toggle} />
-        <span className="font-semibold leading-snug">Savollarimni (shaxsiy ma'lumotsiz) umumiy bilimni yaxshilashga berish</span>
-      </label>
-      <details className="mt-1.5 text-xs text-muted-foreground"><summary className="cursor-pointer">Bu qanday ishlaydi?</summary><p className="mt-1.5 leading-relaxed">{c.text}</p></details>
-    </div>
-  );
-}
-
 /** Assistent javobi: matn, undan keyin (internetdan qidirilgan bo'lsa) manbalar va qidiruv so'zlari. */
 function Answer({ content, entryId }: { content: string; entryId?: string }) {
   const { text, sources, queries } = splitSources(content);
@@ -283,7 +261,6 @@ export default function Page() {
         </ul>
       </nav>
       <div className="border-t border-border p-3">
-        {me && <ConsentBox />}
         {me ? (
           <div className="flex items-center gap-3 rounded-xl bg-muted p-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-bold text-primary">{initials}</span>

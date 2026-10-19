@@ -23,7 +23,7 @@ import { errorRate, ROLE_LABEL, type ProviderStat, type Role } from "./routing";
  */
 export const CONSENT_PURPOSE = "knowledge_improvement";
 export const POLICY_VERSION = "2026-10-19";
-/** Foydalanuvchiga ko'rsatiladigan tushuntirish (AI sahifasidagi rozilik bloki). */
+/** Eskirgan: AI sahifasida rozilik bloki olib tashlangan (nomzod avtomatik saqlanadi); eski `/api/ai/hub-consent` uchun qoldirilgan. */
 export const CONSENT_TEXT = "Savolingiz AI xizmatiga yuboriladi. Ruxsat bersangiz, ism-familiya, telefon va boshqa shaxsiy ma'lumotlardan tozalangan, umumlashtirilgan savol va AI javobi umumiy bilimni yaxshilash uchun administratorga ko'rib chiqishga yuboriladi. Admin tasdiqlamaguncha u hech kimga ko'rsatilmaydi. Chat tarixingiz hech qachon ko'chirilmaydi. Ruxsatni istalgan vaqtda qaytarib olsangiz, ko'rib chiqilmagan savollaringiz o'chiriladi. Admin tasdiqlab umumiy bilimga aylangan javob sizga bog'lanmagan, shuning uchun uni sizning nomingiz bilan o'chirib bo'lmaydi.";
 
 // Qidiruv (hubLookup, hubMode, vektor) alohida modulda: gateway ham ishlatadi. Eski import yo'llari buzilmasligi uchun shu yerdan qayta eksport qilinadi.
@@ -101,15 +101,14 @@ export type ProposeArgs = {
 };
 
 /**
- * AI javobi umumiy bilimga NOMZOD bo'lishi mumkinmi: faqat foydalanuvchi roziligi bilan, shaxsiy ma'lumotsiz, bazada javob yo'q bo'lsa.
- * Nomzod bilim emas: admin ko'rib chiqmaguncha hech kimga ko'rsatilmaydi. Hech qachon xato tashlamaydi.
+ * Aniq javob olingan savol avtomatik NOMZOD bo'lib saqlanadi (rozilik so'ralmaydi): shaxsiy ma'lumotsiz, bazada javob yo'q va AI «bilmayman» demagan bo'lsa.
+ * Nomzod bilim emas: admin ko'rib chiqmaguncha hech kimga ko'rsatilmaydi. Foydalanuvchi faqat bir tomonlama xesh sifatida hisoblanadi. Hech qachon xato tashlamaydi.
  */
 export async function proposeCandidate(a: ProposeArgs): Promise<{ created: boolean; reason?: string }> {
   try {
     if (a.mode === "off" || !secret()) return { created: false, reason: a.mode === "off" ? "mode_off" : "no_secret" };
-    const consent = (await consentState(a.userId)).enabled;
     const piiFound = findPii(a.question).length > 0 || findPii(a.answer).length > 0;
-    const gate = candidateGate({ mode: a.mode, consent, question: a.question, answer: a.answer, privateContext: a.privateContext, kb: a.kb, piiFound });
+    const gate = candidateGate({ mode: a.mode, question: a.question, answer: a.answer, privateContext: a.privateContext, kb: a.kb, piiFound });
     if (!gate.ok) return { created: false, reason: gate.reason };
 
     const ref = userRef(secret(), "contrib", a.userId);
