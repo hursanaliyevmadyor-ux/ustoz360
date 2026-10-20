@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, BrainCircuit, CalendarDays, ClipboardList, FileBarChart, Layers, LayoutDashboard, Library, Megaphone, ScrollText, Settings, Users, Wallet, FlaskConical, Boxes, Compass, FileCheck2, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, BrainCircuit, CalendarDays, ClipboardList, FileBarChart, Layers, LayoutDashboard, Library, Megaphone, ScrollText, Settings, Users, Wallet, FlaskConical, Boxes, Compass, FileCheck2, Trophy, type LucideIcon } from "lucide-react";
 
 /** Admin saytining menyusi: yo'nalishlar bo'yicha guruhlangan. Admin bu yerdan hamma bo'limni tekshiradi va o'zgartiradi. */
 export type AdminItem = { href: string; label: string; icon: LucideIcon; hint?: string };
@@ -17,6 +17,7 @@ export const ADMIN_NAV: AdminGroup[] = [
   { title: "Kontent", items: [
     { href: "/admin/savollar", label: "Savollar banki", icon: FlaskConical },
     { href: "/admin/foydalanuvchi-testlari", label: "Foydalanuvchi testlari", icon: FileCheck2, hint: "Ustozlar yuborgan testlarni ko'rib chiqish" },
+    { href: "/admin/reyting", label: "Reyting boshqaruvi", icon: Trophy, hint: "Yo'nalishlar, vaznlar, reytingga hisoblanadigan imtihonlar, moderatsiya" },
     { href: "/admin/mavzular", label: "Fanlar va mavzular", icon: Layers },
     { href: "/admin/imtihonlar", label: "Imtihonlar", icon: ClipboardList },
     { href: "/admin/seminarlar", label: "Seminarlar", icon: CalendarDays },

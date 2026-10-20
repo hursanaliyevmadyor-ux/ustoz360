@@ -47,6 +47,25 @@ export const settingSchemas = {
     enabled: z.boolean(),
     seminarAnnouncements: z.boolean(),
   }),
+  /**
+   * Ustozlar reytingi (docs/REYTING.md). Vaznlar mahsulot taklifi: ilmiy tasdiqlangan universal formula emas, admin o'zgartira oladi.
+   * Reyting standartlashtirilgan ko'rsatkichga asoslanadi: imtihon kamida `minParticipants` ta ishtirokchi topshirgandan keyingina taqqoslanadi.
+   */
+  ranking: z.object({
+    enabled: z.boolean(),
+    /** Reyting yo'nalishlari: kalit Profile.targetExam va Exam.directionKey bilan mos. */
+    directions: z.array(z.object({ key: z.string().regex(/^[A-Z][A-Z0-9_]{1,29}$/, "Kalit katta lotin harflari, raqam va _ dan iborat bo'lsin"), label: z.string().trim().min(2).max(40) })).min(1).max(12),
+    examWeight: z.number().int().min(0).max(100),
+    diagWeight: z.number().int().min(0).max(100),
+    /** Bir imtihon uchun hisoblanadigan urinishlar soni (birinchi N ta urinishdan eng yaxshisi). */
+    maxAttempts: z.number().int().min(1).max(10),
+    /** Imtihon yoki diagnostika taqqoslanishi uchun kerakli ishtirokchilar soni (aks holda adolatsiz o'rin hisoblanmaydi). */
+    minParticipants: z.number().int().min(2).max(500),
+    /** Reytingga kirish uchun kerakli yakunlangan diagnostikalar soni (oxirgi 3 tasi o'rtacha olinadi). */
+    minDiagnostics: z.number().int().min(0).max(10),
+    /** Mavsum boshlanishi (YYYY-MM-DD) yoki bo'sh: shundan oldingi natijalar hisoblanmaydi. */
+    seasonStart: z.string().refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v), "Sana noto'g'ri"),
+  }),
   /** Bosh sahifadagi yangiliklar va e'lonlar (admin boshqaradi). Havola: sayt ichidagi yo'l yoki https. */
   announcements: z.object({
     items: z.array(z.object({
@@ -73,6 +92,11 @@ export const SETTING_DEFAULTS: SettingsMap = {
   content: { aiDisclaimer: "AI matni noto'g'ri bo'lishi mumkin: ishlatishdan oldin tekshiring.", policy: "" },
   notifications: { enabled: true, seminarAnnouncements: true },
   announcements: { items: [] },
+  ranking: {
+    enabled: true,
+    directions: [{ key: "ATTESTATSIYA", label: "Attestatsiya" }, { key: "MILLIY_SERTIFIKAT", label: "Milliy sertifikat" }],
+    examWeight: 70, diagWeight: 30, maxAttempts: 3, minParticipants: 5, minDiagnostics: 1, seasonStart: "",
+  },
 };
 
 export type Announcement = SettingsMap["announcements"]["items"][number];

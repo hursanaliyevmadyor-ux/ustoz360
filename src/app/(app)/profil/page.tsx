@@ -2,21 +2,29 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery } from "@/lib/use-query";
+import type { AvatarState } from "@/lib/avatars";
 import { useShell } from "@/components/layout/shell-context";
-import { PageHeader } from "@/components/layout/page";
 import { LiveGate } from "@/components/layout/live-gate";
+import { ProfileHeader } from "@/components/profile/profile-header";
+import { RatingSettings } from "@/components/profile/rating-settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { DemoProfile } from "./demo";
 
-type P = { name: string; email: string; subjectFocus: string; grades: string; experience: number | null; category: string; targetExam: string | null; examDate: string | null; dailyMinutes: number | null };
+type P = {
+  name: string; email: string; subjectFocus: string; grades: string; experience: number | null; category: string; targetExam: string | null; examDate: string | null; dailyMinutes: number | null;
+  nickname: string; directions: { key: string; label: string }[]; leaderboardOptIn: boolean;
+} & AvatarState;
 
 function Form({ initial }: { initial: P }) {
   const toast = useToast();
   const [f, setF] = React.useState(initial); const [busy, setBusy] = React.useState(false); const [err, setErr] = React.useState("");
   const set = <K extends keyof P>(k: K, v: P[K]) => setF((s) => ({ ...s, [k]: v }));
+  const directionLabel = f.directions.find((d) => d.key === f.targetExam)?.label ?? null;
+  /** Rasm yoki nik o'zgarganda yon menyu va yuqori paneldagi avatar ham yangilanadi. */
+  const announce = () => window.dispatchEvent(new Event("u360-profile-updated"));
   const num = (v: string) => (v === "" ? null : Number(v));
   const save = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); setErr("");
@@ -24,26 +32,33 @@ function Form({ initial }: { initial: P }) {
       name: f.name, subjectFocus: f.subjectFocus, grades: f.grades, experience: f.experience, category: f.category, targetExam: f.targetExam, examDate: f.examDate, dailyMinutes: f.dailyMinutes }) });
     setBusy(false);
     if (!r.ok) { setErr("Ma'lumotlar noto'g'ri. Qiymatlarni tekshiring (kunlik vaqt 10–480 daqiqa)."); toast("error", "Saqlab bo'lmadi."); return; }
-    setF(await r.json()); toast("success", "Profil saqlandi.");
+    setF(await r.json()); toast("success", "Profil saqlandi."); announce();
   };
   return (
     <>
-      <PageHeader title="Profil" description="Shaxsiy ma'lumotlar va tayyorgarlik sozlamalari" />
-      <Card className="max-w-3xl"><CardHeader><CardTitle>Ma'lumotlar</CardTitle></CardHeader>
+      <ProfileHeader name={f.name} nickname={f.nickname} avatar={f} directionLabel={directionLabel}
+        onAvatar={(a) => { setF((s) => ({ ...s, ...a })); announce(); }} onNickname={(n) => { set("nickname", n); announce(); }} />
+      <Card id="profil-forma" className="max-w-3xl scroll-mt-24"><CardHeader><CardTitle>Ma'lumotlar</CardTitle></CardHeader>
         <form onSubmit={save}><CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Ism familiya"><Input value={f.name} onChange={(e) => set("name", e.target.value)} maxLength={80} /></Field>
+            <Field label="Ism familiya" hint="Faqat o'zingizga ko'rinadi: profilda nikdan pastda kichik yoziladi"><Input value={f.name} onChange={(e) => set("name", e.target.value)} maxLength={80} /></Field>
             <Field label="Email" hint="O'zgartirib bo'lmaydi"><Input value={f.email} disabled /></Field>
             <Field label="Fan yo'nalishi"><Input value={f.subjectFocus} onChange={(e) => set("subjectFocus", e.target.value)} placeholder="Masalan: Matematika" /></Field>
             <Field label="O'qitadigan sinflari"><Input value={f.grades} onChange={(e) => set("grades", e.target.value)} placeholder="3, 4" /></Field>
             <Field label="Ish tajribasi (yil, ixtiyoriy)"><Input type="number" min={0} max={70} value={f.experience ?? ""} onChange={(e) => set("experience", num(e.target.value))} /></Field>
             <Field label="Malaka toifasi (ixtiyoriy)"><Input value={f.category} onChange={(e) => set("category", e.target.value)} /></Field>
-            <Field label="Tayyorlanayotgan imtihon"><Select value={f.targetExam ?? ""} onChange={(e) => set("targetExam", e.target.value || null)}><option value="">Tanlanmagan</option><option value="ATTESTATSIYA">Attestatsiya</option><option value="MILLIY_SERTIFIKAT">Milliy sertifikat</option></Select></Field>
+            <Field label="Qaysi imtihonga tayyorlanyapsiz?" hint="Tanlangan yo'nalish tegishli reyting bilan bog'lanadi. O'zgartirsangiz, avvalgi natijalar o'z imtihoni yo'nalishida qoladi.">
+              <Select value={f.targetExam ?? ""} onChange={(e) => set("targetExam", e.target.value || null)}>
+                <option value="">Tanlanmagan</option>
+                {f.directions.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+              </Select>
+            </Field>
             <Field label="Imtihon sanasi (ma'lum bo'lsa)"><Input type="date" value={f.examDate ?? ""} onChange={(e) => set("examDate", e.target.value || null)} /></Field>
             <Field label="Kunlik o'qish vaqti (daqiqa)" error={err}><Input type="number" min={10} max={480} value={f.dailyMinutes ?? ""} onChange={(e) => set("dailyMinutes", num(e.target.value))} /></Field>
           </div>
           <Button type="submit" loading={busy}>Saqlash</Button>
         </CardContent></form></Card>
+      <RatingSettings nickname={f.nickname} optIn={f.leaderboardOptIn} onChanged={(p) => { setF((s) => ({ ...s, ...(p.nickname !== undefined && { nickname: p.nickname }), ...(p.optIn !== undefined && { leaderboardOptIn: p.optIn }) })); announce(); }} />
       <AccountPlan />
     </>
   );

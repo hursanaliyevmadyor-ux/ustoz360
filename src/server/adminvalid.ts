@@ -33,6 +33,10 @@ export const examInput = z.object({
   /** Savollar bankidan nechtasi tushishi; bo'sh bo'lsa hammasi. */
   pickCount: z.number().int().min(1).max(500).nullable().optional(),
   active: z.boolean().optional(),
+  /** Reyting yo'nalishi (sozlamalardagi kalit); bo'sh: hamma yo'nalish uchun umumiy. */
+  directionKey: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,29}$/).nullable().optional(),
+  /** Faqat admin tasdiqlagan imtihon natijalari reytingga hisoblanadi (nashr qilinganligi alohida). */
+  rankingEligible: z.boolean().optional(),
 });
 export type ExamInput = z.infer<typeof examInput>;
 

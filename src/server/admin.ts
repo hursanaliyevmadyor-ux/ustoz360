@@ -5,6 +5,7 @@ import { db } from "./db";
 import { deriveKind, slugify, type ExamInput, type QuestionInput, type SeminarInput } from "./adminvalid";
 import { notifyAll } from "./notify";
 import { getSetting } from "./settings";
+import { invalidateRanking } from "./ranking/data";
 
 /** Faqat adminlar uchun kontent boshqaruvi. Chaqiruvchi (API yo'li) avval requireAdmin() bilan rolni tekshirishi shart. */
 
@@ -21,7 +22,7 @@ const strs = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
 export async function listAdminExams() {
   const rows = await db.exam.findMany({
     orderBy: { createdAt: "desc" },
-    select: { id: true, slug: true, title: true, subject: true, kind: true, durationMin: true, pickCount: true, active: true, _count: { select: { questions: true, attempts: true } } },
+    select: { id: true, slug: true, title: true, subject: true, kind: true, durationMin: true, pickCount: true, active: true, directionKey: true, rankingEligible: true, _count: { select: { questions: true, attempts: true } } },
   });
   return { exams: rows.map(({ _count, ...e }) => ({ ...e, questionCount: _count.questions, attemptCount: _count.attempts })) };
 }
@@ -30,14 +31,14 @@ export async function getAdminExam(id: string) {
   const e = await db.exam.findUnique({ where: { id }, include: { questions: { orderBy: [{ position: "asc" }, { id: "asc" }] }, _count: { select: { attempts: true } } } });
   if (!e) throw new ApiError(404, "Imtihon topilmadi.");
   return {
-    id: e.id, slug: e.slug, title: e.title, subject: e.subject, kind: e.kind, durationMin: e.durationMin, pickCount: e.pickCount, active: e.active, attemptCount: e._count.attempts,
+    id: e.id, slug: e.slug, title: e.title, subject: e.subject, kind: e.kind, durationMin: e.durationMin, pickCount: e.pickCount, active: e.active, directionKey: e.directionKey, rankingEligible: e.rankingEligible, attemptCount: e._count.attempts,
     questions: e.questions.map((q) => ({ id: q.id, position: q.position, type: q.type as "CHOICE" | "WRITTEN", text: q.text, options: strs(q.options), correct: q.correct, accepted: strs(q.accepted), explanation: q.explanation ?? "" })),
   };
 }
 
 export async function createExam(input: ExamInput) {
   const slug = await uniqueSlug(input.title, async (s) => !!(await db.exam.findUnique({ where: { slug: s }, select: { id: true } })));
-  const e = await db.exam.create({ data: { slug, title: input.title, subject: input.subject, kind: "TEST", durationMin: input.durationMin, pickCount: input.pickCount ?? null, active: input.active ?? false } });
+  const e = await db.exam.create({ data: { slug, title: input.title, subject: input.subject, kind: "TEST", durationMin: input.durationMin, pickCount: input.pickCount ?? null, active: input.active ?? false, directionKey: input.directionKey ?? null, rankingEligible: input.rankingEligible ?? false } });
   return { id: e.id };
 }
 
@@ -45,7 +46,8 @@ export async function updateExam(id: string, input: ExamInput) {
   const cur = await db.exam.findUnique({ where: { id }, select: { id: true, _count: { select: { questions: true } } } });
   if (!cur) throw new ApiError(404, "Imtihon topilmadi.");
   if (input.pickCount && input.pickCount > cur._count.questions) throw new ApiError(400, `Bankda atigi ${cur._count.questions} ta savol bor, ko'proq tanlab bo'lmaydi.`);
-  await db.exam.update({ where: { id }, data: { title: input.title, subject: input.subject, durationMin: input.durationMin, pickCount: input.pickCount ?? null, ...(input.active !== undefined && { active: input.active }) } });
+  await db.exam.update({ where: { id }, data: { title: input.title, subject: input.subject, durationMin: input.durationMin, pickCount: input.pickCount ?? null, ...(input.active !== undefined && { active: input.active }), ...(input.directionKey !== undefined && { directionKey: input.directionKey }), ...(input.rankingEligible !== undefined && { rankingEligible: input.rankingEligible }) } });
+  invalidateRanking(); // reytingga hisoblanadigan imtihonlar ro'yxati o'zgargan bo'lishi mumkin
   return { ok: true as const };
 }
 

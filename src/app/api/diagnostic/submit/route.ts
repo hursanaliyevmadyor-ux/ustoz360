@@ -3,6 +3,7 @@ import { requireUser } from "@/server/auth";
 import { gradeAnswers, loadOpenSession } from "@/server/grading";
 import { db } from "@/server/db";
 import { handle } from "@/server/http";
+import { invalidateRanking } from "@/server/ranking/data";
 import { confidenceFor, groupByTopic, nextReview } from "@/server/scoring";
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export const POST = (req: Request) => handle(async () => {
     }
   }, { maxWait: 15_000, timeout: 60_000 });
 
+  invalidateRanking(); // diagnostika natijasi reytingga ta'sir qiladi
   const topics = await db.topicMastery.findMany({ where: { userId: user.id, topicId: { in: [...new Set(questions.map((q) => q.topicId))] } }, include: { topic: true } });
   return {
     score: graded.filter((g) => g.isCorrect).length,

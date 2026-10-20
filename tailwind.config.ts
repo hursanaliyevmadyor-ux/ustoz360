@@ -26,7 +26,8 @@ const config: Config = {
         soft: "0 1px 2px rgb(18 43 73 / .04), 0 8px 24px -8px rgb(18 43 73 / .10)",
         pop: "0 12px 40px -12px rgb(18 43 73 / .28)",
       },
-      fontFamily: { sans: ["Inter", "Segoe UI", "Roboto", "system-ui", "-apple-system", "sans-serif"] },
+      // display: foydalanuvchi niki uchun yumaloq, quyuq shrift (qurilmada bor bo'lganidan biri tanlanadi)
+      fontFamily: { sans: ["Inter", "Segoe UI", "Roboto", "system-ui", "-apple-system", "sans-serif"], display: ["ui-rounded", "'Arial Rounded MT Bold'", "'Trebuchet MS'", "Nunito", "Inter", "Segoe UI", "system-ui", "sans-serif"] },
     },
   },
   plugins: [],

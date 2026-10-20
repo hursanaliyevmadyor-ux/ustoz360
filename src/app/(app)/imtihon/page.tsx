@@ -2,14 +2,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Clock, FileQuestion, Maximize, PenLine, Play, RotateCcw, Shuffle, ShieldCheck } from "lucide-react";
-import { modules } from "@/lib/modules";
-import { PageHeader } from "@/components/layout/page";
+import { Clock, FileQuestion, Maximize, PenLine, Play, RotateCcw, Shuffle, ShieldCheck, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-type Item = { slug: string; title: string; subject: string; kind: string; durationMin: number; questionCount: number; choiceCount: number; writtenCount: number; openAttemptId: string | null; last: { id: string; score: number | null; total: number | null; at: string | null } | null };
+type Item = { slug: string; title: string; subject: string; kind: string; durationMin: number; questionCount: number; choiceCount: number; writtenCount: number; openAttemptId: string | null; last: { id: string; score: number | null; total: number | null; at: string | null } | null; directionLabel: string | null; ranked: boolean; maxAttempts: number };
+type Summary = { rankingOn: boolean; rankedCompleted: number; last: { id: string; title: string; score: number | null; total: number | null; at: string | null } | null };
 const KIND: Record<string, { label: string; icon: React.ElementType }> = {
   TEST: { label: "Test (variantli)", icon: FileQuestion }, WRITTEN: { label: "Yozma javobli", icon: PenLine }, MIXED: { label: "Aralash", icon: Shuffle },
 };
@@ -17,6 +16,7 @@ const KIND: Record<string, { label: string; icon: React.ElementType }> = {
 export default function Page() {
   const router = useRouter();
   const [items, setItems] = React.useState<Item[] | null>(null);
+  const [summary, setSummary] = React.useState<Summary | null>(null);
   const [anon, setAnon] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [err, setErr] = React.useState("");
@@ -26,7 +26,7 @@ export default function Page() {
       if (r.status === 401) { setAnon(true); return; }
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setErr(d.error ?? "Imtihonlarni yuklab bo'lmadi."); return; }
-      setItems(d.exams);
+      setItems(d.exams); setSummary(d.summary ?? null);
     }).catch(() => setErr("Server bilan aloqa yo'q."));
   }, []);
 
@@ -48,7 +48,30 @@ export default function Page() {
 
   return (
     <>
-      <PageHeader module={modules[0]} title="Imtihon simulyatori" description="Haqiqiy imtihondagidek: to'liq ekran, taymer va har safar aralash savollar" />
+      <header className="mb-6">
+        <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Haqiqiy sinovga tayyormisiz?</h1>
+        <p className="mt-1.5 text-muted-foreground">Bilimingizni imtihon sharoitida sinang, natijalaringizni tahlil qiling va reytingdagi o&apos;rningizni kuzating.</p>
+      </header>
+
+      {summary && (
+        <section aria-label="Sizning natijalaringiz" className="mb-6 grid gap-3 sm:grid-cols-3">
+          <Card className="p-4">
+            <p className="text-xs font-semibold text-muted-foreground">Oxirgi natija</p>
+            {summary.last && summary.last.total ? <><p className="mt-1 text-2xl font-extrabold">{summary.last.score} / {summary.last.total} <span className="text-base text-muted-foreground">({Math.round(((summary.last.score ?? 0) / summary.last.total) * 100)}%)</span></p>
+              <p className="truncate text-sm text-muted-foreground">{summary.last.title} · <Link className="font-semibold text-primary hover:underline" href={`/imtihon/${summary.last.id}`}>ko&apos;rish</Link></p></> : <p className="mt-1 text-sm text-muted-foreground">Hali imtihon topshirmagansiz.</p>}
+          </Card>
+          <Card className="p-4">
+            <p className="text-xs font-semibold text-muted-foreground">Yakunlangan reyting sinovlari</p>
+            <p className="mt-1 text-2xl font-extrabold">{summary.rankedCompleted}</p>
+            <p className="text-sm text-muted-foreground">{summary.rankingOn ? "Faqat «Reytingga hisoblanadi» belgili imtihonlar." : "Reyting hozir o'chiq."}</p>
+          </Card>
+          <Card className="flex flex-col justify-between p-4">
+            <p className="text-xs font-semibold text-muted-foreground">Ustozlar reytingi</p>
+            <p className="text-sm text-muted-foreground">Reytingdagi o&apos;rningizni va tayyorgarlik indeksingizni ko&apos;ring.</p>
+            <Button asChild variant="outline" size="sm" className="mt-2 w-fit"><Link href="/reyting"><Trophy className="h-4 w-4" aria-hidden />Reytingga o&apos;tish</Link></Button>
+          </Card>
+        </section>
+      )}
 
       <Card className="mb-6"><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
@@ -85,7 +108,8 @@ export default function Page() {
                   <Badge variant="blue">{K.label}</Badge>
                 </div>
                 <p className="mt-3 text-lg font-extrabold leading-snug">{it.title}</p>
-                <p className="text-sm text-muted-foreground">{it.subject}</p>
+                <p className="text-sm text-muted-foreground">{it.subject}{it.directionLabel ? ` · ${it.directionLabel}` : " · Umumiy"}</p>
+                <p className="mt-2"><Badge variant={it.ranked ? "teal" : "neutral"}>{it.ranked ? `Reytingga hisoblanadi (${it.maxAttempts} ta urinish)` : "Mashq sinovi: reytingga hisoblanmaydi"}</Badge></p>
                 <dl className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
                   <div className="rounded-xl bg-muted p-2"><dt className="text-xs text-muted-foreground">Savol</dt><dd className="font-extrabold">{it.questionCount}</dd></div>
                   <div className="rounded-xl bg-muted p-2"><dt className="text-xs text-muted-foreground">Vaqt</dt><dd className="font-extrabold">{it.durationMin} daq</dd></div>

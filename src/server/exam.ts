@@ -1,6 +1,8 @@
 import { randomInt } from "node:crypto";
 import { ApiError } from "./auth";
 import { db } from "./db";
+import { getSetting } from "./settings";
+import { invalidateRanking } from "./ranking/data";
 
 export type ExamKind = "TEST" | "WRITTEN" | "MIXED";
 /** c: tanlangan variant (ekranda ko'rsatilgan tartib bo'yicha, 0 dan), t: yozma javob. */
@@ -93,21 +95,34 @@ const orderOf = (v: unknown) => v as OrderItem[];
 const answersOf = (v: unknown) => (v ?? {}) as Record<string, StoredAnswer>;
 
 export async function listExams(userId: string) {
-  const exams = await db.exam.findMany({
-    where: { active: true }, orderBy: { createdAt: "asc" },
-    select: { id: true, slug: true, title: true, subject: true, kind: true, durationMin: true, pickCount: true, _count: { select: { questions: true } }, questions: { select: { type: true } } },
-  });
+  const [exams, rankCfg] = await Promise.all([
+    db.exam.findMany({
+      where: { active: true }, orderBy: { createdAt: "asc" },
+      select: { id: true, slug: true, title: true, subject: true, kind: true, durationMin: true, pickCount: true, directionKey: true, rankingEligible: true, _count: { select: { questions: true } }, questions: { select: { type: true } } },
+    }),
+    getSetting("ranking"),
+  ]);
   const attempts = await db.examAttempt.findMany({
     where: { userId }, orderBy: { startedAt: "desc" }, take: 40,
     select: { id: true, examId: true, startedAt: true, endsAt: true, submittedAt: true, score: true, total: true },
   });
   const now = Date.now();
+  const rankedDone = new Set(attempts.filter((a) => a.submittedAt && exams.find((e) => e.id === a.examId)?.rankingEligible).map((a) => a.examId)).size;
+  const lastAny = attempts.find((a) => a.submittedAt) ?? null;
+  const labelOf = (k: string | null) => (k ? rankCfg.directions.find((d) => d.key === k)?.label ?? k : null);
   return {
+    // Bosh sahifa yuqorisi: oxirgi natija va reytingga hisoblangan sinovlar soni
+    summary: {
+      rankingOn: rankCfg.enabled,
+      rankedCompleted: rankedDone,
+      last: lastAny ? { id: lastAny.id, title: exams.find((e) => e.id === lastAny.examId)?.title ?? "Imtihon", score: lastAny.score, total: lastAny.total, at: lastAny.submittedAt } : null,
+    },
     exams: exams.map((e) => {
       const mine = attempts.filter((a) => a.examId === e.id);
       const open = mine.find((a) => !a.submittedAt && a.endsAt.getTime() > now) ?? null;
       const last = mine.find((a) => a.submittedAt) ?? null;
       return {
+        directionKey: e.directionKey, directionLabel: labelOf(e.directionKey), ranked: e.rankingEligible && rankCfg.enabled, maxAttempts: rankCfg.maxAttempts,
         slug: e.slug, title: e.title, subject: e.subject, kind: e.kind, durationMin: e.durationMin,
         questionCount: Math.min(e._count.questions, e.pickCount ?? e._count.questions),
         choiceCount: e.questions.filter((q) => q.type === "CHOICE").length,
@@ -148,7 +163,7 @@ export async function getAttemptView(userId: string, id: string) {
   };
   if (at.submittedAt) {
     const g = gradeAttempt(order, answersOf(at.answers), byId);
-    return { ...base, result: { score: at.score ?? g.score, total: at.total ?? g.total, submittedAt: at.submittedAt.toISOString(), startedAt: at.startedAt.toISOString(), review: g.review } };
+    return { ...base, result: { score: at.score ?? g.score, total: at.total ?? g.total, submittedAt: at.submittedAt.toISOString(), startedAt: at.startedAt.toISOString(), review: g.review, ranking: await rankingStatus(userId, at) } };
   }
   return {
     ...base,
@@ -195,13 +210,23 @@ export async function submitAttempt(userId: string, id: string, snapshot?: Recor
   const submittedAt = new Date();
   const done = await db.examAttempt.updateMany({ where: { id, submittedAt: null }, data: { submittedAt, answers, score: g.score, total: g.total } });
   if (done.count === 0) return getAttemptView(userId, id); // boshqa so'rov oldinroq yakunlagan
+  invalidateRanking(); // natija reytingga darhol ta'sir qilsin (kesh yangilanadi)
   // Natijani qayta o'qimasdan, hisoblanganning o'zini qaytaramiz (bazaga ortiqcha so'rov ketmaydi).
   return {
     id: at.id, serverNow: submittedAt.toISOString(), endsAt: at.endsAt.toISOString(), submitted: true as const,
     exam: { title: at.exam.title, subject: at.exam.subject, kind: at.exam.kind, durationMin: at.exam.durationMin },
     leftCount: at.leftCount,
-    result: { score: g.score, total: g.total, submittedAt: submittedAt.toISOString(), startedAt: at.startedAt.toISOString(), review: g.review },
+    result: { score: g.score, total: g.total, submittedAt: submittedAt.toISOString(), startedAt: at.startedAt.toISOString(), review: g.review, ranking: await rankingStatus(userId, at) },
   };
+}
+
+/** Natija reytingga hisoblanganmi (server qaror qiladi): imtihon admin tomonidan reytingga tasdiqlangan va urinish hisoblanadigan urinishlar ichida bo'lishi kerak. */
+async function rankingStatus(userId: string, at: { examId: string; startedAt: Date; exam: { rankingEligible: boolean } }) {
+  const cfg = await getSetting("ranking");
+  if (!cfg.enabled || !at.exam.rankingEligible) return { counted: false, reason: "Bu imtihon mashq uchun: reytingga hisoblanmaydi." };
+  const earlier = await db.examAttempt.count({ where: { userId, examId: at.examId, submittedAt: { not: null }, startedAt: { lt: at.startedAt } } });
+  if (earlier >= cfg.maxAttempts) return { counted: false, reason: `Reytingga bu imtihonning dastlabki ${cfg.maxAttempts} ta urinishi hisoblanadi.` };
+  return { counted: true, reason: "Natija reytingga hisoblandi (eng yaxshi urinish olinadi)." };
 }
 
 export async function recordLeave(userId: string, id: string) {

@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Brain, CalendarDays, ChevronRight, Grid2x2, Home, Search, Sparkles, User, CreditCard, LogOut, LogIn, ShieldCheck,
+  Brain, CalendarDays, ChevronRight, GraduationCap, Grid2x2, Home, Search, Sparkles, Trophy, User, CreditCard, LogOut, LogIn, ShieldCheck,
 } from "lucide-react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { allModules, dashboardItem, modules, findAny, resolveSub, searchIndex, adminModule } from "@/lib/modules";
@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/form";
 import { ToastProvider } from "@/components/ui/toast";
-import { Logo, Notifications, ThemeToggle, initialsOf, signOut } from "./shell-parts";
+import { Avatar } from "@/components/avatar";
+import { Logo, Notifications, ThemeToggle, signOut } from "./shell-parts";
 import { ShellProvider, useShell } from "./shell-context";
 
 function NavLink({ href, icon: Icon, label, active }: { href: string; icon: React.ElementType; label: string; active: boolean }) {
@@ -37,11 +38,12 @@ function SideProfile() {
       <span className="text-sm font-bold">Kirish</span>
     </Link>
   );
-  const label = me.name ?? me.email ?? "Foydalanuvchi";
+  // Asosiy ko'rinishda foydalanuvchining o'zi tanlagan nik (katta, maxsus shrift), ism familiya esa pastda kichikroq
+  const label = me.nickname || me.name || me.email || "Foydalanuvchi";
   return (
     <Link href="/profil" className="mt-3 flex items-center gap-3 rounded-xl p-2 text-white hover:bg-white/10" aria-label="Profil">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/15 text-sm font-bold">{initialsOf(label)}</span>
-      <span className="min-w-0 leading-tight"><span className="block truncate text-sm font-bold">{label}</span><span className="block truncate text-xs text-white/60">{me.plan} tarif</span></span>
+      <Avatar src={me.avatar} name={label} size={40} tone="dark" />
+      <span className="min-w-0 leading-tight"><span className={me.nickname ? "block truncate font-display text-base font-extrabold tracking-tight" : "block truncate text-sm font-bold"}>{label}</span><span className="block truncate text-xs text-white/60">{me.nickname ? me.name || `${me.plan} tarif` : `${me.plan} tarif`}</span></span>
     </Link>
   );
 }
@@ -62,8 +64,10 @@ function Sidebar() {
       <Logo dark className="px-2 pb-6 pt-1" />
       <nav aria-label="Asosiy menyu" className="flex-1 space-y-1 overflow-y-auto">
         <NavLink href={dashboardItem.href} icon={dashboardItem.icon} label={dashboardItem.name} active={path === "/dashboard"} />
-        {/* Diagnostika, testlar, imtihon simulyatsiyasi, natijalar va AI suhbat bitta umumiy USTOZ AI bo'limi ichida. */}
-        {visible.some((m) => m.key === "ai") && <NavLink href="/ustoz-ai" icon={Brain} label="USTOZ AI" active={cur === "ai" || path === "/imtihon" || path.startsWith("/imtihon/")} />}
+        {/* Diagnostika, testlar, natijalar va AI suhbat bitta umumiy USTOZ AI bo'limi ichida; imtihon simulyatori va reyting mustaqil bo'limlar. */}
+        {visible.some((m) => m.key === "ai") && <NavLink href="/ustoz-ai" icon={Brain} label="USTOZ AI" active={cur === "ai"} />}
+        <NavLink href="/imtihon" icon={GraduationCap} label="Imtihon simulyatori" active={path === "/imtihon" || path.startsWith("/imtihon/")} />
+        <NavLink href="/reyting" icon={Trophy} label="Ustozlar reytingi" active={path === "/reyting" || path.startsWith("/reyting/")} />
         <NavLink href="/seminarlar" icon={CalendarDays} label="Seminarlar" active={path === "/seminarlar"} />
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Modullar</p>
         {visible.filter((m) => m.key !== "ai").map((m) => <NavLink key={m.key} href={m.href} icon={m.icon} label={m.name} active={cur === m.key} />)}
@@ -80,9 +84,9 @@ function BottomNav() {
   const path = usePathname();
   const items = [
     { href: "/dashboard", label: "Bosh", icon: Home, on: path === "/dashboard" },
-    { href: "/ustoz-ai", label: "O'rganish", icon: modules[0].icon, on: path.startsWith("/ustoz-ai") || path.startsWith("/imtihon") },
-    { href: "/ai", label: "AI", icon: Sparkles, on: false },
-    { href: "/bilimxona", label: "Materiallar", icon: modules[5].icon, on: path === "/bilimxona" || path.startsWith("/bilimxona/kutubxona") || path.startsWith("/bilimxona/yuklash") },
+    { href: "/ustoz-ai", label: "O'rganish", icon: modules[0].icon, on: path.startsWith("/ustoz-ai") },
+    { href: "/imtihon", label: "Imtihon", icon: GraduationCap, on: path === "/imtihon" || path.startsWith("/imtihon/") },
+    { href: "/reyting", label: "Reyting", icon: Trophy, on: path === "/reyting" || path.startsWith("/reyting/") },
     { href: "/profil", label: "Profil", icon: User, on: path.startsWith("/profil") },
   ];
   return (
@@ -108,6 +112,19 @@ function AllServices({ open, setOpen }: { open: boolean; setOpen: (v: boolean) =
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent title="Barcha xizmatlar" description="Modullar va boshqaruv" className="max-h-[85vh] overflow-y-auto">
         <ul className="grid grid-cols-2 gap-3">
+          {/* Pastki menyuda joy yo'q: AI yordamchi va oddiy bo'limlar shu yerda ham turadi (320 px ekranda ham). */}
+          <li>
+            <Link href="/ai" onClick={() => setOpen(false)} className="flex h-full flex-col gap-2 rounded-2xl border border-border p-3.5 hover:bg-muted">
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-white"><Sparkles className="h-5 w-5" aria-hidden /></span>
+              <b className="text-sm">AI yordamchi</b><span className="text-xs text-muted-foreground">Erkin savol va suhbat</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/seminarlar" onClick={() => setOpen(false)} className="flex h-full flex-col gap-2 rounded-2xl border border-border p-3.5 hover:bg-muted">
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-teal text-white"><CalendarDays className="h-5 w-5" aria-hidden /></span>
+              <b className="text-sm">Seminarlar</b><span className="text-xs text-muted-foreground">Yaqin tadbirlar</span>
+            </Link>
+          </li>
           {list.map((m) => (
             <li key={m.key}>
               <Link href={m.href} onClick={() => setOpen(false)} className="flex h-full flex-col gap-2 rounded-2xl border border-border p-3.5 hover:bg-muted">
@@ -132,10 +149,8 @@ function Breadcrumb() {
     crumbs.push({ label: mod.name, href: sub && sub.href !== mod.href ? mod.href : undefined });
     if (group && group.href !== mod.href) crumbs.push({ label: group.label, href: group.href });
     if (sub && sub.href !== mod.href) crumbs.push({ label: sub.label });
-  } else if (path === "/imtihon") {
-    crumbs.push({ label: "USTOZ AI", href: "/ustoz-ai" }, { label: "Testlar", href: "/ustoz-ai/testlar" }, { label: "Imtihon simulyatsiyasi" });
   } else {
-    const map: Record<string, string> = { "/profil": "Profil", "/obuna": "Obuna", "/xizmatlar": "Barcha xizmatlar", "/imtihon": "Imtihon simulyatori", "/seminarlar": "Seminarlar" };
+    const map: Record<string, string> = { "/profil": "Profil", "/obuna": "Obuna", "/xizmatlar": "Barcha xizmatlar", "/imtihon": "Imtihon simulyatori", "/reyting": "Ustozlar reytingi", "/seminarlar": "Seminarlar" };
     crumbs.push({ label: map[path] ?? "Sahifa" });
   }
   return (
@@ -180,13 +195,13 @@ function ProfileMenu() {
   const item = "flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm outline-none data-[highlighted]:bg-muted";
   if (!ready) return <span className="skeleton h-9 w-9 rounded-full" aria-hidden />;
   if (!me) return <Button asChild size="sm"><Link href="/kirish"><LogIn className="h-4 w-4" />Kirish</Link></Button>;
-  const label = me.name ?? me.email ?? "Foydalanuvchi";
+  const label = me.nickname || me.name || me.email || "Foydalanuvchi";
   return (
     <DM.Root>
       <DM.Trigger asChild>
         <button className="flex items-center gap-2.5 rounded-xl p-1 pr-2 hover:bg-muted" aria-label="Profil menyusi">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">{initialsOf(label)}</span>
-          <span className="hidden text-left leading-tight md:block"><span className="block max-w-[140px] truncate text-sm font-bold">{label}</span><span className="block text-xs text-muted-foreground">{me.plan} tarif</span></span>
+          <Avatar src={me.avatar} name={label} size={36} />
+          <span className="hidden text-left leading-tight md:block"><span className={me.nickname ? "block max-w-[140px] truncate font-display text-base font-extrabold tracking-tight" : "block max-w-[140px] truncate text-sm font-bold"}>{label}</span><span className="block max-w-[140px] truncate text-xs text-muted-foreground">{me.nickname && me.name ? me.name : `${me.plan} tarif`}</span></span>
         </button>
       </DM.Trigger>
       <DM.Portal>
