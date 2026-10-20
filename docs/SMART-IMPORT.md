@@ -28,6 +28,14 @@ Jarayon **qayta tiklanuvchan qadamlar** mashinasi (`src/server/import/pipeline.t
 Har `POST /api/import/:id/advance` chaqiruvi bitta ish birligini bajaradi (lease 70 s). Sahifa yopilsa ham holat bazada; qaytib kirilganda davom etadi.
 Vercel Cron (`/api/cron/import-resume`, kuniga bir marta) tashlab ketilganlarni davom ettiradi. Xatolikda ajratilgan savollar yo'qolmaydi.
 
+### Kutish chegaralari (foydalanuvchi uzoq kutib qolmaydi)
+
+- Tekshiruv paketlari kattaroq (10 savol) va bir `advance` chaqiruvida 2 paket parallel ishlaydi: 60 savol taxminan 3 ta AI chaqiruvi.
+- Bitta paket uchun AI vaqti 35 s bilan cheklangan (funksiya chegarasi 60 s); matnli AI so'rovi 25 s.
+- AI ketma-ket 2 marta xato bersa yoki band/limit holati 2 marta takrorlansa, AI o'sha import uchun o'chiriladi (`aiBlocked`): qolgan savollar fayldagi kalit bo'yicha darhol ko'rib chiqiladi, sahifada sababi ko'rsatiladi. «Hammasini qayta tekshirish» AI'ni qayta yoqadi.
+- Ajratish bosqichida (AI kerak bo'lganda) ketma-ket 6 marta band bo'lsa jarayon to'xtatiladi, topilgan savollar saqlanadi, «Davom ettirish» bilan davom etadi.
+- Gemini xatosining sababi (kalit/model noto'g'ri — kod bilan) import sahifasida eslatma sifatida ko'rinadi; kalitning o'zi hech qayerda ko'rsatilmaydi.
+
 ## 3. Fayl turlari va o'qish usuli
 
 | Tur | Usul |

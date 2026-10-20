@@ -298,10 +298,14 @@ export async function runGeminiJson(c: { userId: string; parts: GeminiPart[]; sy
         headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, body: JSON.stringify(body),
       });
       if (!res.ok) {
-        console.error("Gemini import xato:", res.status);
+        // Sabab serverning jurnaliga yoziladi (kalit hech qachon emas); foydalanuvchiga esa amaliy ishora ko'rsatiladi.
+        const reason = ((await res.json().catch(() => null)) as { error?: { message?: string } } | null)?.error?.message?.replace(/AIza[0-9A-Za-z_-]{20,}/g, "***").slice(0, 200) ?? "";
+        console.error("Gemini import xato:", res.status, model, reason);
         if (isRetryableStatus(res.status) && attempt === 0) { await sleep(retryDelayMs(attempt)); continue; }
         status = "error";
-        throw new ApiError(res.status === 429 ? 429 : 502, res.status === 429 ? "AI xizmati hozir band (limit). Birozdan so'ng avtomatik davom etadi." : "Fayl tahlili xizmati javob bermadi. Birozdan so'ng qayta urinib ko'ring.", res.status === 429 ? "provider_busy" : undefined);
+        const hint = res.status === 404 ? `model topilmadi (${model}): IMPORT_FAST_MODEL yoki GEMINI_MODEL nomini tekshiring`
+          : [400, 401, 403].includes(res.status) ? "kalit noto'g'ri yoki ruxsat yo'q: GEMINI_API_KEY ni tekshiring" : "";
+        throw new ApiError(res.status === 429 ? 429 : 502, res.status === 429 ? "AI xizmati hozir band (limit). Birozdan so'ng avtomatik davom etadi." : `Fayl tahlili xizmati xato berdi (${res.status}${hint ? `: ${hint}` : ""}).`, res.status === 429 ? "provider_busy" : undefined);
       }
       const d = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
       input = d.usageMetadata?.promptTokenCount ?? 0; output = d.usageMetadata?.candidatesTokenCount ?? 0;
