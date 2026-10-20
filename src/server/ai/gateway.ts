@@ -8,6 +8,7 @@ import { SETTING_DEFAULTS } from "../settingsdef";
 import { withHubKnowledge } from "../hub/context";
 import { Breaker, orderProviders, type Role } from "../hub/routing";
 import { costMicro, isRetryableStatus, retryDelayMs } from "./gatewaylogic";
+import { pickGeminiModel, type GeminiModelInfo } from "./geminimodels";
 
 /**
  * AI shlyuzi: barcha AI so'rovlari shu yerdan o'tadi (Claude yoki OpenAI-mos bepul xizmatlar).
@@ -254,6 +255,19 @@ export type GeminiPart = { text: string } | { inlineData: { mimeType: string; da
 const GEMINI_BASE = () => (process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
 /** Model nomlari kodga qattiq bog'lanmagan: tezkor import uchun IMPORT_FAST_MODEL, murakkab tahlil uchun IMPORT_COMPLEX_MODEL (admin muhitda sozlaydi). */
 export const importModel = (heavy = false) => (heavy ? process.env.IMPORT_COMPLEX_MODEL : process.env.IMPORT_FAST_MODEL) || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+/** Sozlangan nom 404 bergan bo'lsa, topilgan ishchi model shu jarayon davomida eslab qolinadi (har so'rovda qayta qidirilmaydi). */
+const discovered: Record<string, string> = {};
+const modelFor = (heavy = false) => discovered[heavy ? "heavy" : "fast"] ?? importModel(heavy);
+async function discoverModel(heavy: boolean): Promise<string | null> {
+  try {
+    const res = await fetch(`${GEMINI_BASE()}/models?pageSize=200`, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return null;
+    const d = (await res.json()) as { models?: GeminiModelInfo[] };
+    const pick = pickGeminiModel(d.models ?? [], heavy);
+    if (pick) discovered[heavy ? "heavy" : "fast"] = pick;
+    return pick;
+  } catch { return null; }
+}
 export const visionConfigured = () => Boolean(process.env.GEMINI_API_KEY);
 const importDailyLimit = () => Math.max(1, Number(process.env.IMPORT_AI_DAILY_LIMIT) || 80);
 const importPerMinute = () => Math.max(1, Number(process.env.IMPORT_PER_MINUTE) || 14);
@@ -273,7 +287,7 @@ export async function runGeminiJson(c: { userId: string; parts: GeminiPart[]; sy
   await requireVerified(c.userId);
   const l = await limitsFor(c.userId);
   if (!l.enabled) throw new ApiError(503, "AI xizmati administrator tomonidan vaqtincha o'chirilgan.", "ai_disabled");
-  const model = importModel(c.heavy);
+  let model = modelFor(c.heavy);
   const recent = await db.aiRequest.count({ where: { userId: c.userId, feature: "import", createdAt: { gte: new Date(Date.now() - 60_000) }, status: { not: "blocked" } } });
   if (recent >= importPerMinute()) throw new ApiError(429, "Fayl tahlili juda tez-tez so'raldi. Bir daqiqadan so'ng avtomatik davom etadi.", "rate_limited");
   const day = await importUsageToday(c.userId);
@@ -281,26 +295,32 @@ export async function runGeminiJson(c: { userId: string; parts: GeminiPart[]; sy
     await db.aiRequest.create({ data: { userId: c.userId, feature: "import", model, status: "blocked", provider: "gemini" } }).catch(() => undefined);
     throw new ApiError(429, `Bugungi fayl tahlili limiti tugadi (${day.limit} ta so'rov). Ertaga davom ettirishingiz mumkin.`, "daily_limit");
   }
-  const body = {
+  const bodyFor = (m: string) => ({
     ...(c.system ? { systemInstruction: { parts: [{ text: c.system }] } } : {}),
     contents: [{ role: "user", parts: c.parts }],
     generationConfig: {
       responseMimeType: "application/json", maxOutputTokens: c.maxTokens, temperature: 0,
-      ...(/2\.5-flash/.test(model) && !/pro/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+      ...(/2\.5-flash/.test(m) && !/pro/.test(m) ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
     },
-  };
-  let status = "ok", input = 0, output = 0;
+  });
+  let status = "ok", input = 0, output = 0, discoveredOnce = false;
   const t0 = Date.now();
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(`${GEMINI_BASE()}/models/${encodeURIComponent(model)}:generateContent`, {
         method: "POST", signal: AbortSignal.timeout(c.timeoutMs ?? 50_000),
-        headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, body: JSON.stringify(body),
+        headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, body: JSON.stringify(bodyFor(model)),
       });
       if (!res.ok) {
         // Sabab serverning jurnaliga yoziladi (kalit hech qachon emas); foydalanuvchiga esa amaliy ishora ko'rsatiladi.
         const reason = ((await res.json().catch(() => null)) as { error?: { message?: string } } | null)?.error?.message?.replace(/AIza[0-9A-Za-z_-]{20,}/g, "***").slice(0, 200) ?? "";
         console.error("Gemini import xato:", res.status, model, reason);
+        // Model mavjud emas (eskirgan nom): kalit ko'ra oladigan modellardan mosini topib, bir marta qayta uriniladi.
+        if (res.status === 404 && !discoveredOnce) {
+          discoveredOnce = true;
+          const alt = await discoverModel(c.heavy ?? false);
+          if (alt && alt !== model) { console.error("Gemini import: model almashtirildi:", model, "->", alt); model = alt; continue; }
+        }
         if (isRetryableStatus(res.status) && attempt === 0) { await sleep(retryDelayMs(attempt)); continue; }
         status = "error";
         const hint = res.status === 404 ? `model topilmadi (${model}): IMPORT_FAST_MODEL yoki GEMINI_MODEL nomini tekshiring`
