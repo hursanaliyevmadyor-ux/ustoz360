@@ -4,6 +4,7 @@ import { AlertTriangle, Check, Pencil, X } from "lucide-react";
 import { api } from "@/lib/admin-client";
 import { useQuery } from "@/lib/use-query";
 import { ANSWER_STATUS_LABEL, dateText } from "@/lib/import-client";
+import { FigureText } from "@/components/figure-text";
 import { QueryView } from "@/components/layout/query-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,7 @@ function QuestionReview({ q, decision, edited, onDecide, onEdit }: { q: Q; decis
     <li className={cn("rounded-xl border bg-card p-3", decision === "REJECTED" ? "border-danger/30 bg-danger/5" : "border-border")}>
       <div className="flex flex-wrap items-start gap-2">
         <span className="grid h-6 min-w-6 place-items-center rounded-md bg-muted px-1 text-xs font-bold">{(q.pos ?? 0) + 1}</span>
-        <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm font-medium">{q.text}</p>
+        <div className="min-w-0 flex-1 text-sm font-medium"><FigureText text={q.text} /></div>
         <Badge variant={unverified ? "amber" : q.answerStatus === "VERIFIED" ? "success" : "blue"}>{ANSWER_STATUS_LABEL[q.answerStatus ?? "UNVERIFIED"]}</Badge>
       </div>
       <ul className="mt-2 space-y-0.5 pl-8">{q.options.map((o) => <li key={o.label} className={cn("flex gap-2 rounded-md px-1.5 py-0.5 text-sm", o.isCorrect && "bg-success/10 font-semibold text-success")}><span className="w-4 shrink-0 font-bold">{o.label}</span>{o.text}</li>)}</ul>

@@ -8,6 +8,8 @@ import { aiAvailable, importUsageToday, visionConfigured } from "../ai/gateway";
 import { storage } from "../storage";
 import { providerCaps } from "./aitasks";
 import { detectImportKind, KIND_LABEL, maxImportBytes, MAX_FILES_PER_SESSION, MAX_SESSIONS_ACTIVE, safeFileName, sha256Hex, SUPPORTED_ACCEPT, SUPPORTED_LABEL, type ImportKind } from "./formats";
+import { parsePageSpec } from "./chunking";
+import { pdfPageCount } from "./pdfslice";
 import { queueRecheck, type Progress } from "./pipeline";
 import type { Page } from "./officetext";
 
@@ -16,6 +18,7 @@ type Viewer = { id: string; roles?: { role: string }[] };
 type Opt = { label: string; text: string };
 const MAX_SESSIONS_TOTAL = 100;
 const MAX_QUESTION_CHARS = 4000;
+const MAX_AUTO_PAGES = 60; // bundan katta PDF uchun sahifalarni foydalanuvchi tanlaydi
 const randomHex = () => randomBytes(8).toString("hex");
 const asProgress = (v: unknown): Progress => (v && typeof v === "object" && !Array.isArray(v) ? { ...(v as Progress) } : {});
 type J = Prisma.InputJsonValue;
@@ -90,7 +93,8 @@ export async function addFile(viewer: Viewer, sessionId: string, file: { name: s
   const path = `import/${viewer.id}/${sessionId}/${randomHex()}-${safeFileName(file.name)}`;
   await st.put(path, file.bytes, det.mime);
   try {
-    const f = await db.importFile.create({ data: { importSessionId: sessionId, role, fileName: safeFileName(file.name), mime: det.mime, kind: det.kind, sizeBytes: file.bytes.length, storagePath: path, checksum, parseStatus: "UPLOADED" } });
+    const pages = det.kind === "pdf" ? await pdfPageCount(file.bytes) : null;
+    const f = await db.importFile.create({ data: { importSessionId: sessionId, role, fileName: safeFileName(file.name), mime: det.mime, kind: det.kind, sizeBytes: file.bytes.length, storagePath: path, checksum, parseStatus: "UPLOADED", pageCount: pages } });
     await reopenIfNeeded(s.id, s.status);
     await audit(viewer.id, "import.file_add", { session: sessionId, file: f.id, kind: det.kind, size: file.bytes.length });
     return { id: f.id, kind: det.kind, duplicateOf: await duplicateElsewhere(viewer.id, sessionId, checksum) };
@@ -156,7 +160,8 @@ export async function completeUpload(viewer: Viewer, sessionId: string, fileId: 
   if (await db.importFile.findFirst({ where: { importSessionId: sessionId, checksum, id: { not: f.id } }, select: { id: true } })) return discard("Bu fayl shu importga allaqachon qo'shilgan.", "duplicate");
   await st.put(f.storagePath, new Uint8Array(bytes), det.mime);
   await Promise.all(parts.map((p) => st.remove(p).catch(() => undefined)));
-  await db.importFile.update({ where: { id: f.id }, data: { mime: det.mime, kind: det.kind, sizeBytes: bytes.length, checksum, parseStatus: "UPLOADED", total: 0, cursor: 0 } });
+  const pages = det.kind === "pdf" ? await pdfPageCount(new Uint8Array(bytes)) : null;
+  await db.importFile.update({ where: { id: f.id }, data: { mime: det.mime, kind: det.kind, sizeBytes: bytes.length, checksum, parseStatus: "UPLOADED", total: 0, cursor: 0, pageCount: pages } });
   await reopenIfNeeded(s.id, s.status);
   await audit(viewer.id, "import.file_add", { session: sessionId, file: f.id, kind: det.kind, size: bytes.length, chunks: f.total });
   return { id: f.id, kind: det.kind, duplicateOf: await duplicateElsewhere(viewer.id, sessionId, checksum) };
@@ -172,10 +177,29 @@ async function reopenIfNeeded(sessionId: string, status: string) {
 }
 
 export async function setFileRole(viewer: Viewer, sessionId: string, fileId: string, role: z.infer<typeof roleSchema>) {
+  return setFileOptions(viewer, sessionId, fileId, { role });
+}
+
+/** Fayl sozlamalari: vazifasi (savollar / javoblar kaliti) va o'qiladigan sahifalar («3-14, 655-657»; bo'sh = butun fayl). */
+export async function setFileOptions(viewer: Viewer, sessionId: string, fileId: string, o: { role?: z.infer<typeof roleSchema>; pages?: string | null }) {
   const s = await own(viewer.id, sessionId);
   if (!["UPLOADED", "NEEDS_REVIEW", "READY_FOR_USER", "FAILED"].includes(s.status)) throw new ApiError(409, "Import qayta ishlanmoqda.");
-  const r = await db.importFile.updateMany({ where: { id: fileId, importSessionId: sessionId }, data: { role } });
-  if (!r.count) throw new ApiError(404, "Fayl topilmadi.");
+  const f = await db.importFile.findFirst({ where: { id: fileId, importSessionId: sessionId }, select: { id: true, kind: true, pageCount: true, docKinds: true } });
+  if (!f) throw new ApiError(404, "Fayl topilmadi.");
+  const data: Prisma.ImportFileUpdateInput = {};
+  if (o.role) data.role = o.role;
+  if (o.pages !== undefined) {
+    if (f.kind !== "pdf") throw new ApiError(400, "Sahifalarni tanlash faqat PDF fayllar uchun.");
+    const text = (o.pages ?? "").trim();
+    const spec = parsePageSpec(text, f.pageCount ?? 5000);
+    if (text && !spec) throw new ApiError(400, `Sahifalar noto'g'ri yozilgan${f.pageCount ? ` (fayl ${f.pageCount} bet)` : ""}. Masalan: 3-14, 655-657`, "bad_pages");
+    const prev = (f.docKinds && typeof f.docKinds === "object" && !Array.isArray(f.docKinds) ? f.docKinds : {}) as Record<string, unknown>;
+    const next = { ...prev }; if (text) next.pageSpec = text; else delete next.pageSpec;
+    // Sahifalar o'zgarsa, oldingi tuzilma va oraliqlar yaroqsiz: qayta hisoblanadi.
+    delete next.structDone; delete next.ranges;
+    data.docKinds = asJson(next); data.cursor = 0; data.total = 0;
+  }
+  await db.importFile.update({ where: { id: fileId }, data });
   return { ok: true as const };
 }
 
@@ -195,9 +219,12 @@ export async function startImport(viewer: Viewer, sessionId: string, title?: str
   await requireVerified(viewer.id);
   const s = await own(viewer.id, sessionId);
   if (s.status !== "UPLOADED") throw new ApiError(409, "Import allaqachon boshlangan.");
-  const files = await db.importFile.findMany({ where: { importSessionId: sessionId }, select: { parseStatus: true } });
+  const files = await db.importFile.findMany({ where: { importSessionId: sessionId }, select: { parseStatus: true, kind: true, fileName: true, pageCount: true, docKinds: true } });
   if (!files.length) throw new ApiError(400, "Avval kamida bitta fayl yuklang.");
   if (files.some((f) => f.parseStatus === "PENDING_UPLOAD")) throw new ApiError(409, "Ba'zi fayllar hali yuklanmagan.");
+  // Katta PDF to'plamlari (masalan, 600+ bet): butun fayl emas, kerakli sahifalar tanlanadi (AI limiti va tezlik uchun).
+  const big = files.find((f) => f.kind === "pdf" && (f.pageCount ?? 0) > MAX_AUTO_PAGES && !parsePageSpec((f.docKinds as { pageSpec?: string } | null)?.pageSpec, f.pageCount ?? 5000));
+  if (big) throw new ApiError(400, `«${big.fileName}» katta (${big.pageCount} bet). Kerakli sahifalarni yozing (masalan: 3-14, 655-657): savollar va ularning javoblar kaliti sahifalari.`, "pages_required");
   await db.importSession.update({ where: { id: sessionId }, data: { status: "QUEUED", step: "PARSE", error: null, ...(title?.trim() && { title: title.trim().slice(0, 120) }) } });
   await audit(viewer.id, "import.start", { session: sessionId, files: files.length });
   return { ok: true as const };
@@ -231,13 +258,16 @@ const FILTERS: Record<string, string[]> = { ready: ["READY"], review: ["NEEDS_RE
 
 export async function getSession(viewer: Viewer, id: string) {
   const s = await own(viewer.id, id);
-  const [files, byStatus, byDecision, extractedByFile, collections] = await Promise.all([
+  const [files, byStatus, byDecision, extractedByFile, collections, bySection] = await Promise.all([
     db.importFile.findMany({ where: { importSessionId: id }, orderBy: { createdAt: "asc" }, select: { id: true, fileName: true, kind: true, role: true, sizeBytes: true, parseStatus: true, parseError: true, pageCount: true, note: true, docKinds: true, cursor: true, total: true } }),
     db.extractedQuestion.groupBy({ by: ["reviewStatus"], where: { importSessionId: id }, _count: { _all: true } }),
     db.extractedQuestion.groupBy({ by: ["userDecision"], where: { importSessionId: id }, _count: { _all: true } }),
     db.extractedQuestion.groupBy({ by: ["fileId"], where: { importSessionId: id }, _count: { _all: true } }),
     db.personalQuestionCollection.findMany({ where: { importSessionId: id, ownerId: viewer.id }, select: { id: true, title: true } }),
+    db.extractedQuestion.groupBy({ by: ["section"], where: { importSessionId: id }, _count: { _all: true }, orderBy: { section: "asc" } }),
   ]);
+  // Test sarlavhalari: bo'lim = fayl tartibi * 1000 + sarlavha indeksi (fayllar yaratilish tartibida).
+  const groups = bySection.flatMap((x) => { const title = metaOf(files[Math.floor(x.section / 1000)] as FileInfo | undefined).groups?.[x.section % 1000]; return title ? [{ section: x.section, title, count: x._count._all }] : []; });
   const n = Object.fromEntries(byStatus.map((x) => [x.reviewStatus, x._count._all])) as Record<string, number>;
   const dec = Object.fromEntries(byDecision.map((x) => [x.userDecision ?? "NONE", x._count._all])) as Record<string, number>;
   const total = Object.values(n).reduce((a, b) => a + b, 0);
@@ -247,9 +277,9 @@ export async function getSession(viewer: Viewer, id: string) {
   return {
     id: s.id, title: s.title, status: s.status, step: s.step, subject: s.subject, error: s.error, label: p.label ?? null, warnings: p.warnings ?? [], aiBlocked: p.aiBlocked ?? null,
     createdAt: s.createdAt.toISOString(), updatedAt: s.updatedAt.toISOString(), completedAt: s.completedAt?.toISOString() ?? null,
-    files: files.map((f) => ({ id: f.id, fileName: f.fileName, kind: f.kind, kindLabel: KIND_LABEL[f.kind as ImportKind] ?? f.kind, role: f.role, sizeBytes: f.sizeBytes, parseStatus: f.parseStatus, parseError: f.parseError, pageCount: f.pageCount, note: f.note, docKinds: (f.docKinds as { kinds?: unknown } | null)?.kinds ?? null, extracted: ex.get(f.id) ?? 0, progress: f.total ? { done: Math.min(f.cursor, f.total), total: f.total } : null })),
+    files: files.map((f) => ({ id: f.id, fileName: f.fileName, kind: f.kind, kindLabel: KIND_LABEL[f.kind as ImportKind] ?? f.kind, role: f.role, sizeBytes: f.sizeBytes, parseStatus: f.parseStatus, parseError: f.parseError, pageCount: f.pageCount, note: f.note, docKinds: (f.docKinds as { kinds?: unknown } | null)?.kinds ?? null, pageSpec: (f.docKinds as { pageSpec?: string } | null)?.pageSpec ?? null, groups: ((f.docKinds as { groups?: string[] } | null)?.groups ?? []).length, extracted: ex.get(f.id) ?? 0, progress: f.total ? { done: Math.min(f.cursor, f.total), total: f.total } : null })),
     counts: { total, ready: n.READY ?? 0, review: (n.NEEDS_REVIEW ?? 0) + (n.INCOMPLETE ?? 0) + (n.UNSUPPORTED ?? 0) + (n.PENDING ?? 0), noAnswer: n.NO_ANSWER ?? 0, conflict: n.CONFLICT ?? 0, unsupported: n.UNSUPPORTED ?? 0, incomplete: n.INCOMPLETE ?? 0, approved: dec.APPROVED ?? 0, removed: dec.REMOVED ?? 0, withKey },
-    collections,
+    collections, groups,
   };
 }
 
@@ -259,9 +289,15 @@ const loadQuestions = (where: Prisma.ExtractedQuestionWhereInput, take?: number,
 const labelsOf = (v: unknown): string[] | null => (Array.isArray(v) ? (v as unknown[]).map(String) : null);
 const effOptions = (q: { options: unknown; editedOptions: unknown }): Opt[] => ((q.editedOptions ?? q.options) as Opt[] | null) ?? [];
 
-function questionView(q: QFull, fileName: (id: string | null) => string) {
+type FileInfo = { id: string; fileName: string; docKinds?: unknown };
+type FigureMeta = { groups?: string[]; figures?: Record<string, unknown[]> };
+const metaOf = (f?: FileInfo): FigureMeta => (f?.docKinds && typeof f.docKinds === "object" && !Array.isArray(f.docKinds) ? (f.docKinds as FigureMeta) : {});
+
+function questionView(q: QFull, fileName: (id: string | null) => string, file?: FileInfo) {
   const v = q.verification;
+  const fm = metaOf(file);
   return {
+    group: fm.groups?.[q.section % 1000] ?? null, figures: fm.figures?.[q.id] ?? [],
     id: q.id, seq: q.seq, number: q.number, text: q.editedText ?? q.originalText, original: q.editedText !== null ? q.originalText : null,
     options: effOptions(q), qtype: q.qtype, edited: q.editedText !== null || q.editedOptions !== null,
     reviewStatus: q.reviewStatus, decision: q.userDecision, ocrUncertain: q.ocrUncertain, note: q.note,
@@ -274,28 +310,29 @@ function questionView(q: QFull, fileName: (id: string | null) => string) {
   };
 }
 
-export async function listQuestions(viewer: Viewer, id: string, q: { filter?: string; page?: number; fileId?: string }) {
+export async function listQuestions(viewer: Viewer, id: string, q: { filter?: string; page?: number; fileId?: string; section?: number }) {
   await own(viewer.id, id);
   const take = 100, skip = Math.max(0, ((q.page ?? 1) - 1) * take);
   const f = q.filter && q.filter !== "all" ? q.filter : null;
   const where: Prisma.ExtractedQuestionWhereInput = { importSessionId: id };
   if (q.fileId) where.fileId = q.fileId;
+  if (q.section !== undefined && Number.isInteger(q.section)) where.section = q.section;
   if (f === "approved") where.userDecision = "APPROVED";
   else if (f === "removed") where.userDecision = "REMOVED";
   else if (f && FILTERS[f]) { where.reviewStatus = { in: FILTERS[f] }; where.userDecision = null; }
   else if (!f) where.OR = [{ userDecision: null }, { userDecision: { not: "REMOVED" } }];
-  const [rows, count, files] = await Promise.all([loadQuestions(where, take, skip), db.extractedQuestion.count({ where }), db.importFile.findMany({ where: { importSessionId: id }, select: { id: true, fileName: true } })]);
+  const [rows, count, files] = await Promise.all([loadQuestions(where, take, skip), db.extractedQuestion.count({ where }), db.importFile.findMany({ where: { importSessionId: id }, select: { id: true, fileName: true, docKinds: true } })]);
   const name = (fid: string | null) => files.find((x) => x.id === fid)?.fileName ?? "Fayl";
-  return { total: count, page: q.page ?? 1, pages: Math.max(1, Math.ceil(count / take)), items: rows.map((r) => questionView(r, name)) };
+  return { total: count, page: q.page ?? 1, pages: Math.max(1, Math.ceil(count / take)), items: rows.map((r) => questionView(r, name, files.find((x) => x.id === r.fileId))) };
 }
 
 export async function getQuestion(viewer: Viewer, id: string, qid: string) {
   await own(viewer.id, id);
   const q = (await loadQuestions({ id: qid, importSessionId: id }, 1))[0];
   if (!q) throw new ApiError(404, "Savol topilmadi.");
-  const files = await db.importFile.findMany({ where: { importSessionId: id }, select: { id: true, fileName: true, kind: true } });
+  const files = await db.importFile.findMany({ where: { importSessionId: id }, select: { id: true, fileName: true, kind: true, docKinds: true } });
   const f = files.find((x) => x.id === q.fileId);
-  return { ...questionView(q, (fid) => files.find((x) => x.id === fid)?.fileName ?? "Fayl"), evidence: (q.verification?.evidence as unknown[] | null) ?? [], file: f ? { id: f.id, fileName: f.fileName, kind: f.kind } : null };
+  return { ...questionView(q, (fid) => files.find((x) => x.id === fid)?.fileName ?? "Fayl", f), evidence: (q.verification?.evidence as unknown[] | null) ?? [], file: f ? { id: f.id, fileName: f.fileName, kind: f.kind } : null };
 }
 
 // ---------- tahrirlash va qaror ----------
@@ -408,7 +445,7 @@ export async function filePreview(viewer: Viewer, id: string, fileId: string, pa
   if (["pdf", "image"].includes(f.kind)) {
     if (!storage().configured()) throw new ApiError(503, "Fayl saqlash xizmati ulanmagan.", "storage_unconfigured");
     const n = page ? Number(/\d+/.exec(page)?.[0]) : NaN;
-    const url = await storage().signedUrl(f.storagePath, 300);
+    const url = await storage().signedUrl(f.storagePath, 3600);
     return { kind: f.kind, fileName: f.fileName, url: f.kind === "pdf" && Number.isFinite(n) && n > 0 ? `${url}#page=${n}` : url, text: null as string | null, label: page ?? null };
   }
   const pages = (f.pages as unknown as Page[] | null) ?? [];

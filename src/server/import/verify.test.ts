@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeAiKey, normalizeAiQuestions, labelsOf, normalizeDifficulty, normalizeType } from "./aischema";
-import { buildTextChunks, pageRanges, pdfPageCountGuess, questionRanges } from "./chunking";
+import { buildTextChunks, extractionRanges, pageRanges, parsePageSpec, pdfPageCountGuess, questionRanges } from "./chunking";
 import { checkArithmetic, evalArithmetic, findExpression, optionNumber } from "./mathcheck";
 import { contentHash, decide, matchKeys, matchTopic, NOT_VERIFIED_TEXT, similarity, type DecideInput } from "./verifylogic";
 
@@ -133,6 +133,56 @@ describe("yordamchilar: xesh, o'xshashlik, mavzu, bo'laklar", () => {
   });
 });
 
+describe("ko'p testli to'plam: guruhlar, sahifalar, rasm joylari", () => {
+  it("sahifalar yozuvi oraliqlarga aylanadi; noto'g'ri yozuv null", () => {
+    expect(parsePageSpec("3-14, 655-657")).toEqual([{ from: 3, to: 14 }, { from: 655, to: 657 }]);
+    expect(parsePageSpec("20, 5-8 7-9")).toEqual([{ from: 5, to: 9 }, { from: 20, to: 20 }]);
+    expect(parsePageSpec("")).toBeNull();
+    expect(parsePageSpec("a-b")).toBeNull();
+    expect(parsePageSpec("9-3")).toBeNull();
+    expect(parsePageSpec("1-9999", 600)).toBeNull();
+  });
+  it("kesish oraliqlari: savol bo'laklari 8, kalit bo'laklari 10 sahifagacha; tanlangan sahifalar tuzilmaga qarab Q/K", () => {
+    const sections = [{ kind: "THEORY", fromPage: 1, toPage: 2 }, { kind: "QUESTIONS", fromPage: 3, toPage: 20 }, { kind: "ANSWER_KEY", fromPage: 21, toPage: 33 }];
+    expect(extractionRanges(sections, 33)).toEqual([
+      { from: 3, to: 10, kind: "Q" }, { from: 11, to: 18, kind: "Q" }, { from: 19, to: 20, kind: "Q" }, { from: 21, to: 30, kind: "K" }, { from: 31, to: 33, kind: "K" },
+    ]);
+    expect(extractionRanges([], 40, [{ from: 5, to: 6 }, { from: 38, to: 40 }])).toEqual([{ from: 5, to: 6, kind: "Q" }, { from: 38, to: 40, kind: "Q" }]);
+    expect(extractionRanges(sections, 33, [{ from: 21, to: 24 }])).toEqual([{ from: 21, to: 24, kind: "K" }]);
+    expect(extractionRanges([], 3)).toEqual([{ from: 1, to: 3, kind: "Q" }]);
+  });
+  it("kalit savolning o'z testi bo'yicha topiladi (test sarlavhasi biroz boshqacha yozilgan bo'lsa ham)", () => {
+    const entries = [
+      { number: 1, answers: ["A"], section: 0, group: "Diagnostika testi Kuzgi No: 1" }, { number: 2, answers: ["C"], section: 0, group: "Diagnostika testi Kuzgi No: 1" },
+      { number: 1, answers: ["D"], section: 1, group: "Diagnostika testi Kuzgi No: 2" }, { number: 2, answers: ["B"], section: 1, group: "Diagnostika testi Kuzgi No: 2" },
+    ];
+    const qs = [
+      { number: 1, section: 5, group: "diagnostika testi kuzgi no 2", inlineAnswer: null }, { number: 2, section: 5, group: "diagnostika testi kuzgi no 2", inlineAnswer: null },
+      { number: 2, section: 0, group: "Diagnostika testi Kuzgi No: 1", inlineAnswer: null }, { number: 1, section: 9, group: "Olimpiada testi No: 7", inlineAnswer: null },
+    ];
+    expect(matchKeys(qs, entries).map((k) => k.key)).toEqual([["D"], ["B"], ["C"], null]);
+    // guruhsiz savol/kalit: eski usul (raqamlash bo'limlari) ishlaydi
+    expect(matchKeys([{ number: 2, section: 0, inlineAnswer: null }], [{ number: 1, answers: ["A"], section: 0 }, { number: 2, answers: ["B"], section: 0 }])[0].key).toEqual(["B"]);
+  });
+  it("AI: test sarlavhasi, rasm joylari (sahifa kesilgan bo'lakdan asl raqamga o'tadi), belgi bo'lmasa qo'shiladi", () => {
+    const r = normalizeAiQuestions([
+      { number: 11, group: " Diagnostika testi Kuzgi No: 1 ", text: "Diagramma bo'yicha...\n[[RASM:1]]\nQaysi to'g'ri?", options: [{ label: "A", text: "x" }, { label: "B", text: "y" }], page: 2,
+        figures: [{ n: 1, page: 2, box: [100, 50, 400, 950], kind: "figure" }, { n: 2, page: 2, box: [0, 0, 3, 3], kind: "formula" }, { n: 3, page: 2, box: null, kind: "unreadable" }] },
+    ], { pageOffset: 10 });
+    expect(r[0].group).toBe("Diagnostika testi Kuzgi No: 1");
+    expect(r[0].page).toBe("12");
+    expect(r[0].figures).toEqual([
+      { n: 1, page: 12, box: [100, 50, 400, 950], kind: "figure" },
+      { n: 2, page: 12, box: null, kind: "formula" },
+      { n: 3, page: 12, box: null, kind: "unreadable" },
+    ]);
+    // 2 va 3-belgilar matnda yo'q edi: oxiriga qo'shilgan; 1-belgi o'z joyida qolgan
+    expect(r[0].text).toBe("Diagramma bo'yicha...\n[[RASM:1]]\nQaysi to'g'ri?\n[[RASM:2]]\n[[RASM:3]]");
+    expect(r[0].uncertain).toBe(true);
+    expect(normalizeAiKey([{ number: 1, answer: "B", group: "Test No: 3" }])).toEqual([{ number: 1, answers: ["B"], group: "Test No: 3" }]);
+  });
+});
+
 describe("AI javobini me'yorlashtirish", () => {
   it("yorliqlar tartib bo'yicha qayta yoziladi, savol matni saqlanadi, to'qilmaydi", () => {
     const r = normalizeAiQuestions([
@@ -146,7 +196,7 @@ describe("AI javobini me'yorlashtirish", () => {
     expect(r[1]).toMatchObject({ qtype: "SHORT", incomplete: false });
   });
   it("kalit yozuvlari va turlar", () => {
-    expect(normalizeAiKey([{ number: "1", answer: ["b"] }, { number: 2, answer: "AC" }, { number: "x", answer: "A" }])).toEqual([{ number: 1, answers: ["B"] }, { number: 2, answers: ["A", "C"] }]);
+    expect(normalizeAiKey([{ number: "1", answer: ["b"] }, { number: 2, answer: "AC" }, { number: "x", answer: "A" }])).toEqual([{ number: 1, answers: ["B"], group: null }, { number: 2, answers: ["A", "C"], group: null }]);
     expect(labelsOf("B) 5")).toEqual(["B"]);
     expect(labelsOf(["a", "C"])).toEqual(["A", "C"]);
     expect(normalizeType("single-choice")).toBe("SINGLE");

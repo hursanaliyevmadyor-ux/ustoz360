@@ -7,6 +7,7 @@ import { db } from "../db";
 import { stemsOf } from "../hub/knowledgelogic";
 import { notify } from "../notify";
 import { ensureFallbackTopic } from "./collections";
+import { globalizeFigures } from "./figures";
 import { similarity, FALLBACK_SUBJECT } from "./verifylogic";
 
 /**
@@ -114,7 +115,9 @@ export async function reviewSubmission(admin: Admin, subId: string, input: z.inf
       if (hasEdit) edited++;
       decisions[q.id] = hasEdit ? "EDITED" : "APPROVED";
       const gid = rid("gq");
-      qRows.push({ id: gid, topicId, text: e?.text ?? q.text, explanation: e?.explanation ?? q.explanation, difficulty: q.difficulty, status: "APPROVED", isDemo: false, source: "IMPORT", sourceRef: ["Foydalanuvchi yuklagan material (admin tasdiqlagan)", q.sourceRef].filter(Boolean).join(" · ").slice(0, 300), kind: q.kind, importSourceId: q.id });
+      // Savoldagi rasmlar umumiy nusxaga ko'chiriladi (egasi rasmni o'chirsa ham umumiy savol buzilmaydi).
+      const gtext = await globalizeFigures(e?.text ?? q.text, { fromOwner: sub.userId, newQid: gid });
+      qRows.push({ id: gid, topicId, text: gtext, explanation: e?.explanation ?? q.explanation, difficulty: q.difficulty, status: "APPROVED", isDemo: false, source: "IMPORT", sourceRef: ["Foydalanuvchi yuklagan material (admin tasdiqlagan)", q.sourceRef].filter(Boolean).join(" · ").slice(0, 300), kind: q.kind, importSourceId: q.id });
       options.forEach((text, i) => oRows.push({ id: rid("go"), questionId: gid, text, isCorrect: i === correct, position: i }));
     }
     if (qRows.length) await db.$transaction([db.question.createMany({ data: qRows }), db.answerOption.createMany({ data: oRows })]);

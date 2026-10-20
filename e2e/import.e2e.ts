@@ -19,6 +19,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { PrismaClient } from "@prisma/client";
+import { PDFDocument } from "pdf-lib";
 
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:3000";
 const ADMIN = process.env.E2E_ADMIN_TOKEN ?? "", USER = process.env.E2E_USER_TOKEN ?? "";
@@ -27,6 +28,7 @@ const db = new PrismaClient();
 
 // ---------- soxta Gemini ----------
 const aiCalls: string[] = [];
+let aiExtract = 0, aiKey = 0;
 const ANSWERS: [RegExp, string][] = [[/poytaxti/i, "Toshkent"], [/fotosintez/i, "Xloroplast"]];
 const fake = createServer((req, res) => {
   let raw = "";
@@ -50,6 +52,18 @@ const fake = createServer((req, res) => {
           : { id, answer: null, confidence: "low", explanation: null, usedSources: [], needsExternal: false, reasoningChecked: false, note: null };
       });
       out = { results };
+    } else if (text.includes("Extract every test question you can see")) {
+      // PDF bo'lagi (1-bet): ikki savol, biri rasmli; test sarlavhasi «Test No: 1»; bo'lak ichidagi sahifa raqami 1.
+      aiExtract++;
+      out = { questions: [
+        { number: 1, group: "Test No: 1", text: "Diagramma bo'yicha eng katta qiymat qaysi?\n[[RASM:1]]", options: [{ label: "A", text: "10" }, { label: "B", text: "12" }, { label: "C", text: "14" }], type: "SINGLE", page: 1, answer: null, figures: [{ n: 1, page: 1, box: [100, 100, 500, 900], kind: "figure" }] },
+        { number: 2, group: "Test No: 1", text: "O'zbekiston poytaxti qaysi shahar?", options: [{ label: "A", text: "Toshkent" }, { label: "B", text: "Samarqand" }], type: "SINGLE", page: 1, answer: null, figures: [] },
+      ], answerKey: [], warnings: [] };
+    } else if (text.includes("should contain an ANSWER KEY")) {
+      aiKey++;
+      out = { questions: [], answerKey: [{ number: 1, group: "Test No: 1", answer: ["C"] }, { number: 2, group: "Test No: 1", answer: ["A"] }], warnings: [] };
+    } else if (text.includes("Analyze the attached document")) {
+      out = { pageCount: 2, sections: [{ kind: "QUESTIONS", fromPage: 1, toPage: 1 }, { kind: "ANSWER_KEY", fromPage: 2, toPage: 2 }], subject: "Pedagogika", grade: null, language: "uz-latn", hasQuestions: true, hasAnswerKey: true, note: null, questions: [], answerKey: [], warnings: [] };
     } else {
       out = { pageCount: 1, sections: [], subject: "Pedagogika", grade: null, language: "uz-latn", hasQuestions: true, hasAnswerKey: false, note: null, questions: [], answerKey: [], warnings: [] };
     }
@@ -259,6 +273,81 @@ async function main() {
     created.sessions.splice(created.sessions.indexOf(sid), 1);
     assert.equal((await user.get(`/api/import/${sid}`)).status, 404);
     assert.equal((await user.get(`/api/personal-tests/${col}`)).status, 200);
+  });
+
+  await t("PDF to'plami: sahifalar tanlanadi, bo'laklab o'qiladi, kalit test sarlavhasi bo'yicha topiladi, rasm joyi saqlanadi va ko'rsatiladi", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([400, 400]); doc.addPage([400, 400]);
+    const pdf = await doc.save();
+    const sid2 = (await user.post("/api/import", { title: "E2E PDF to'plami" })).json.id as string;
+    created.sessions.push(sid2);
+    const up = await upload(USER, sid2, "toplam.pdf", pdf);
+    assert.equal(up.status, 200, JSON.stringify(up.json));
+    const f0 = (await user.get(`/api/import/${sid2}`)).json.files[0];
+    assert.equal(f0.pageCount, 2, "PDF sahifalari yuklashda aniqlanadi");
+    assert.equal((await user.patch(`/api/import/${sid2}/files/${f0.id}`, { pages: "9-3" })).status, 400, "noto'g'ri sahifalar yozuvi rad etiladi");
+    assert.equal((await user.patch(`/api/import/${sid2}/files/${f0.id}`, { pages: "1-2" })).status, 200);
+    assert.equal((await user.get(`/api/import/${sid2}`)).json.files[0].pageSpec, "1-2");
+    assert.equal((await user.patch(`/api/import/${sid2}/files/${f0.id}`, { pages: "" })).status, 200);
+
+    assert.equal((await user.post(`/api/import/${sid2}/start`, {})).status, 200);
+    await runToEnd(sid2);
+    const s = (await user.get(`/api/import/${sid2}`)).json;
+    assert.equal(s.counts.total, 2, JSON.stringify(s.counts));
+    assert.deepEqual(s.groups.map((g: J) => [g.title, g.count]), [["Test No: 1", 2]]);
+    assert.ok(aiExtract >= 1 && aiKey >= 1, "savollar va kalit sahifalari alohida (kesilgan bo'lak sifatida) o'qilgan");
+    const items = (await user.get(`/api/import/${sid2}/questions`)).json.items;
+    const q1 = items[0], q2 = items[1];
+    assert.equal(q1.group, "Test No: 1");
+    assert.deepEqual(q1.figures, [{ n: 1, page: 1, box: [100, 100, 500, 900], kind: "figure" }]);
+    assert.ok(q1.text.includes("[[RASM:1]]"), "rasm joyi savol matnida o'z o'rnida");
+    assert.deepEqual(q1.answer.key, ["C"]); assert.equal(q1.answer.keySource, "SEPARATE_FILE");
+    assert.notEqual(q1.reviewStatus, "READY", "rasmli savolni AI matn bilan tasdiqlamaydi");
+    assert.match(q1.answer.note ?? "", /rasm/i);
+    assert.deepEqual(q2.answer.key, ["A"]); assert.equal(q2.reviewStatus, "READY", "kalit AI bilan mos: tayyor");
+
+    // rasmli savolni o'qituvchi tasdiqlaydi; rasm tayyor bo'lmaguncha testga saqlab bo'lmaydi
+    assert.equal((await user.post(`/api/import/${sid2}/questions/${q1.id}`, { action: "confirm", answer: "C" })).status, 200);
+    const pend = (await user.get(`/api/import/${sid2}/figures`)).json.items;
+    assert.equal(pend.length, 1); assert.equal(pend[0].page, 1); assert.equal(pend[0].done, false); assert.equal(pend[0].fileKind, "pdf");
+    const early = await user.post(`/api/import/${sid2}/save`, { title: "E2E PDF test" });
+    assert.equal(early.status, 400); assert.equal(early.json.code, "figures_pending");
+    const put = (token: string, qid: string, body: Uint8Array) => fetch(`${BASE}/api/import/${sid2}/questions/${qid}/figures/1`, { method: "PUT", headers: { cookie: `u360_session=${token}`, "content-type": "image/png" }, body: body as BodyInit });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(120).fill(7)]);
+    assert.equal((await put(USER, q1.id, new Uint8Array(200))).status, 400, "PNG bo'lmagan fayl rad etiladi");
+    assert.equal((await put(ADMIN, q1.id, png)).status, 404, "boshqa foydalanuvchi rasm yuklay olmaydi");
+    assert.equal((await put(USER, q1.id, png)).status, 200);
+    assert.equal((await user.get(`/api/import/${sid2}/figures`)).json.items[0].done, true);
+
+    // saqlash: rasm savolga mustaqil nusxa sifatida bog'lanadi va faqat egasiga ko'rinadi
+    const saved = await user.post(`/api/import/${sid2}/save`, { title: "E2E PDF test" });
+    assert.equal(saved.status, 200, JSON.stringify(saved.json)); assert.equal(saved.json.added, 1);
+    const col2 = saved.json.collectionId as string; created.collections.push(col2);
+    const c2 = (await user.get(`/api/personal-tests/${col2}`)).json;
+    const token = /\[\[rasm:([A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+)\]\]/.exec(c2.questions[0].text);
+    assert.ok(token, "savol matnida saqlangan rasm belgisi bor: " + c2.questions[0].text);
+    assert.ok(!c2.questions[0].text.includes("[[RASM:"));
+    const img = await fetch(`${BASE}/api/figures/${token![1]}`, { headers: { cookie: `u360_session=${USER}` } });
+    assert.equal(img.status, 200); assert.equal(img.headers.get("content-type"), "image/png");
+    assert.equal((await fetch(`${BASE}/api/figures/${token![1]}`)).status, 401, "kirmagan foydalanuvchi rasmni ko'ra olmaydi");
+    assert.equal((await fetch(`${BASE}/api/figures/../../etc/passwd`, { headers: { cookie: `u360_session=${USER}` } })).status === 200, false);
+
+    // adminga yuborish va tasdiqlash: rasm umumiy nusxaga ko'chiriladi
+    assert.equal((await user.post(`/api/personal-tests/${col2}/submit`, { rightsConfirmed: true })).status, 200);
+    const sub = (await admin.get("/api/admin/import-submissions?status=SUBMITTED")).json.items.find((x: J) => x.collection.id === col2);
+    assert.ok(sub);
+    let r = await admin.post(`/api/admin/import-submissions/${sub.id}`, { action: "approve" });
+    if (r.status === 400 && r.json.code === "topic_required") {
+      const topic = await db.topic.findFirst({ where: { subject: { slug: { not: "shaxsiy-testlar" } } }, select: { id: true } });
+      r = await admin.post(`/api/admin/import-submissions/${sub.id}`, { action: "approve", topicId: topic!.id });
+    }
+    assert.equal(r.status, 200, JSON.stringify(r.json));
+    const mine2 = await db.question.findMany({ where: { collectionId: col2 }, select: { id: true } });
+    const copy = await db.question.findFirst({ where: { collectionId: null, importSourceId: { in: mine2.map((q) => q.id) } }, select: { id: true, text: true } });
+    assert.ok(copy); created.extra.push(copy!.id);
+    const g = /\[\[rasm:(global\/[A-Za-z0-9_.-]+)\]\]/.exec(copy!.text);
+    assert.ok(g, "umumiy nusxada rasm global yo'lga ko'chirilgan: " + copy!.text);
+    assert.equal((await fetch(`${BASE}/api/figures/${g![1]}`, { headers: { cookie: `u360_session=${ADMIN}` } })).status, 200);
   });
 
   console.log(`\n${pass} ta sinov o'tdi.`);

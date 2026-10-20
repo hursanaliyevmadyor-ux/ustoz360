@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { BookMarked } from "lucide-react";
 import { api } from "@/lib/admin-client";
+import { canvasToPng, cropFigure } from "@/lib/figure-crop";
 import { COLLECTION_STATUS_LABEL, type CollectionRow } from "@/lib/import-client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -10,7 +11,8 @@ import { Field, Input, Select } from "@/components/ui/form";
 import { SuccessState } from "@/components/ui/states";
 
 type Topics = { subjects: { id: string; name: string; topics: { id: string; name: string }[] }[] };
-type Saved = { collectionId: string; added: number; skipped: number; notEligible: number };
+type Saved = { collectionId: string; added: number; skipped: number; notEligible: number; waitingFigures: number };
+type Pending = { questionId: string; n: number; page: number | null; box: [number, number, number, number] | null; fileId: string; fileKind: string; done: boolean };
 
 /** Tasdiqlangan savollarni shaxsiy testga saqlash: yangi test yoki mavjudiga qo'shish. Savollar umumiy bankka tushmaydi. */
 export function SaveDialog({ open, onOpenChange, sessionId, defaultTitle, approved, onSaved }: { open: boolean; onOpenChange: (v: boolean) => void; sessionId: string; defaultTitle: string; approved: number; onSaved: () => void }) {
@@ -33,8 +35,30 @@ export function SaveDialog({ open, onOpenChange, sessionId, defaultTitle, approv
     })();
   }, [open, defaultTitle]);
 
+  const [prep, setPrep] = React.useState<{ done: number; total: number } | null>(null);
+
+  /** Rasm joyi bor tasdiqlangan savollar: asl sahifadan rasm kesiladi va yuklanadi (tayyor testda savol bilan birga ko'rsatilishi uchun). */
+  const prepareFigures = async (): Promise<number> => {
+    const p = await api<{ items: Pending[] }>(`/api/import/${sessionId}/figures`);
+    if (!p.ok) throw new Error(p.error);
+    const todo = p.data.items.filter((x) => !x.done && x.box && x.page);
+    let failed = 0;
+    for (let i = 0; i < todo.length; i++) {
+      setPrep({ done: i, total: todo.length });
+      const it = todo[i];
+      try {
+        const blob = await canvasToPng(await cropFigure(sessionId, it.fileId, it.fileKind, { page: it.page, box: it.box }));
+        const res = await fetch(`/api/import/${sessionId}/questions/${it.questionId}/figures/${it.n}`, { method: "PUT", headers: { "content-type": "image/png" }, body: blob });
+        if (!res.ok) failed++;
+      } catch { failed++; }
+    }
+    setPrep(null);
+    return failed;
+  };
+
   const save = async () => {
     setBusy(true); setError("");
+    try { await prepareFigures(); } catch (e) { setPrep(null); setBusy(false); setError((e as Error).message || "Rasmlarni tayyorlab bo'lmadi."); return; }
     const r = await api<Saved>(`/api/import/${sessionId}/save`, "POST", { ...(target ? { collectionId: target } : { title: title.trim() || undefined }), ...(topicId && { topicId }) });
     setBusy(false);
     if (!r.ok) { setError(r.error); return; }
@@ -45,7 +69,7 @@ export function SaveDialog({ open, onOpenChange, sessionId, defaultTitle, approv
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent title="Testga saqlash" description={`${approved} ta tasdiqlangan savol shaxsiy testingizga qo'shiladi. Ular faqat sizga ko'rinadi.`}>
         {saved ? (
-          <SuccessState title="Saqlandi" text={`${saved.added} ta savol qo'shildi${saved.skipped ? `, ${saved.skipped} tasi oldin qo'shilgan` : ""}${saved.notEligible ? `, ${saved.notEligible} tasi mos kelmadi (bitta to'g'ri javobli emas)` : ""}.`}
+          <SuccessState title="Saqlandi" text={`${saved.added} ta savol qo'shildi${saved.skipped ? `, ${saved.skipped} tasi oldin qo'shilgan` : ""}${saved.notEligible - saved.waitingFigures > 0 ? `, ${saved.notEligible - saved.waitingFigures} tasi mos kelmadi (bitta to'g'ri javobli emas)` : ""}${saved.waitingFigures ? `, ${saved.waitingFigures} tasi saqlanmadi: rasmi tayyor bo'lmadi (rasm kesilmadi). Savol matnidan rasm belgisini olib tashlang yoki qayta urinib ko'ring` : ""}.`}
             action={<Button asChild><Link href={`/ustoz-ai/testlarim/${saved.collectionId}`}><BookMarked className="h-4 w-4" aria-hidden />Testni ochish</Link></Button>} />
         ) : (
           <div className="space-y-3.5">
@@ -62,6 +86,7 @@ export function SaveDialog({ open, onOpenChange, sessionId, defaultTitle, approv
                 {topics.map((s) => <optgroup key={s.id} label={s.name}>{s.topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>)}
               </Select>
             </Field>
+            {prep && <p role="status" className="text-sm text-muted-foreground">Savoldagi rasmlar tayyorlanmoqda: {prep.done + 1} / {prep.total}…</p>}
             {error && <p role="alert" className="text-sm text-danger">{error}</p>}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>Bekor qilish</Button>

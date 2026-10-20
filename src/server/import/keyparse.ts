@@ -25,7 +25,8 @@ export function detectLabelStyle(samples: string): LabelStyle {
   return /[БГбг]/.test(samples) ? "ru" : "latin";
 }
 
-export type KeyEntry = { number: number; answers: string[]; section: number };
+/** group: kalit jadvali qaysi test/bo'limga tegishli (masalan «Diagnostika testi Kuzgi No: 1»); AI aniqlagan bo'lsa to'ldiriladi. */
+export type KeyEntry = { number: number; answers: string[]; section: number; group?: string };
 export type KeyParse = { entries: KeyEntry[]; style: LabelStyle };
 
 const SEP = "[\\s|]*";

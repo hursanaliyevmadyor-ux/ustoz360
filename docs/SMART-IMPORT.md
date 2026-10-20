@@ -45,7 +45,14 @@ Vercel Cron (`/api/cron/import-resume`, kuniga bir marta) tashlab ketilganlarni 
 | DOC, XLS, PPT (eski) | Rad etiladi, yangi formatga o'tkazish yo'riqnomasi bilan. |
 | Parolli / buzuq / noto'g'ri kengaytma | Tarkib (magic bytes) bo'yicha aniqlanadi va tushunarli xabar beriladi. |
 
-Hajm: `IMPORT_MAX_MB` (standart 20 MB). Hosting so'rov chegarasi (~4,5 MB) sababli ≥3,5 MB fayllar 3 MB bo'laklarda yuklanadi (`prepare → chunk → complete`), yig'ilgach serverda qayta tekshiriladi.
+Hajm: `IMPORT_MAX_MB` (standart 50 MB; Supabase bepul rejasining bitta fayl chegarasi ham shu). Hosting so'rov chegarasi (~4,5 MB) sababli ≥3,5 MB fayllar 3 MB bo'laklarda yuklanadi (`prepare → chunk → complete`), yig'ilgach serverda qayta tekshiriladi.
+
+### Katta to'plamlar (600+ betlik testlar) va rasmli savollar
+
+- **Faqat savol va javob.** AI ko'rsatmasi (`prompts.ts`): muqova, mundarija, sahifa sarlavhalari/pastliklari (kanal nomi, muallif, bet raqami), reklama va nazariy matn olinmaydi. Variantlar bir qatorda yoki ikki ustunda bo'lsa ham A, B, C, D tartibida; ko'chirma matn, raqamlangan gaplar va ko'rsatma qatori savol matniga kiradi.
+- **Test guruhlari.** Har bir savol va kalit yozuvi o'z test sarlavhasiga (`group`, masalan «Diagnostika testi Kuzgi No: 1») bog'lanadi; raqamlash har testda qayta boshlansa ham adashmaydi. Kalit («TEST JAVOBLARI» jadvallari) savolning o'z testi bo'yicha topiladi.
+- **Sahifalarni tanlash.** 60 betdan katta PDF uchun foydalanuvchi sahifalarni yozadi (masalan `3-14, 655-657`: savollar va ularning kaliti). Butun fayl emas, faqat shu sahifalar kesilib (`pdf-lib`, sof JS) AI'ga yuboriladi: tezroq, arzon va 14 MB AI chegarasiga bog'liq emas. Kichik PDF avtomatik tuzilma aniqlashdan o'tadi (savollar va javoblar kaliti sahifalari alohida o'qiladi).
+- **Rasm/jadval/formula.** Savolda rasm bo'lsa, AI joyini matnga `[[RASM:n]]` deb qo'yadi va sahifa + qutini (0–1000 koordinata) beradi. Tekshiruv sahifasi asl sahifadan rasmni brauzerda kesib (pdf.js, CDN) savolning o'z joyida ko'rsatadi. «Testga saqlash»da kesilgan PNG serverga yuklanadi (`figures/<egasi>/...`), savol matnida `[[rasm:egasi/nom]]` bo'lib qoladi va test, diagnostika, admin ko'rinishida o'z joyida chiqadi. Admin tasdiqlasa, rasm umumiy nusxaga (`global/...`) ko'chiriladi. Rasmli savolni AI matn bilan «yecha» olmaydi: javob faqat fayldagi kalit + o'qituvchi tasdig'i bilan.
 
 ## 4. Javobni tekshirish qoidalari (`verifylogic.ts → decide`)
 

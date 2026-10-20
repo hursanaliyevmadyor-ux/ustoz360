@@ -2,6 +2,7 @@
 import * as React from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FigureText } from "@/components/figure-text";
 import { Progress } from "@/components/ui/progress";
 import { DIFF_LABEL, type Item, type Option } from "@/lib/practice-client";
 
@@ -74,7 +75,7 @@ export function QuestionCard({ item, selectedId, onSelect }: { item: Item; selec
         {item.situational && <span className="rounded-full bg-[#0284C7]/10 px-2.5 py-0.5 text-[#0284C7]">Dars vaziyati</span>}
         {item.sample && <span className="rounded-full bg-amber/15 px-2.5 py-0.5 text-warning">Namunaviy savol</span>}
       </div>
-      <p className={item.situational ? "rounded-xl bg-[#0284C7]/5 p-4 text-[17px] font-semibold leading-relaxed sm:text-lg" : "text-lg font-bold leading-snug sm:text-xl"} id={`q-${item.id}`}>{item.text}</p>
+      <div className={item.situational ? "rounded-xl bg-[#0284C7]/5 p-4 text-[17px] font-semibold leading-relaxed sm:text-lg" : "text-lg font-bold leading-snug sm:text-xl"} id={`q-${item.id}`}><FigureText text={item.text} /></div>
       <div role="radiogroup" aria-labelledby={`q-${item.id}`} onKeyDown={onKey} className="mt-4 space-y-2.5">
         {item.options.map((o) => <AnswerOption key={o.id} option={o} state={stateOf(o)} disabled={!!a} onSelect={() => onSelect(o.id)} />)}
       </div>
