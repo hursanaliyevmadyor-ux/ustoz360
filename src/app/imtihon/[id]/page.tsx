@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock, ListChecks, LogOut, Maximize, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ type View = {
   id: string; serverNow: string; endsAt: string; submitted: boolean; leftCount: number;
   exam: { title: string; subject: string; kind: string; durationMin: number };
   answers?: Record<string, Ans>; questions?: QView[];
-  result?: { score: number; total: number; submittedAt: string; startedAt: string; review: Review[] };
+  result?: { score: number; total: number; submittedAt: string; startedAt: string; review: Review[]; ranking?: { counted: boolean; reason: string } };
 };
 type Kb = { lock?: (keys: string[]) => Promise<void>; unlock?: () => void };
 
@@ -360,6 +361,11 @@ function Results({ v, onBack }: { v: View; onBack: () => void }) {
   const r = v.result!;
   const pct = r.total ? Math.round((r.score / r.total) * 100) : 0;
   const secs = Math.max(0, Math.round((new Date(r.submittedAt).getTime() - new Date(r.startedAt).getTime()) / 1000));
+  const unanswered = r.review.filter((x) => (x.type === "CHOICE" ? x.chosen === null || x.chosen === undefined : !x.given)).length;
+  const wrong = r.review.filter((x) => !x.ok).length - unanswered;
+  const [rank, setRank] = React.useState<{ ranked: boolean; overall: { rank: number; total: number; index: number } | null; inDirection: { rank: number; total: number } | null; directionLabel: string | null; comparing: boolean; nextStep: { text: string; href: string } | null; blockers: string[] } | null>(null);
+  React.useEffect(() => { fetch("/api/leaderboard/me").then((x) => (x.ok ? x.json() : null)).then(setRank).catch(() => {}); }, []);
+  const toErrors = () => document.getElementById("javoblar")?.scrollIntoView({ behavior: "smooth", block: "start" });
   return (
     <Shell>
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4 sm:px-6">
@@ -373,8 +379,34 @@ function Results({ v, onBack }: { v: View; onBack: () => void }) {
             <p className={cn("mt-3 text-6xl font-extrabold", pct >= 60 ? "text-success" : "text-danger")}>{r.score}<span className="text-3xl text-muted-foreground"> / {r.total}</span></p>
             <p className="mt-1 text-xl font-bold">{pct}%</p>
             <p className="mt-3 text-sm text-muted-foreground">Sarflangan vaqt: {fmt(secs * 1000)}{v.leftCount > 0 && <> · Oynadan chiqishlar: {v.leftCount}</>}</p>
+            <dl className="mx-auto mt-5 grid max-w-md grid-cols-3 gap-3 text-sm">
+              <div className="rounded-xl bg-success/10 p-3"><dd className="text-2xl font-extrabold text-success">{r.score}</dd><dt className="text-xs text-muted-foreground">To&apos;g&apos;ri</dt></div>
+              <div className="rounded-xl bg-danger/10 p-3"><dd className="text-2xl font-extrabold text-danger">{Math.max(0, wrong)}</dd><dt className="text-xs text-muted-foreground">Noto&apos;g&apos;ri</dt></div>
+              <div className="rounded-xl bg-muted p-3"><dd className="text-2xl font-extrabold">{unanswered}</dd><dt className="text-xs text-muted-foreground">Javobsiz</dt></div>
+            </dl>
           </div>
-          <div>
+
+          {r.ranking && (
+            <div className={cn("rounded-2xl border p-5", r.ranking.counted ? "border-teal/40 bg-teal/5" : "border-border bg-card")}>
+              <p className="font-bold">{r.ranking.counted ? "Reytingga hisoblandi" : "Reytingga hisoblanmadi"}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{r.ranking.reason}</p>
+              {rank && (
+                <p className="mt-3 text-sm">
+                  {rank.ranked && rank.overall ? <>Umumiy o&apos;rningiz: <b>{rank.overall.rank}</b> / {rank.overall.total}{rank.inDirection && rank.directionLabel ? <> · {rank.directionLabel}: <b>{rank.inDirection.rank}</b> / {rank.inDirection.total}</> : null}. Tayyorgarlik indeksi: <b>{rank.overall.index}</b>.</>
+                    : rank.comparing ? "Natijangiz saqlandi. Yetarli ishtirokchi to'planguncha umumiy o'rin hisoblanmaydi."
+                    : rank.nextStep ? <>Reytingga kirish uchun: <Link href={rank.nextStep.href} className="font-semibold text-primary hover:underline">{rank.nextStep.text}</Link>.</> : (rank.blockers[0] ?? "")}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" onClick={toErrors}>Xatolarimni ko&apos;rish</Button>
+            <Button asChild variant="outline"><Link href="/ustoz-ai/natijalar">Natijalarim</Link></Button>
+            <Button asChild><Link href="/reyting">Reytingdagi o&apos;rnim</Link></Button>
+          </div>
+
+          <div id="javoblar">
             <h2 className="mb-4 text-lg font-extrabold">Javoblar tahlili</h2>
             <ol className="space-y-4">
               {r.review.map((x) => (

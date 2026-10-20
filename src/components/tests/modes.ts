@@ -1,10 +1,10 @@
-import { BarChart3, Bot, BookOpenCheck, Zap, CalendarCheck, ClipboardCheck, FolderHeart, GraduationCap, History, Lightbulb, ListChecks, Map as MapIcon, NotebookPen, RotateCcw, Shuffle, Sparkles, Tags, Timer } from "lucide-react";
+import { BarChart3, Bot, BookOpenCheck, Zap, CalendarCheck, ClipboardCheck, FolderHeart, History, Lightbulb, ListChecks, Map as MapIcon, NotebookPen, RotateCcw, Shuffle, Sparkles, Tags, Timer } from "lucide-react";
 import { TONES, type ChoiceDef } from "@/lib/choices";
 
 export { TONES };
 export type { ChoiceDef };
 
-export type ModeKey = "practice" | "timed" | "topic" | "mixed" | "situational" | "errors" | "simulation";
+export type ModeKey = "practice" | "timed" | "topic" | "mixed" | "situational" | "errors";
 
 export type ModeDef = ChoiceDef & { key: ModeKey };
 
@@ -15,13 +15,12 @@ export const MODES: ModeDef[] = [
   { key: "mixed", title: "Aralash test", desc: "Bir nechta mavzudan muvozanatli tanlangan savollar.", benefit: "Mavzularni bog'lab fikrlash", icon: Shuffle, tone: "violet", href: "/ustoz-ai/testlar/sozlash?mode=mixed", cta: "Boshlash" },
   { key: "situational", title: "Murakkab vaziyatli test", desc: "Dars vaziyatlarida eng maqbul metodik qarorni tanlang.", benefit: "Pedagogik tafakkur", icon: Lightbulb, tone: "sky", href: "/ustoz-ai/testlar/sozlash?mode=situational", cta: "Boshlash" },
   { key: "errors", title: "Xatolar testi", desc: "Avval xato qilgan bilimlaringizni mustahkamlang.", benefit: "Xatoni bilimga aylantirish", icon: RotateCcw, tone: "rose", href: "/ustoz-ai/testlar/sozlash?mode=errors", cta: "Boshlash" },
-  { key: "simulation", title: "Imtihon simulyatsiyasi", desc: "To'liq ekranda, taymer bilan, imtihon sharoitiga yaqin.", benefit: "Sinov sharoitiga tayyorlik", icon: GraduationCap, tone: "navy", href: "/imtihon", cta: "Boshlash" },
 ];
 
 /** USTOZ AI umumiy sahifasidagi bo'limlar. Diagnostika shu yerda turadi (Testlar ichida takrorlanmaydi). */
 export const HUB: ChoiceDef[] = [
   { key: "diagnostic", title: "Diagnostika", desc: "Yordamsiz test: mavzular bo'yicha hozirgi bilim darajangizni aniqlang.", benefit: "Bilimdagi bo'shliqlarni aniqlash", icon: ClipboardCheck, tone: "success", href: "/ustoz-ai/diagnostika", cta: "Boshlash" },
-  { key: "tests", title: "Testlar va mashqlar", desc: "Oddiy mashq, vaqtli, mavzuli, aralash, vaziyatli va xatolar testi, imtihon simulyatsiyasi.", benefit: "Mashq qiling va mustahkamlang", icon: ListChecks, tone: "blue", href: "/ustoz-ai/testlar", cta: "Rejimni tanlash" },
+  { key: "tests", title: "Testlar va mashqlar", desc: "Oddiy mashq, vaqtli, mavzuli, aralash, vaziyatli va xatolar testi.", benefit: "Mashq qiling va mustahkamlang", icon: ListChecks, tone: "blue", href: "/ustoz-ai/testlar", cta: "Rejimni tanlash" },
   { key: "mine", title: "Mening testlarim", desc: "O'zingiz yuklagan fayllardan tayyorlangan shaxsiy testlar: mashq, test va diagnostika.", benefit: "Materialingizdan test", icon: FolderHeart, tone: "violet", href: "/ustoz-ai/testlarim", cta: "Ochish" },
   { key: "results", title: "Natijalarim", desc: "Bilim xaritasi, xatolar daftari va mashqlar tarixi bir joyda.", benefit: "Rivojlanishni kuzating", icon: BarChart3, tone: "teal", href: "/ustoz-ai/natijalar", cta: "Ko'rish" },
   { key: "plan", title: "Tayyorgarlik rejasi", desc: "Imtihon sanasi va kunlik vaqtingizga mos reja. TOIFA NAVIGATOR bo'limida, yo'l xaritasi va kalendar bilan birga.", benefit: "Rejali tayyorgarlik", icon: CalendarCheck, tone: "violet", href: "/toifa/reja", cta: "Ochish", tag: "Namunaviy" },

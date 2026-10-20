@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 
-export type Me = { id: string; name: string | null; email: string | null; roles: string[]; onboarded: boolean; plan: string } | null;
+export type Me = { id: string; name: string | null; email: string | null; roles: string[]; onboarded: boolean; plan: string; nickname?: string | null; avatar?: string | null } | null;
 export type PublicSettings = { siteName: string; supportContact: string; modules: Record<string, boolean>; paymentsMode: "off" | "manual" | "provider"; aiDisclaimer: string };
 /** "admin": admin sayti (alohida qobiq). "teacher": admin ustoz bo'limini ko'rmoqda (yuqorida admin paneli bilan). */
 export type ViewMode = "admin" | "teacher";
@@ -39,6 +39,12 @@ export function ShellProvider({ children, onLoaded }: { children: React.ReactNod
     });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Profil (rasm, nik) o'zgarganda yon menyu va yuqori paneldagi avatar yangilanadi.
+  React.useEffect(() => {
+    const refresh = () => { fetch("/api/me").then((r) => r.json()).then((d) => { if (d.user) setState((s) => ({ ...s, me: d.user as Me })); }).catch(() => {}); };
+    window.addEventListener("u360-profile-updated", refresh);
+    return () => window.removeEventListener("u360-profile-updated", refresh);
   }, []);
   const setView = React.useCallback((v: ViewMode) => { write(VIEW_KEY, v); setViewState(v); }, []);
   const adminMode = (state.ready ? state.isAdmin : hint) && view === "admin";

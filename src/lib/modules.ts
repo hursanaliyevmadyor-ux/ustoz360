@@ -74,7 +74,7 @@ export const adminModule: Module = {
   subs: [
     { href: "/admin", label: "Dashboard" }, { href: "/admin/statistika", label: "Statistika" }, { href: "/admin/audit", label: "Audit jurnali" },
     { href: "/admin/elonlar", label: "Yangilik va e'lonlar" }, { href: "/admin/modullar", label: "Modullar" },
-    { href: "/admin/imtihonlar", label: "Imtihonlar" }, { href: "/admin/mavzular", label: "Mavzular" },
+    { href: "/admin/imtihonlar", label: "Imtihonlar" }, { href: "/admin/reyting", label: "Reyting boshqaruvi" }, { href: "/admin/mavzular", label: "Mavzular" },
     { href: "/admin/seminarlar", label: "Seminarlar" }, { href: "/admin/foydalanuvchilar", label: "Foydalanuvchilar" },
     { href: "/admin/savollar", label: "Savollar banki" }, { href: "/admin/kurslar", label: "Kurslar" }, { href: "/admin/kutubxona", label: "Kutubxona" }, { href: "/admin/rasmiy", label: "Rasmiy ma'lumotlar" },
     { href: "/admin/tolovlar", label: "To'lovlar" }, { href: "/admin/hisobotlar", label: "Hisobotlar" },
@@ -87,6 +87,8 @@ export const findAny = (path: string) => allModules.find((m) => path === m.href 
 export const searchIndex: { label: string; href: string; group: string }[] = [
   { label: "Bosh sahifa", href: "/dashboard", group: "Umumiy" },
   { label: "Barcha xizmatlar", href: "/xizmatlar", group: "Umumiy" },
+  { label: "Imtihon simulyatori", href: "/imtihon", group: "Umumiy" },
+  { label: "Ustozlar reytingi", href: "/reyting", group: "Umumiy" },
   { label: "Profil", href: "/profil", group: "Hisob" },
   { label: "Obuna va to'lovlar", href: "/obuna", group: "Hisob" },
   ...allModules.flatMap((m) => m.subs.map((s) => ({ label: `${m.name}: ${s.label}`, href: s.href, group: m.name }))),

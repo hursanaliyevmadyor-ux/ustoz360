@@ -135,6 +135,17 @@ model Profile {
   district      String?
   /// Birinchi kirishdan keyin ism-familiya va yashash joyi to'ldirilgan vaqt. Bo'sh bo'lsa /royxat sahifasiga yo'naltiriladi.
   onboardedAt   DateTime?
+  /// Reytingda ko'rinadigan nik (yagona; katta-kichik harf va ._- belgilari hisobga olinmaydi) va uning me'yorlashtirilgani.
+  nickname           String?
+  nicknameNormalized String?  @unique
+  /// Profil rasmi: Storage'dagi yo'l (`avatars/<userId>/<nom>.<kengaytma>`). Bo'sh bo'lsa bosh harfli avatar.
+  avatarPath         String?
+  /// Reytingda qatnashish roziligi (ixtiyoriy): nik, avatar va reyting indeksi boshqa foydalanuvchilarga ko'rinishi uchun.
+  leaderboardOptIn   Boolean   @default(false)
+  leaderboardOptInAt DateTime?
+  /// Admin moderatsiyasi: true bo'lsa foydalanuvchi reytingda ko'rinmaydi (shaxsiy natijalari saqlanadi).
+  leaderboardHidden  Boolean   @default(false)
+  @@index([leaderboardOptIn])
 }
 
 model UserRole {
@@ -517,6 +528,10 @@ model Exam {
   pickCount   Int?
   active      Boolean        @default(true)
   createdAt   DateTime       @default(now())
+  /// Reyting yo'nalishi (sozlamalardagi kalit, masalan ATTESTATSIYA); bo'sh bo'lsa hamma yo'nalish uchun umumiy.
+  directionKey String?
+  /// Faqat admin tasdiqlagan imtihon natijalari reytingga hisoblanadi (nashr qilinganligi alohida).
+  rankingEligible Boolean    @default(false)
   questions   ExamQuestion[]
   attempts    ExamAttempt[]
 }
@@ -554,6 +569,7 @@ model ExamAttempt {
   leftCount   Int       @default(0)
   @@index([userId, startedAt])
   @@index([examId])
+  @@index([examId, userId])
 }
 
 /// Seminarlar: admin qo'shadi va tahrirlaydi, saytda /seminarlar sahifasida ko'rinadi.

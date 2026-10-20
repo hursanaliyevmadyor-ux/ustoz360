@@ -2,6 +2,10 @@
 import Link from "next/link";
 import { ArrowRight, CalendarClock, CircleAlert, Megaphone, Play, Target, Timer, TrendingUp } from "lucide-react";
 import { sessionHref } from "@/lib/practice-client";
+import { useQuery } from "@/lib/use-query";
+import type { MyRank } from "@/lib/ranking-client";
+import { MyRankCard } from "@/components/ranking/my-rank";
+import { Skeleton } from "@/components/ui/states";
 import { ModulesAndQuick } from "@/components/layout/dashboard-bits";
 import { StatCard } from "@/components/layout/page";
 import { LineChart } from "@/components/charts/charts";
@@ -22,6 +26,14 @@ export type DashboardData = {
   account?: { plan: string; endsAt: string | null; courses: number; pending: number; paymentsOn: boolean };
   announcements?: { id: string; title: string; text: string; href: string }[];
 };
+
+/** Ixcham «Mening reytingim» kartasi: butun reyting jadvali dashboardga qo'yilmaydi, «To'liq reytingni ko'rish» /reyting sahifasiga olib boradi. */
+function DashboardRank({ name }: { name: string }) {
+  const q = useQuery<MyRank>("/api/leaderboard/me");
+  if (q.loading && !q.data) return <Skeleton className="h-52" />;
+  if (!q.data || !q.data.enabled) return null;
+  return <MyRankCard me={q.data} name={name} compact />;
+}
 
 export function LiveDashboard({ d }: { d: DashboardData }) {
   return (
@@ -65,15 +77,18 @@ export function LiveDashboard({ d }: { d: DashboardData }) {
                   <ArrowRight className="h-4 w-4 text-muted-foreground" aria-hidden /></Link></li>))}</ul>)}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader><div><CardTitle>Imtihongacha qolgan vaqt</CardTitle></div></CardHeader>
-          <CardContent>
-            {d.daysLeft !== null ? <><p className="text-5xl font-extrabold tracking-tight text-primary">{d.daysLeft}<span className="ml-1 text-lg font-bold text-muted-foreground">kun</span></p>
-              <p className="mt-2 text-sm text-muted-foreground">Imtihon sanasi: {d.examDate ? new Date(d.examDate).toLocaleDateString("uz-UZ") : ""}</p></>
-              : <p className="text-sm text-muted-foreground">Imtihon sanasi belgilanmagan yoki o'tib ketgan.</p>}
-            <Button asChild variant="secondary" className="mt-4 w-full"><Link href="/profil"><CalendarClock className="h-4 w-4" />Sanani o'zgartirish</Link></Button>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><div><CardTitle>Imtihongacha qolgan vaqt</CardTitle></div></CardHeader>
+            <CardContent>
+              {d.daysLeft !== null ? <><p className="text-5xl font-extrabold tracking-tight text-primary">{d.daysLeft}<span className="ml-1 text-lg font-bold text-muted-foreground">kun</span></p>
+                <p className="mt-2 text-sm text-muted-foreground">Imtihon sanasi: {d.examDate ? new Date(d.examDate).toLocaleDateString("uz-UZ") : ""}</p></>
+                : <p className="text-sm text-muted-foreground">Imtihon sanasi belgilanmagan yoki o'tib ketgan.</p>}
+              <Button asChild variant="secondary" className="mt-4 w-full"><Link href="/profil"><CalendarClock className="h-4 w-4" />Sanani o'zgartirish</Link></Button>
+            </CardContent>
+          </Card>
+          <DashboardRank name={d.name} />
+        </div>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
