@@ -1,3 +1,5 @@
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, resolve, sep } from "node:path";
 import { ApiError } from "./auth";
 
 /**
@@ -53,8 +55,28 @@ const supabase: StorageService = {
   },
 };
 
-let current: StorageService = supabase;
-export const storage = (): StorageService => current;
+/**
+ * Faqat mahalliy ishlab chiqish va E2E uchun: STORAGE_LOCAL_DIR berilsa, fayllar diskda saqlanadi (Supabase kerak emas).
+ * Production'da (NODE_ENV=production) hech qachon yoqilmaydi.
+ */
+const localDir = () => (process.env.NODE_ENV !== "production" ? process.env.STORAGE_LOCAL_DIR || undefined : undefined);
+const localPath = (p: string) => {
+  const root = resolve(localDir()!);
+  const full = resolve(root, ...p.split("/"));
+  if (!full.startsWith(root + sep)) throw new ApiError(400, "Noto'g'ri fayl yo'li.");
+  return full;
+};
+const local: StorageService = {
+  configured: () => Boolean(localDir()),
+  async put(path, bytes) { const f = localPath(path); await mkdir(dirname(f), { recursive: true }); await writeFile(f, bytes); },
+  async get(path) { try { return await readFile(localPath(path)); } catch { throw fail("o'qish", 404); } },
+  async signedUrl() { throw new ApiError(501, "Mahalliy saqlashda faylni brauzerda ko'rsatib bo'lmaydi."); },
+  async remove(path) { await rm(localPath(path), { force: true }); },
+};
+
+let override: StorageService | null = null;
+const pick = (): StorageService => override ?? (localDir() ? local : supabase);
+export const storage = (): StorageService => pick();
 /** Testlar uchun almashtirish. */
-export const setStorage = (s: StorageService | null) => { current = s ?? supabase; };
-export const storageConfigured = () => current.configured();
+export const setStorage = (s: StorageService | null) => { override = s; };
+export const storageConfigured = () => pick().configured();

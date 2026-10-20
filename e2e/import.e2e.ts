@@ -10,6 +10,7 @@
  *   npx tsx --env-file=.env.local prisma/dev-test-user.ts --second     -> E2E_USER_TOKEN    (oddiy ustoz: fayl yuklaydi va testni yuboradi)
  * Saytni soxta AI bilan ishga tushiring (alohida terminal; Claude kaliti bo'sh bo'lsin, aks holda qiyin savollar haqiqiy Claude'ga boradi):
  *   $env:GEMINI_API_KEY='e2e-gem'; $env:GEMINI_API_BASE='http://127.0.0.1:8098'; $env:ANTHROPIC_API_KEY=''; $env:FREE_LLM_BASE_URL=''
+ *   $env:STORAGE_LOCAL_DIR='.tmp-e2e-storage'    (Supabase Storage ulanmagan bo'lsa: fayllar vaqtincha diskda saqlanadi; production'da ishlamaydi)
  *   npm run dev
  * Ishga tushirish:  $env:E2E_ADMIN_TOKEN='...'; $env:E2E_USER_TOKEN='...'; npm run test:e2e:import
  * Tugagach:         npx tsx --env-file=.env.local prisma/dev-test-user.ts --remove
@@ -101,7 +102,7 @@ const created = { sessions: [] as string[], collections: [] as string[], extra: 
 async function main() {
   await new Promise<void>((r) => fake.listen(8098, "127.0.0.1", r));
   const st = await user.get("/api/import/status");
-  if (st.status !== 200 || !st.json.storage?.configured) { console.error("Fayl saqlash (Supabase Storage) ulanmagan: E2E yuklashni tekshira olmaydi (BLOCKED).", JSON.stringify(st.json)); process.exit(2); }
+  if (st.status !== 200 || !st.json.storage?.configured) { console.error("Fayl saqlash ulanmagan (SUPABASE_* yoki mahalliy sinov uchun STORAGE_LOCAL_DIR): E2E yuklashni tekshira olmaydi (BLOCKED).", JSON.stringify(st.json)); process.exit(2); }
 
   await t("kirmagan foydalanuvchi import API'lariga kira olmaydi", async () => {
     assert.equal((await anon.get("/api/import")).status, 401);
@@ -276,6 +277,8 @@ async function cleanup() {
       await db.personalQuestionCollection.deleteMany({ where: { id: c } });
     }
     for (const s of created.sessions) await user.del(`/api/import/${s}`);
+    // Adminlarga yuborilgan «Foydalanuvchi test yubordi» bildirishnomalari (haqiqiy adminlarda ham qolmasligi uchun).
+    await db.notification.deleteMany({ where: { kind: "import", text: { contains: "E2E shaxsiy test" } } });
   } catch (e) { console.error("Tozalashda xatolik:", (e as Error).message); }
 }
 

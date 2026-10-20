@@ -62,7 +62,7 @@ export function optionNumber(text: string): number | null {
 /** Savol matnidan arifmetik ifodani ajratadi: faqat matnning asosiy qismi ifoda bo'lsa. */
 export function findExpression(question: string): string | null {
   const q = question.replace(/\s+/g, " ").trim();
-  const m = /(?:hisoblang|hisobla|toping|natijasi|qiymati|nimaga teng|чему равно|вычислите|найдите значение|calculate|evaluate)?[:\s]*([-+(]?\s*\d[\d\s.,+\-−–—*/×÷^()%:x·]*[\d)%])\s*(?:=\s*\??)?\s*\??\s*$/i.exec(q);
+  const m = /(?:hisoblang|hisobla|toping|natijasi|qiymati|nimaga teng|чему равно|вычислите|найдите значение|calculate|evaluate)?[:\s]*([-+(]?\s*\d[\d\s.,+\-−–—*/×÷^()%:x·]*[\d)%])\s*(?:=\s*\??)?\s*(?:(?:nechaga|nimaga|qanchaga|necha|nechi)(?:\s+teng)?)?\s*\??\s*$/i.exec(q);
   if (!m) return null;
   const expr = m[1].trim();
   if (!/[+\-*/×÷^−–—·x:]/.test(expr.slice(1)) && !expr.includes("(")) return null; // oddiy raqam: hisob emas

@@ -84,6 +84,8 @@ describe("arifmetik hisob", () => {
   it("savol matnidan ifodani topadi va variant bilan solishtiradi", () => {
     expect(findExpression("12*8+4 = ?")).toBe("12*8+4");
     expect(findExpression("Hisoblang: (15-3)/4")).toBe("(15-3)/4");
+    expect(findExpression("12 + 8 nechaga teng?")).toBe("12 + 8");
+    expect(findExpression("7 * 6 necha?")).toBe("7 * 6");
     expect(findExpression("Toshkent qaysi davlatning poytaxti?")).toBeNull();
     expect(findExpression("2020")).toBeNull();
     const r = checkArithmetic("12*8+4 = ?", [{ label: "A", text: "96" }, { label: "B", text: "100" }, { label: "C", text: "104" }]);
