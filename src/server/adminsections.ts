@@ -96,7 +96,7 @@ export async function buildSection(key: string, days: number): Promise<Section> 
         db.testSession.count({ where: { startedAt: { gte: since }, status: "SUBMITTED" } }),
         db.$queryRawUnsafe<{ a: unknown }[]>(`select avg(score::float / nullif(total, 0)) * 100 as a from "TestSession" where "startedAt" >= $1 and status = 'SUBMITTED' and total > 0`, since),
         db.$queryRawUnsafe<{ n: unknown }[]>(`select count(distinct "userId") as n from "TestSession" where "startedAt" >= $1`, since),
-        db.question.groupBy({ by: ["status"], _count: true }),
+        db.question.groupBy({ by: ["status"], where: { collectionId: null }, _count: true }),
         db.question.groupBy({ by: ["difficulty"], where: { status: "APPROVED" }, _count: true }),
         db.errorCard.groupBy({ by: ["mastered"], _count: true }),
         db.questionReport.count(),

@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowRight, Compass } from "lucide-react";
 import { HUB } from "@/components/tests/modes";
+import { ImportDropzone } from "@/components/import/import-dropzone";
 import { ChoiceCard } from "@/components/layout/choice-card";
 import { SectionHeader } from "@/components/layout/section-header";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,8 @@ export default function Page() {
   return (
     <div className="mx-auto max-w-6xl">
       <SectionHeader title="USTOZ AI" lead="Bilimingizni aniqlang, mashq qiling, xatolar ustida ishlang va rivojlaning." />
+
+      <ImportDropzone className="mb-5" />
 
       {anon ? (
         <Card className="mb-5 flex flex-wrap items-center gap-3 border-primary/30 bg-primary/5 p-4">

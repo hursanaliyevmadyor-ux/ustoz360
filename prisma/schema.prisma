@@ -93,6 +93,9 @@ model User {
   libraryDocs LibraryDoc[]
   libraryFavorites LibraryFavorite[]
   botState   BotState?
+  importSessions ImportSession[]
+  questionCollections PersonalQuestionCollection[]
+  reviewSubmissions QuestionReviewSubmission[]
 }
 
 /// Telegram botdagi holat: bot foydalanuvchidan keyingi matnni kutayotgan bo'lsa (masalan reja bandi nomi) va kunlik eslatma sozlamasi.
@@ -194,11 +197,22 @@ model Question {
   skill      String?
   /// CLASSIC: oddiy savol | SITUATIONAL: dars vaziyatiga asoslangan murakkab savol.
   kind       String         @default("CLASSIC")
+  /// Aqlli import (docs/SMART-IMPORT.md): shaxsiy test savoli bo'lsa egasi va to'plami. Umumiy bank savollarida bo'sh (null).
+  ownerId    String?
+  collectionId String?
+  collection PersonalQuestionCollection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  collectionPos Int?
+  /// Import qilingan savolning manbasi: ExtractedQuestion.id (shaxsiy) yoki shaxsiy savol id si (admin tasdiqlab umumiyga o'tkazgan nusxada).
+  importSourceId String?
+  /// Shaxsiy savol javobining holati: VERIFIED (kalit/manba bilan tasdiqlangan) | USER_SET (o'qituvchi o'zi belgilagan) | UNVERIFIED (AI taklifi, tasdiqlanmagan).
+  answerStatus String?
   options    AnswerOption[]
   answers    UserAnswer[]
   errorCards ErrorCard[]
   createdAt  DateTime       @default(now())
   @@index([status, topicId])
+  @@index([collectionId])
+  @@index([ownerId])
 }
 
 model AnswerOption {
@@ -831,4 +845,153 @@ model LibraryChunk {
   idx   Int
   text  String
   @@unique([docId, idx])
+}
+
+// ---------- Aqlli fayl import (docs/SMART-IMPORT.md) ----------
+/// Foydalanuvchi yuklagan fayl(lar)dan savollarni ajratish jarayoni. status: UPLOADED | QUEUED | EXTRACTING | CLASSIFYING | VERIFYING |
+/// NEEDS_REVIEW | READY_FOR_USER | USER_APPROVED | FAILED | CANCELED. step: qayta ishlash qadami (PARSE | CLASSIFY | EXTRACT | KEYS | VERIFY | DONE).
+/// lockedUntil: qadamni bir vaqtda ikki so'rov bajarmasligi uchun qisqa muddatli «ijara».
+model ImportSession {
+  id          String    @id @default(cuid())
+  ownerId     String
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title       String
+  status      String    @default("UPLOADED")
+  step        String    @default("PARSE")
+  progress    Json?
+  attempts    Int       @default(0)
+  lockedUntil DateTime?
+  error       String?
+  subject     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+  files       ImportFile[]
+  questions   ExtractedQuestion[]
+  collections PersonalQuestionCollection[]
+  @@index([ownerId, createdAt])
+  @@index([status, updatedAt])
+}
+
+/// role: AUTO (AI aniqlaydi) | QUESTIONS | ANSWERS (alohida javoblar kaliti) | MATERIAL. kind: pdf | docx | xlsx | pptx | odt | ods | odp | csv | txt | image.
+/// parseStatus: PENDING_UPLOAD | UPLOADED | PARSING | PARSED | FAILED | UNSUPPORTED | BLOCKED. pages: matnli fayllar uchun [{label, text}].
+model ImportFile {
+  id              String        @id @default(cuid())
+  importSessionId String
+  session         ImportSession @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  role            String        @default("AUTO")
+  fileName        String
+  mime            String
+  kind            String
+  sizeBytes       Int
+  storagePath     String
+  checksum        String
+  parseStatus     String        @default("UPLOADED")
+  parseError      String?
+  textChars       Int?
+  pageCount       Int?
+  docKinds        Json?
+  pages           Json?
+  cursor          Int           @default(0)
+  total           Int           @default(0)
+  note            String?
+  createdAt       DateTime      @default(now())
+  @@unique([importSessionId, checksum])
+  @@index([importSessionId])
+}
+
+/// Fayldan ajratilgan savol. Asl matn o'zgarmaydi; o'qituvchi tahrirlasa editedText/editedOptions ga yoziladi.
+/// qtype: SINGLE | MULTI | MATCHING | ORDERING | SHORT | SITUATIONAL | UNKNOWN. options: [{ label, text }].
+/// reviewStatus: PENDING | READY | NEEDS_REVIEW | NO_ANSWER | CONFLICT | UNSUPPORTED | INCOMPLETE. userDecision: APPROVED | REMOVED.
+model ExtractedQuestion {
+  id              String        @id @default(cuid())
+  importSessionId String
+  session         ImportSession @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  fileId          String?
+  number          Int?
+  seq             Int
+  section         Int           @default(0)
+  originalText    String
+  options         Json          @default("[]")
+  qtype           String        @default("SINGLE")
+  editedText      String?
+  editedOptions   Json?
+  subjectGuess    String?
+  topicGuess      String?
+  topicId         String?
+  grade           String?
+  difficulty      String        @default("MEDIUM")
+  sourcePage      String?
+  ocrUncertain    Boolean       @default(false)
+  note            String?
+  reviewStatus    String        @default("PENDING")
+  userDecision    String?
+  contentHash     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  verification    AnswerVerification?
+  @@index([importSessionId, seq])
+}
+
+/// Savol javobining tekshiruvi. keyAnswer: fayldagi/alohida fayldagi kalit; proposedAnswer: AI yoki hisob taklifi; finalAnswer: foydalanuvchi qabul qilgan.
+/// answerOrigin: FILE_KEY | SEPARATE_KEY | AI | HUB | WEB | LIBRARY | COMPUTED | USER | NONE.
+/// verificationStatus: CONFIRMED | PROPOSED | CONFLICT | UNVERIFIED | NOT_FOUND | USER_CONFIRMED. evidence: [{ type, title, url?, page?, quote?, note? }] (faqat haqiqiy manbalar).
+model AnswerVerification {
+  id                 String            @id @default(cuid())
+  questionId         String            @unique
+  question           ExtractedQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  keyAnswer          Json?
+  keySource          String?
+  proposedAnswer     Json?
+  finalAnswer        Json?
+  answerOrigin       String            @default("NONE")
+  explanation        String?
+  evidence           Json              @default("[]")
+  verificationStatus String            @default("UNVERIFIED")
+  confidence         String?
+  verifiedAt         DateTime?
+  providerMetadata   Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+}
+
+/// Foydalanuvchining shaxsiy testi («Mening testlarim»). Savollari Question jadvalida (ownerId + collectionId, status DRAFT, source IMPORT),
+/// shu sababli mavjud mashq va diagnostika dvigatellari ularni o'zgarishsiz ishlata oladi. status: PRIVATE_ACTIVE | SUBMITTED_TO_ADMIN | PUBLIC_APPROVED | REJECTED | ARCHIVED.
+model PersonalQuestionCollection {
+  id              String         @id @default(cuid())
+  ownerId         String
+  owner           User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  importSessionId String?
+  session         ImportSession? @relation(fields: [importSessionId], references: [id], onDelete: SetNull)
+  title           String
+  subject         String?
+  sourceNote      String?
+  status          String         @default("PRIVATE_ACTIVE")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  questions       Question[]
+  submissions     QuestionReviewSubmission[]
+  @@index([ownerId, updatedAt])
+}
+
+/// To'plamni admin ko'rib chiqishiga yuborish. status: SUBMITTED | APPROVED | APPROVED_EDITED | NEEDS_RECHECK | REJECTED | ARCHIVED.
+/// decisions: { [savolId]: "APPROVED" | "EDITED" | "REJECTED" }. rightsConfirmed: yuboruvchi materialni ulashish huquqi borligini tasdiqlagan.
+model QuestionReviewSubmission {
+  id              String                     @id @default(cuid())
+  userId          String
+  user            User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collectionId    String
+  collection      PersonalQuestionCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  status          String                     @default("SUBMITTED")
+  rightsConfirmed Boolean                    @default(false)
+  rightsNote      String?
+  note            String?
+  decisions       Json?
+  publishedCount  Int                        @default(0)
+  submittedAt     DateTime                   @default(now())
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  reviewNotes     String?
+  @@index([status, submittedAt])
+  @@index([collectionId])
 }

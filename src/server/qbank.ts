@@ -8,14 +8,15 @@ import type { BankQuestionInput } from "./adminvalid";
 export type BankFilter = { status?: string; topicId?: string; source?: string; q?: string };
 
 export async function listBank(f: BankFilter) {
-  const where: Prisma.QuestionWhereInput = {};
+  // Shaxsiy testlar (aqlli import) savollari umumiy bankda ko'rinmaydi: ular faqat egasiga tegishli (collectionId bor).
+  const where: Prisma.QuestionWhereInput = { collectionId: null };
   if (f.status) where.status = f.status as QuestionStatus;
   if (f.topicId) where.topicId = f.topicId;
   if (f.source) where.source = f.source;
   if (f.q) where.text = { contains: f.q, mode: "insensitive" };
   const [rows, counts, reports] = await Promise.all([
     db.question.findMany({ where, orderBy: { createdAt: "desc" }, take: 200, include: { topic: { select: { name: true, subject: { select: { name: true } } } }, _count: { select: { options: true } } } }),
-    db.question.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.question.groupBy({ by: ["status"], where: { collectionId: null }, _count: { _all: true } }),
     db.questionReport.groupBy({ by: ["questionId"], _count: { _all: true } }),
   ]);
   const rep = new Map(reports.map((r) => [r.questionId, r._count._all]));

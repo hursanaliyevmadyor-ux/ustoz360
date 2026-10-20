@@ -14,7 +14,7 @@ import { costMicro, isRetryableStatus, retryDelayMs } from "./gatewaylogic";
  * Limitlar (kunlik, daqiqalik), tarif, timeout, qayta urinish, jurnal (kechikish, token, narx) shu yerda.
  * Kalitlar faqat muhit o'zgaruvchilarida; xato matnlariga kalit tushmaydi.
  */
-export type AiFeature = "chat" | "explain" | "lesson" | "practice" | "taskset" | "visual" | "rubric" | "plan" | "health";
+export type AiFeature = "chat" | "explain" | "lesson" | "practice" | "taskset" | "visual" | "rubric" | "plan" | "health" | "import" | "verify";
 
 const FALLBACK_MODELS = ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"];
 export const aiModel = () => process.env.AI_MODEL || "claude-opus-5-5";
@@ -33,7 +33,7 @@ const SYSTEM = [
 ].join(" ");
 
 /** Claude kunlik limitiga hisoblanmaydigan jurnal turlari (bepul chat, sog'liq tekshiruvi, internet qidiruvi, bilim bazasidan javob). Daqiqalik chegara hammasini sanaydi. */
-const NO_CLAUDE_QUOTA = ["free-chat", "health", "web-search", "hub-kb"];
+const NO_CLAUDE_QUOTA = ["free-chat", "health", "web-search", "hub-kb", "import"];
 
 type Limits = { daily: number; freeDaily: number; perMinute: number; enabled: boolean; freeEnabled: boolean; priceIn: number; priceOut: number; roles: Record<string, Role> };
 /** Foydalanuvchi limitlari: tarif * sozlama. Baza/sozlama xato bersa muhit o'zgaruvchisidagi standart qiymatlar. */
@@ -73,7 +73,7 @@ export async function usageToday(userId: string) {
 
 /** Daqiqalik chegara: bir foydalanuvchi bir daqiqada ko'pi bilan `perMinute` ta so'rov yuboradi. */
 export async function checkRate(userId: string, perMinute: number) {
-  const n = await db.aiRequest.count({ where: { userId, createdAt: { gte: new Date(Date.now() - 60_000) }, status: { not: "blocked" }, feature: { not: "health" } } });
+  const n = await db.aiRequest.count({ where: { userId, createdAt: { gte: new Date(Date.now() - 60_000) }, status: { not: "blocked" }, feature: { notIn: ["health", "import"] } } });
   if (n >= perMinute) throw new ApiError(429, "Juda tez-tez so'rayapsiz. Bir daqiqadan so'ng qayta urinib ko'ring.", "rate_limited");
 }
 
@@ -246,4 +246,78 @@ export async function aiHealth() {
     free.push({ host: new URL(p.base).host, model: p.model, ok, ms: Date.now() - t0, ...(error && { error }) });
   }
   return { claude, free, checkedAt: new Date().toISOString() };
+}
+
+// ---- Aqlli import uchun multimodal (PDF, rasm, matn) so'rovlari: Gemini (docs/SMART-IMPORT.md) ----
+/** Gemini so'rov qismi: matn yoki ichiga joylangan fayl (PDF/rasm; base64). */
+export type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+const GEMINI_BASE = () => (process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
+/** Model nomlari kodga qattiq bog'lanmagan: tezkor import uchun IMPORT_FAST_MODEL, murakkab tahlil uchun IMPORT_COMPLEX_MODEL (admin muhitda sozlaydi). */
+export const importModel = (heavy = false) => (heavy ? process.env.IMPORT_COMPLEX_MODEL : process.env.IMPORT_FAST_MODEL) || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+export const visionConfigured = () => Boolean(process.env.GEMINI_API_KEY);
+const importDailyLimit = () => Math.max(1, Number(process.env.IMPORT_AI_DAILY_LIMIT) || 80);
+const importPerMinute = () => Math.max(1, Number(process.env.IMPORT_PER_MINUTE) || 14);
+
+/** Import AI chaqiruvlarining bugungi soni (foydalanuvchi bo'yicha): admin va UI limit holati uchun. */
+export async function importUsageToday(userId: string) {
+  const used = await db.aiRequest.count({ where: { userId, feature: "import", createdAt: { gte: startOfDay() }, status: { not: "blocked" } } });
+  return { used, limit: importDailyLimit(), remaining: Math.max(0, importDailyLimit() - used) };
+}
+
+/**
+ * Gemini orqali JSON javob oladi (matn va/yoki PDF/rasm qismlari bilan). Kalit faqat serverda, jurnalga faqat metadata yoziladi.
+ * Limitlar: import uchun alohida kunlik va daqiqalik chegara (Claude kunlik limitiga hisoblanmaydi).
+ */
+export async function runGeminiJson(c: { userId: string; parts: GeminiPart[]; system?: string; maxTokens: number; heavy?: boolean; promptVersion: string; timeoutMs?: number }): Promise<{ text: string; model: string }> {
+  if (!visionConfigured()) throw new ApiError(503, "Fayl tahlili uchun AI ulanmagan (GEMINI_API_KEY yo'q).", "vision_unconfigured");
+  await requireVerified(c.userId);
+  const l = await limitsFor(c.userId);
+  if (!l.enabled) throw new ApiError(503, "AI xizmati administrator tomonidan vaqtincha o'chirilgan.", "ai_disabled");
+  const model = importModel(c.heavy);
+  const recent = await db.aiRequest.count({ where: { userId: c.userId, feature: "import", createdAt: { gte: new Date(Date.now() - 60_000) }, status: { not: "blocked" } } });
+  if (recent >= importPerMinute()) throw new ApiError(429, "Fayl tahlili juda tez-tez so'raldi. Bir daqiqadan so'ng avtomatik davom etadi.", "rate_limited");
+  const day = await importUsageToday(c.userId);
+  if (day.remaining <= 0) {
+    await db.aiRequest.create({ data: { userId: c.userId, feature: "import", model, status: "blocked", provider: "gemini" } }).catch(() => undefined);
+    throw new ApiError(429, `Bugungi fayl tahlili limiti tugadi (${day.limit} ta so'rov). Ertaga davom ettirishingiz mumkin.`, "daily_limit");
+  }
+  const body = {
+    ...(c.system ? { systemInstruction: { parts: [{ text: c.system }] } } : {}),
+    contents: [{ role: "user", parts: c.parts }],
+    generationConfig: {
+      responseMimeType: "application/json", maxOutputTokens: c.maxTokens, temperature: 0,
+      ...(/2\.5-flash/.test(model) && !/pro/.test(model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+    },
+  };
+  let status = "ok", input = 0, output = 0;
+  const t0 = Date.now();
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(`${GEMINI_BASE()}/models/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST", signal: AbortSignal.timeout(c.timeoutMs ?? 50_000),
+        headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        console.error("Gemini import xato:", res.status);
+        if (isRetryableStatus(res.status) && attempt === 0) { await sleep(retryDelayMs(attempt)); continue; }
+        status = "error";
+        throw new ApiError(res.status === 429 ? 429 : 502, res.status === 429 ? "AI xizmati hozir band (limit). Birozdan so'ng avtomatik davom etadi." : "Fayl tahlili xizmati javob bermadi. Birozdan so'ng qayta urinib ko'ring.", res.status === 429 ? "provider_busy" : undefined);
+      }
+      const d = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } };
+      input = d.usageMetadata?.promptTokenCount ?? 0; output = d.usageMetadata?.candidatesTokenCount ?? 0;
+      const cand = d.candidates?.[0];
+      const text = (cand?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
+      if (!text) { status = "empty"; throw new ApiError(502, cand?.finishReason === "SAFETY" || cand?.finishReason === "PROHIBITED_CONTENT" ? "AI bu faylni tahlil qila olmadi (xavfsizlik filtri)." : "AI bo'sh javob qaytardi."); }
+      if (cand?.finishReason === "MAX_TOKENS") status = "truncated";
+      return { text, model };
+    }
+    status = "error";
+    throw new ApiError(502, "Fayl tahlili xizmatidan javob olinmadi.");
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    status = "error"; console.error("Gemini import:", (e as Error).name);
+    throw new ApiError(502, "Fayl tahlili xizmati bilan aloqa yo'q. Birozdan so'ng qayta urinib ko'ring.");
+  } finally {
+    await logRequest({ userId: c.userId, feature: "import", model, inputTokens: input, outputTokens: output, status, latencyMs: Date.now() - t0, promptVersion: c.promptVersion, costMicro: costMicro(input, output, l.priceIn, l.priceOut), provider: "gemini" });
+  }
 }
