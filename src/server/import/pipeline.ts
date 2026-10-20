@@ -25,7 +25,11 @@ import { contentHash, decide, matchKeys, matchTopic, type Confidence } from "./v
 export const ACTIVE_STATUSES = ["UPLOADED", "QUEUED", "EXTRACTING", "CLASSIFYING", "VERIFYING"] as const;
 const LEASE_MS = 70_000;
 const MAX_TEXT_CHARS = 1_200_000;
-const VERIFY_BATCH = 5;
+const VERIFY_BATCH = 10; // bitta AI chaqiruvidagi savollar (kamroq chaqiruv: limit va kechikish uchun)
+const VERIFY_PAR = 2; // bir `advance` chaqiruvida parallel paketlar
+const AI_BUDGET_MS = 35_000; // bitta paket uchun AI'ga ajratilgan umumiy vaqt (funksiya chegarasi 60 s)
+const MAX_STALLS = 6; // ketma-ket band/limit kutishlari: shundan oshsa jarayon to'xtatiladi
+const MAX_AI_WAITS = 2; // limit/band holatida ko'pi bilan shuncha marta kutiladi, so'ng AI'siz davom etiladi
 const MAX_UNIT_ATTEMPTS = 2;
 const webMax = () => Math.max(0, Number(process.env.IMPORT_WEB_MAX ?? 6));
 
@@ -39,7 +43,7 @@ export type FileMeta = {
   structDone?: boolean; classified?: boolean; keyDone?: boolean;
   subject?: string | null; grade?: string | null; topic?: string | null;
 };
-export type Progress = { label?: string; warnings?: string[]; web?: number; aiBlocked?: string; keysMatched?: boolean; topicsDone?: boolean };
+export type Progress = { label?: string; warnings?: string[]; web?: number; aiBlocked?: string; aiFails?: number; waits?: number; stalls?: number; keysMatched?: boolean; topicsDone?: boolean };
 
 const meta = (f: { docKinds: unknown }): FileMeta => ((f.docKinds && typeof f.docKinds === "object" && !Array.isArray(f.docKinds)) ? (f.docKinds as FileMeta) : {});
 const prog = (s: { progress: unknown }): Progress => ((s.progress && typeof s.progress === "object" && !Array.isArray(s.progress)) ? { ...(s.progress as Progress) } : {});
@@ -332,25 +336,32 @@ type AiOut = { answer: string[]; confidence: Confidence; explanation: string | n
 type Work = { q: QRow; computed: string[] | null; compNote: { expression: string; value: number } | null; ctx: CtxItem[]; ai?: AiOut; passes: string[]; aiTried: boolean };
 const isChoice = (q: QRow) => ["SINGLE", "SITUATIONAL"].includes(q.qtype) && effOptions(q).length >= 2 && q.reviewStatus !== "INCOMPLETE";
 
-/** Savollarni tekshirish: bitta paket (5 tagacha savol). */
-async function stepVerify(userId: string, sessionId: string, files: ImportFile[], p: Progress): Promise<Unit> {
-  const batch: QRow[] = await db.extractedQuestion.findMany({ where: { importSessionId: sessionId, verification: { is: { verifiedAt: null } } }, orderBy: { seq: "asc" }, take: VERIFY_BATCH, include: { verification: true } });
-  if (!batch.length) return null;
-  const total = await db.extractedQuestion.count({ where: { importSessionId: sessionId } });
-  const left = await db.answerVerification.count({ where: { question: { importSessionId: sessionId }, verifiedAt: null } });
+/** AI chaqiruvi belgilangan vaqtda tugamasa, kutib turmasdan xato qaytaradi (foydalanuvchi uzoq kutib qolmasligi uchun). */
+function within<T>(pr: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new ApiError(504, "AI javobi kechikdi.", "ai_timeout")), Math.max(1000, ms));
+    pr.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+const errText = (e: unknown) => (e instanceof ApiError ? e.message : "xatolik");
+
+/**
+ * Savollar paketini (VERIFY_BATCH tagacha) tekshiradi va natijani yozadi. Limit/band holatida (AI hech narsa qaytarmagan bo'lsa) hech narsa yozmasdan
+ * `wait` qaytaradi, paket keyinroq qayta uriniladi. AI ishlamasa tez «o'chiriladi» (p.aiBlocked): qolgan savollar fayldagi kalit bo'yicha darhol ko'rib chiqiladi.
+ */
+async function verifyGroup(userId: string, files: ImportFile[], batch: QRow[], p: Progress): Promise<{ wait: ApiError | null; count: number }> {
   const aiOn = (canReadText() || aiAvailable().any) && !p.aiBlocked;
 
-  const works: Work[] = [];
-  for (const q of batch) {
+  const works: Work[] = await Promise.all(batch.map(async (q) => {
     const w: Work = { q, computed: null, compNote: null, ctx: [], passes: [], aiTried: false };
     if (isChoice(q)) {
       const options = effOptions(q);
       const mc = checkArithmetic(effText(q), options);
       if (mc && mc.match.length === 1) { w.computed = [options[mc.match[0]].label]; w.compNote = { expression: mc.expression, value: mc.value }; w.passes.push("computed"); }
-      else if (aiOn) w.ctx = await gatherLocalContext(userId, effText(q));
+      else if (aiOn) w.ctx = await gatherLocalContext(userId, effText(q)).catch(() => []);
     }
-    works.push(w);
-  }
+    return w;
+  }));
 
   const needAi = works.filter((w) => !w.computed && isChoice(w.q));
   const toItem = (w: Work): VerifyItem => ({ id: w.q.id, text: effText(w.q), options: effOptions(w.q), context: w.ctx.map((c) => ({ id: c.id, source: `${c.source}${c.url ? `, ${c.url}` : ""}`, text: c.text })) });
@@ -362,39 +373,54 @@ async function stepVerify(userId: string, sessionId: string, files: ImportFile[]
 
   let limitNote: string | null = null;
   if (aiOn && needAi.length) {
+    const t0 = Date.now();
+    const budget = () => AI_BUDGET_MS - (Date.now() - t0);
     try {
-      const r = await verifyBatch(userId, needAi.map(toItem));
+      const r = await within(verifyBatch(userId, needAi.map(toItem)), budget());
+      p.aiFails = 0; p.waits = 0;
       for (const w of needAi) {
         w.aiTried = true; w.passes.push(r.provider);
         const x = r.data.results.find((y) => y.id === w.q.id);
         if (x) apply(w, x, r.model, r.provider);
       }
-      // Ikkinchi bosqich 1: tashqi manba kerak bo'lgan savollar (internet, byudjet doirasida)
-      for (const w of needAi) {
-        if (!w.ai?.needsExternal || !tavilyConfigured() || (p.web ?? 0) >= webMax()) continue;
-        const web = await webContext(userId, effText(w.q));
-        p.web = (p.web ?? 0) + 1;
-        if (!web.length) continue;
-        w.ctx = [...w.ctx, ...web];
-        const r2 = await verifyBatch(userId, [toItem(w)]);
-        const x2 = r2.data.results.find((y) => y.id === w.q.id);
-        if (x2) { apply(w, x2, r2.model, r2.provider); w.passes.push("web"); }
-      }
-      // Ikkinchi bosqich 2: murakkab, ishonchsiz yoki kalit bilan farq qiladigan savollar kuchli model bilan qayta tekshiriladi.
-      const hard = needAi.filter((w) => w.ai && (w.ai.confidence !== "high" || w.q.qtype === "SITUATIONAL" || (w.q.verification?.keyAnswer && JSON.stringify(w.q.verification.keyAnswer) !== JSON.stringify(w.ai.answer))));
-      if (hard.length && (aiAvailable().claude || process.env.IMPORT_COMPLEX_MODEL)) {
-        const r3 = await verifyBatch(userId, hard.map(toItem), { heavy: true });
-        for (const w of hard) { const x3 = r3.data.results.find((y) => y.id === w.q.id); if (x3 && x3.answer) { apply(w, x3, r3.model, r3.provider); w.passes.push(`${r3.provider}-heavy`); } }
-      }
     } catch (e) {
       if (e instanceof ApiError && e.code === "daily_limit") { p.aiBlocked = e.message; limitNote = e.message; }
-      else if (e instanceof ApiError && ERR_WAIT.has(e.code ?? "")) { if (!needAi.some((w) => w.aiTried)) throw e; }
-      else addWarning(p, `AI tekshiruvi to'liq bajarilmadi: ${e instanceof ApiError ? e.message : "xatolik"}`);
+      else if (e instanceof ApiError && ERR_WAIT.has(e.code ?? "")) return { wait: e, count: 0 };
+      else {
+        // Boshqa xato (kalit/model noto'g'ri, tarmoq, kechikish): ikki marta ketma-ket bo'lsa AI o'chiriladi, qolgan savollar kutdirilmaydi.
+        p.aiFails = (p.aiFails ?? 0) + 1;
+        addWarning(p, `AI tekshiruvi bajarilmadi: ${errText(e)}`);
+        if (p.aiFails >= 2) p.aiBlocked = "AI tekshiruvi hozir ishlamayapti.";
+      }
+    }
+    // Ikkinchi bosqichlar ixtiyoriy: xato yoki kechikishda birinchi natija saqlanadi, kutib turilmaydi.
+    if (needAi.some((w) => w.aiTried)) {
+      try {
+        // 1) tashqi manba kerak bo'lgan savollar (internet, byudjet doirasida)
+        for (const w of needAi) {
+          if (!w.ai?.needsExternal || !tavilyConfigured() || (p.web ?? 0) >= webMax() || budget() < 12_000) continue;
+          const web = await within(webContext(userId, effText(w.q)), Math.min(10_000, budget()));
+          p.web = (p.web ?? 0) + 1;
+          if (!web.length) continue;
+          w.ctx = [...w.ctx, ...web];
+          const r2 = await within(verifyBatch(userId, [toItem(w)]), budget());
+          const x2 = r2.data.results.find((y) => y.id === w.q.id);
+          if (x2) { apply(w, x2, r2.model, r2.provider); w.passes.push("web"); }
+        }
+        // 2) murakkab, ishonchsiz yoki kalit bilan farq qiladigan savollar kuchli model bilan qayta tekshiriladi.
+        const hard = needAi.filter((w) => w.ai && (w.ai.confidence !== "high" || w.q.qtype === "SITUATIONAL" || (w.q.verification?.keyAnswer && JSON.stringify(w.q.verification.keyAnswer) !== JSON.stringify(w.ai.answer)))).slice(0, 6);
+        if (hard.length && budget() >= 12_000 && (aiAvailable().claude || process.env.IMPORT_COMPLEX_MODEL)) {
+          const r3 = await within(verifyBatch(userId, hard.map(toItem), { heavy: true }), budget());
+          for (const w of hard) { const x3 = r3.data.results.find((y) => y.id === w.q.id); if (x3 && x3.answer) { apply(w, x3, r3.model, r3.provider); w.passes.push(`${r3.provider}-heavy`); } }
+        }
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "daily_limit") { p.aiBlocked = e.message; limitNote = e.message; }
+      }
     }
   }
 
   const fileName = (id: string | null) => files.find((f) => f.id === id)?.fileName ?? "Fayl";
-  for (const w of works) {
+  await Promise.all(works.map(async (w) => {
     const q = w.q, options = effOptions(q);
     const key = (q.verification?.keyAnswer as string[] | null) ?? null;
     const keySource = (q.verification?.keySource as "INLINE" | "SEPARATE_FILE" | null) ?? null;
@@ -421,9 +447,41 @@ async function stepVerify(userId: string, sessionId: string, files: ImportFile[]
       },
     });
     await db.extractedQuestion.update({ where: { id: q.id }, data: { reviewStatus: d.reviewStatus, note: note ? short(note, 400) : q.note } });
+  }));
+  return { wait: null, count: works.length };
+}
+
+/**
+ * Savollarni tekshirish: bir chaqiruvda bir nechta paket parallel (kechikishni kamaytiradi). AI ishlamasa yoki band bo'lsa uzoq kutilmaydi:
+ * qisqa kutishdan so'ng AI o'chiriladi va qolgan savollar fayldagi kalit bo'yicha darhol ko'rib chiqiladi («Hammasini qayta tekshirish» bilan keyin to'ldiriladi).
+ */
+async function stepVerify(userId: string, sessionId: string, files: ImportFile[], p: Progress): Promise<Unit> {
+  const aiNow = (canReadText() || aiAvailable().any) && !p.aiBlocked;
+  const take = aiNow ? VERIFY_BATCH * VERIFY_PAR : 60;
+  const rows: QRow[] = await db.extractedQuestion.findMany({ where: { importSessionId: sessionId, verification: { is: { verifiedAt: null } } }, orderBy: { seq: "asc" }, take, include: { verification: true } });
+  if (!rows.length) return null;
+  const total = await db.extractedQuestion.count({ where: { importSessionId: sessionId } });
+  const left = await db.answerVerification.count({ where: { question: { importSessionId: sessionId }, verifiedAt: null } });
+
+  const groups: QRow[][] = [];
+  for (let i = 0; i < rows.length; i += VERIFY_BATCH) groups.push(rows.slice(i, i + VERIFY_BATCH));
+  const res = await Promise.allSettled(groups.map((g) => verifyGroup(userId, files, g, p)));
+  const okRes = res.flatMap((r) => (r.status === "fulfilled" && !r.value.wait ? [r.value] : []));
+  const waits = res.flatMap((r) => (r.status === "fulfilled" && r.value.wait ? [r.value.wait] : []));
+  const failed = res.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (!okRes.length) {
+    if (failed && !waits.length) throw failed.reason;
+    if (waits.length) {
+      p.waits = (p.waits ?? 0) + 1;
+      if (p.waits <= MAX_AI_WAITS) throw waits[0];
+      // Uzoq kutdirmaymiz: AI band, qolganlari kalit bo'yicha ko'rib chiqiladi.
+      p.aiBlocked = `AI xizmati hozir band (${waits[0].message})`;
+      addWarning(p, "AI xizmati band bo'lgani uchun qolgan savollar faqat fayldagi kalit bo'yicha ko'rib chiqiladi.");
+      return { label: "AI band: qolgan savollar kalit bo'yicha ko'rib chiqiladi", done: Math.min(total, total - left), total };
+    }
   }
-  const done = Math.min(total, total - left + works.length);
-  return { label: `Javoblar tekshirilmoqda: ${done}/${total}`, done, total };
+  const done = Math.min(total, total - left + okRes.reduce((a, r) => a + r.count, 0));
+  return { label: p.aiBlocked && !aiNow ? `Javoblar kalit bo'yicha ko'rib chiqilmoqda: ${done}/${total}` : `Javoblar tekshirilmoqda: ${done}/${total}`, done, total };
 }
 
 async function finish(sessionId: string, files: ImportFile[], p: Progress): Promise<StepResult> {
@@ -469,6 +527,7 @@ export async function advanceImport(userId: string, id: string): Promise<StepRes
     for (const [step, status, fn] of steps) {
       const r = await fn();
       if (r) {
+        p.stalls = 0;
         await setProgress(id, { ...p, label: r.label }, { status, step, lockedUntil: null, attempts: { increment: 1 } });
         return { status, step, label: r.label, done: r.done, total: r.total, finished: false };
       }
@@ -482,6 +541,14 @@ export async function advanceImport(userId: string, id: string): Promise<StepRes
         await setProgress(id, { ...p, label: "AI limiti tugadi" }, { status: "NEEDS_REVIEW", step: "DONE", lockedUntil: null, error: e.message, completedAt: new Date() });
         const total = await db.extractedQuestion.count({ where: { importSessionId: id } });
         return { status: "NEEDS_REVIEW", step: s0.step, label: "AI limiti tugadi", done: total, total, finished: true, message: e.message };
+      }
+      // Cheksiz kutish yo'q: ketma-ket bir necha marta band/limit bo'lsa jarayon to'xtatiladi, topilgan savollar saqlanadi, foydalanuvchi keyin davom ettiradi.
+      p.stalls = (p.stalls ?? 0) + 1;
+      if (p.stalls > MAX_STALLS) {
+        const found = await db.extractedQuestion.count({ where: { importSessionId: id } });
+        p.aiBlocked = e.message; addWarning(p, "AI xizmati uzoq vaqt band bo'ldi: jarayon to'xtatildi. Topilgan savollar saqlandi, keyinroq «Davom ettirish»ni bosing.");
+        await setProgress(id, { ...p, label: "AI band: jarayon to'xtatildi" }, { status: found ? "NEEDS_REVIEW" : "FAILED", step: "DONE", lockedUntil: null, error: found ? null : e.message, completedAt: new Date() });
+        return { status: found ? "NEEDS_REVIEW" : "FAILED", step: s0.step, label: "AI band: jarayon to'xtatildi", done: found, total: found, finished: true, message: e.message };
       }
       await setProgress(id, { ...p, label: e.message }, { lockedUntil: null });
       return { status: s0.status, step: s0.step, label: e.message, done: 0, total: 0, finished: false, wait: e.code === "provider_busy" ? 20 : 12, message: e.message };
@@ -514,6 +581,6 @@ export async function queueRecheck(sessionId: string, questionIds?: string[]) {
   await db.answerVerification.updateMany({ where: { question: { importSessionId: sessionId, ...(questionIds && { id: { in: questionIds } }) } }, data: { verifiedAt: null } });
   const s = await db.importSession.findUnique({ where: { id: sessionId }, select: { progress: true } });
   const p = prog(s ?? { progress: null });
-  delete p.aiBlocked;
+  delete p.aiBlocked; delete p.aiFails; delete p.waits; delete p.stalls;
   await db.importSession.update({ where: { id: sessionId }, data: { status: "VERIFYING", step: "VERIFY", completedAt: null, error: null, lockedUntil: null, progress: p as unknown as Json } });
 }
