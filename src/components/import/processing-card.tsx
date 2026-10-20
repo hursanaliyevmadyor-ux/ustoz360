@@ -23,7 +23,7 @@ const FILE_STATUS: Record<string, { label: string; tone: "neutral" | "blue" | "s
 };
 const ROLE_LABEL: Record<string, string> = { AUTO: "Avtomatik aniqlanadi", QUESTIONS: "Savollar", ANSWERS: "Javoblar kaliti", MATERIAL: "Material" };
 
-export function FileRow({ f, right }: { f: FileView; right?: React.ReactNode }) {
+export function FileRow({ f, right, below }: { f: FileView; right?: React.ReactNode; below?: React.ReactNode }) {
   const st = FILE_STATUS[f.parseStatus] ?? { label: f.parseStatus, tone: "neutral" as const };
   return (
     <li className="rounded-xl border border-border bg-card p-3">
@@ -40,6 +40,7 @@ export function FileRow({ f, right }: { f: FileView; right?: React.ReactNode }) 
         {f.progress && f.parseStatus === "PARSING" && <span>{f.progress.done}/{f.progress.total}</span>}
       </div>
       {(f.parseError || f.note) && <p role={f.parseError ? "alert" : undefined} className={cn("mt-1.5 text-xs", f.parseError ? "text-danger" : "text-muted-foreground")}>{f.parseError ?? f.note}</p>}
+      {below && <div className="mt-2">{below}</div>}
     </li>
   );
 }

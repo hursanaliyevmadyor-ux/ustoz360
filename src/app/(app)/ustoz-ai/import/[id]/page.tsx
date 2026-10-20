@@ -9,6 +9,7 @@ import { ACTIVE, STATUS_LABEL, type ImportStatusInfo, type SessionView } from "@
 import { QueryView } from "@/components/layout/query-view";
 import { SectionHeader } from "@/components/layout/section-header";
 import { AddFiles } from "@/components/import/add-files";
+import { PagesInput } from "@/components/import/pages-input";
 import { FileRow, ProcessingCard } from "@/components/import/processing-card";
 import { ReviewCenter } from "@/components/import/review-center";
 import { useImportRunner } from "@/components/import/use-import-runner";
@@ -49,7 +50,10 @@ function Workspace({ session, reload }: { session: SessionView; reload: () => vo
   const setRole = (fid: string, role: string) => act("role", () => api(`/api/import/${session.id}/files/${fid}`, "PATCH", { role }));
   const removeFile = (fid: string) => act("file", () => api(`/api/import/${session.id}/files/${fid}`, "DELETE"), "Fayl olib tashlandi.");
 
-  const canStart = session.files.length > 0 && session.files.every((f) => !["PENDING_UPLOAD"].includes(f.parseStatus));
+  const setPages = async (fid: string, pages: string) => { const ok = await act("pages", () => api(`/api/import/${session.id}/files/${fid}`, "PATCH", { pages: pages.trim() || null }), pages.trim() ? "Sahifalar saqlandi." : undefined); return ok; };
+  // Katta PDF (60 betdan ko'p) uchun sahifalarni tanlash majburiy: butun to'plamni AI'ga yuborish sekin va limitga sig'maydi.
+  const needPages = session.files.some((f) => f.kind === "pdf" && (f.pageCount ?? 0) > 60 && !f.pageSpec);
+  const canStart = session.files.length > 0 && session.files.every((f) => !["PENDING_UPLOAD"].includes(f.parseStatus)) && !needPages;
   const accept = cfg?.accept ?? ".pdf,.docx,.xlsx,.csv,.pptx,.odt,.ods,.odp,.txt,.jpg,.jpeg,.png,.webp";
   const maxBytes = (cfg?.maxMb ?? 20) * 1024 * 1024;
   const fileControls = (fid: string, role: string) => (
@@ -59,6 +63,10 @@ function Workspace({ session, reload }: { session: SessionView; reload: () => vo
       </Select>
       <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Faylni olib tashlash" disabled={busy !== null || active} onClick={() => void removeFile(fid)}><Trash2 className="h-4 w-4" aria-hidden /></Button>
     </div>
+  );
+  /** PDF: o'qiladigan sahifalarni tanlash (bo'sh = butun fayl). Katta to'plamlarda majburiy. */
+  const pagesControl = (f: SessionView["files"][number]) => f.kind !== "pdf" ? null : (
+    <PagesInput key={`${f.id}:${f.pageSpec ?? ""}`} pageCount={f.pageCount} value={f.pageSpec ?? ""} required={(f.pageCount ?? 0) > 60} disabled={busy !== null || active} onSave={(v) => setPages(f.id, v)} />
   );
 
   return (
@@ -80,7 +88,8 @@ function Workspace({ session, reload }: { session: SessionView; reload: () => vo
             <h2 className="text-lg font-bold">Yuklangan fayllar</h2>
             <p className="text-sm text-muted-foreground">Savollar va javoblar alohida fayllarda bo'lsa, ularni qo'shib, vazifasini belgilang. Bilmasangiz, «Avtomatik aniqlansin» qoldiring: tarkibiga qarab aniqlanadi.</p>
           </div>
-          <ul className="space-y-2">{session.files.map((f) => <FileRow key={f.id} f={f} right={fileControls(f.id, f.role)} />)}</ul>
+          <ul className="space-y-2">{session.files.map((f) => <FileRow key={f.id} f={f} right={fileControls(f.id, f.role)} below={pagesControl(f)} />)}</ul>
+          {needPages && <p role="status" className="rounded-xl bg-amber/10 px-3 py-2 text-sm">Katta PDF: kerakli sahifalarni yozing (savollar va ularning javoblar kaliti sahifalari). Aks holda tahlilni boshlab bo'lmaydi.</p>}
           <div className="flex flex-wrap items-center gap-3">
             <AddFiles sessionId={session.id} accept={accept} maxBytes={maxBytes} onAdded={reload} disabled={session.files.length >= (cfg?.maxFiles ?? 6)} />
             <AddFiles sessionId={session.id} accept={accept} maxBytes={maxBytes} role="ANSWERS" label="Javoblar kalitini qo'shish" onAdded={reload} disabled={session.files.length >= (cfg?.maxFiles ?? 6)} />

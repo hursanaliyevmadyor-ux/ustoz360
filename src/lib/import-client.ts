@@ -15,17 +15,24 @@ export type SessionRow = { id: string; title: string; status: string; subject: s
 export type FileView = {
   id: string; fileName: string; kind: string; kindLabel: string; role: "AUTO" | "QUESTIONS" | "ANSWERS" | "MATERIAL"; sizeBytes: number; parseStatus: string; parseError: string | null;
   pageCount: number | null; note: string | null; docKinds: { kind: string; from: number; to: number }[] | null; extracted: number; progress: { done: number; total: number } | null;
+  /** O'qiladigan sahifalar («3-14, 655-657»); bo'sh = butun fayl. */
+  pageSpec: string | null; groups: number;
 };
+/** Savoldagi rasm/jadval/formula joyi: `box` = [ymin, xmin, ymax, xmax], sahifaning 0..1000 koordinatalari. */
+export type FigureInfo = { n: number; page: number | null; box: [number, number, number, number] | null; kind: string; caption?: string };
 
 export type SessionView = {
   id: string; title: string; status: string; step: string; subject: string | null; error: string | null; label: string | null; warnings: string[]; aiBlocked: string | null;
   createdAt: string; updatedAt: string; completedAt: string | null; files: FileView[];
   counts: { total: number; ready: number; review: number; noAnswer: number; conflict: number; unsupported: number; incomplete: number; approved: number; removed: number; withKey: number };
   collections: { id: string; title: string }[];
+  /** Ko'p testli fayllar: test sarlavhalari va ulardagi savollar soni. */
+  groups: { section: number; title: string; count: number }[];
 };
 
 export type AnswerView = { key: string[] | null; keySource: string | null; proposed: string[] | null; final: string[] | null; origin: string; status: string; confidence: string | null; explanation: string | null; verifiedAt: string | null; note: string | null };
 export type QuestionRow = {
+  group: string | null; figures: FigureInfo[];
   id: string; seq: number; number: number | null; text: string; original: string | null; options: Opt[]; qtype: string; edited: boolean; reviewStatus: string; decision: string | null;
   ocrUncertain: boolean; note: string | null; sourcePage: string | null; fileId: string | null; fileName: string; topicId: string | null; subjectGuess: string | null; topicGuess: string | null; grade: string | null; difficulty: string; answer: AnswerView;
 };

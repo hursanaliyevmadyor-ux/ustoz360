@@ -5,9 +5,10 @@ import { db } from "../db";
 import { aiAvailable } from "../ai/gateway";
 import { tavilyConfigured } from "../ai/tavily";
 import { storage } from "../storage";
-import { buildTextChunks, pageRanges, pdfPageCountGuess, questionRanges } from "./chunking";
+import { buildTextChunks, extractionRanges, pageRanges, parsePageSpec, pdfPageCountGuess, type ExtractRange } from "./chunking";
 import { canReadFiles, canReadText, classifyDocument, classifyText, extractFromFile, extractFromText, extractKeyFromFile, MAX_INLINE_BYTES, verifyBatch } from "./aitasks";
-import type { ExtractedDraft } from "./aischema";
+import type { ExtractedDraft, Figure } from "./aischema";
+import { pdfPageCount, slicePdf } from "./pdfslice";
 import { buildEvidence, contextEvidence, gatherLocalContext, webContext, type CtxItem } from "./evidence";
 import type { ImportKind } from "./formats";
 import { parseAnswerKey, type KeyEntry, type LabelStyle } from "./keyparse";
@@ -15,7 +16,7 @@ import { checkArithmetic } from "./mathcheck";
 import { extractOfficeText, type Page } from "./officetext";
 import type { VerifyItem } from "./prompts";
 import { classifyPages, parseQuestions, type QType } from "./qparse";
-import { contentHash, decide, matchKeys, matchTopic, type Confidence } from "./verifylogic";
+import { contentHash, decide, matchKeys, matchTopic, normGroup, type Confidence } from "./verifylogic";
 
 /**
  * Asinxron import jarayoni (docs/SMART-IMPORT.md). Yuklash va qayta ishlash ajratilgan: har bir `advanceImport` chaqiruvi BITTA cheklangan ish
@@ -37,7 +38,11 @@ type Json = Prisma.InputJsonValue;
 export type FileMeta = {
   mode?: "RULES" | "AI_TEXT" | "AI_FILE";
   kinds?: { kind: string; from: number; to: number }[];
-  ranges?: { from: number; to: number }[];
+  ranges?: ExtractRange[];
+  /** Foydalanuvchi tanlagan sahifalar («3-14, 655-657»): bo'sh bo'lsa butun fayl. */
+  pageSpec?: string;
+  /** Test/bo'lim sarlavhalari (indeks = savolning `section % 1000` qiymati) va savollardagi rasm joylari (savol id bo'yicha). */
+  groups?: string[]; figures?: Record<string, Figure[]>;
   key?: KeyEntry[]; style?: LabelStyle; lastNum?: number; sec?: number;
   attempts?: Record<string, number>; failed?: number[];
   structDone?: boolean; classified?: boolean; keyDone?: boolean;
@@ -73,16 +78,22 @@ async function appendQuestions(sessionId: string, file: ImportFile, fileIndex: n
   const qRows: Prisma.ExtractedQuestionCreateManyInput[] = [];
   const vRows: Prisma.AnswerVerificationCreateManyInput[] = [];
   for (const d of drafts) {
-    const hash = contentHash(d.text, d.options);
+    const hash = contentHash(`${normGroup(d.group)}|${d.text}`, d.options);
     if (existing.has(hash)) continue;
     existing.add(hash);
     let section = d.section;
-    if (ai) { // AI natijasida bo'limlar raqamlashning qayta boshlanishi bo'yicha aniqlanadi
+    if (ai && d.group) { // sarlavhali testlar (ko'p testli to'plam): bo'lim — test sarlavhasi bo'yicha
+      m.groups ??= [];
+      let gi = m.groups.findIndex((g) => normGroup(g) === normGroup(d.group));
+      if (gi < 0) { m.groups.push(d.group); gi = m.groups.length - 1; }
+      section = gi;
+    } else if (ai) { // sarlavhasiz AI natijasida bo'limlar raqamlashning qayta boshlanishi bo'yicha aniqlanadi
       if (d.number === 1 && (m.lastNum ?? 0) > 1) m.sec = (m.sec ?? 0) + 1;
       if (d.number !== null) m.lastNum = d.number;
       section = m.sec ?? 0;
     }
     const id = newId("iq");
+    if (d.figures.length) (m.figures ??= {})[id] = d.figures;
     qRows.push({
       id, importSessionId: sessionId, fileId: file.id, number: d.number, seq: seq++, section: fileIndex * 1000 + section,
       originalText: d.text, options: d.options as unknown as Json, qtype: d.qtype,
@@ -99,12 +110,23 @@ async function appendQuestions(sessionId: string, file: ImportFile, fileIndex: n
   return qRows.length;
 }
 
-const draftFromRule = (q: ReturnType<typeof parseQuestions>["questions"][number]): ExtractedDraft => ({ ...q, subject: null, topic: null, grade: null, difficulty: "MEDIUM", uncertain: false });
+const draftFromRule = (q: ReturnType<typeof parseQuestions>["questions"][number]): ExtractedDraft => ({ ...q, subject: null, topic: null, grade: null, difficulty: "MEDIUM", uncertain: false, group: null, figures: [] });
 
-const appendKey = (m: FileMeta, items: { number: number; answers: string[] }[]) => {
+/** Kalit yozuvlarini qo'shadi. Sarlavhali (test nomi bilan) jadvallarning bo'limi sarlavha bo'yicha, sarlavhasizlarniki raqamlash qayta boshlanishi bo'yicha. */
+const appendKey = (m: FileMeta, items: { number: number; answers: string[]; group?: string | null }[]) => {
   const key = m.key ?? [];
   let section = key.length ? key[key.length - 1].section : 0, last = key.length ? key[key.length - 1].number : 0;
-  for (const it of items) { if (it.number === 1 && last > 1) section++; key.push({ number: it.number, answers: it.answers, section }); last = it.number; }
+  for (const it of items) {
+    if (it.group) {
+      const prev = key.find((e) => e.group && normGroup(e.group) === normGroup(it.group));
+      if (prev) section = prev.section; else { section = key.length ? Math.max(...key.map((e) => e.section)) + 1 : 0; }
+      key.push({ number: it.number, answers: it.answers, section, group: it.group });
+    } else {
+      if (it.number === 1 && last > 1) section++;
+      key.push({ number: it.number, answers: it.answers, section });
+    }
+    last = it.number;
+  }
   m.key = key;
 };
 
@@ -127,8 +149,10 @@ async function stepParse(files: ImportFile[], p: Progress): Promise<Unit> {
         if (!pages.length) addWarning(p, `«${f.fileName}»: ${doc.note ?? "matn topilmadi"}`);
       } else {
         if (!canReadFiles()) { await db.importFile.update({ where: { id: f.id }, data: { parseStatus: "BLOCKED", parseError: "PDF va rasmlarni o'qish uchun Gemini ulanmagan (GEMINI_API_KEY). Matnli fayl (DOCX, XLSX, TXT) yuklab ko'ring." } }); continue; }
-        if (bytes.length > MAX_INLINE_BYTES) { await db.importFile.update({ where: { id: f.id }, data: { parseStatus: "BLOCKED", parseError: "Fayl AI tahlili uchun juda katta (14 MB gacha). Hajmini kichraytiring yoki qismlarga bo'ling." } }); continue; }
-        const pc = kind === "pdf" ? pdfPageCountGuess(new Uint8Array(bytes)) : 1;
+        // PDF kesib yuboriladi (hajm cheklovi bo'lakka tegishli); rasm va kesib bo'lmaydigan PDF butunligicha yuboriladi.
+        const exact = kind === "pdf" ? await pdfPageCount(new Uint8Array(bytes)) : null;
+        if (bytes.length > MAX_INLINE_BYTES && exact === null) { await db.importFile.update({ where: { id: f.id }, data: { parseStatus: "BLOCKED", parseError: "Fayl AI tahlili uchun juda katta (14 MB gacha) yoki ochib bo'lmadi. Hajmini kichraytiring yoki qismlarga bo'ling." } }); continue; }
+        const pc = kind === "pdf" ? exact ?? pdfPageCountGuess(new Uint8Array(bytes)) : 1;
         await db.importFile.update({ where: { id: f.id }, data: { parseStatus: "PARSED", pageCount: pc || null } });
       }
     } catch (e) {
@@ -145,6 +169,13 @@ async function stepStruct(userId: string, files: ImportFile[], p: Progress): Pro
   const m = meta(f);
   m.structDone = true;
   if (f.kind === "image") { m.ranges = [{ from: 0, to: 0 }]; await setMeta(f, m, { total: 1 }); return { label: `Rasm tayyor: ${f.fileName}`, done: 1, total: 1 }; }
+  // Foydalanuvchi sahifalarni tanlagan bo'lsa (katta to'plamlar): tuzilmani aniqlash o'tkazib yuboriladi, faqat shu sahifalar o'qiladi.
+  const spec = parsePageSpec(m.pageSpec, f.pageCount || 5000);
+  if (spec) {
+    m.ranges = extractionRanges([], f.pageCount ?? 0, spec);
+    await setMeta(f, m, { total: m.ranges.length });
+    return { label: `Tanlangan sahifalar: ${f.fileName} (${m.pageSpec})`, done: 1, total: 1 };
+  }
   try {
     const bytes = await storage().get(f.storagePath);
     const r = await classifyDocument(userId, { bytes: new Uint8Array(bytes), mime: f.mime });
@@ -154,7 +185,7 @@ async function stepStruct(userId: string, files: ImportFile[], p: Progress): Pro
     m.subject = r.data.subject ?? null; m.grade = r.data.grade ?? null;
     const onlyKey = sections.length > 0 && sections.every((s) => /ANSWER_KEY|OTHER/.test(s.kind)) && sections.some((s) => /ANSWER_KEY/.test(s.kind));
     const toAnswers = onlyKey && f.role === "AUTO";
-    const qs = questionRanges(sections.map((s) => ({ kind: s.kind, fromPage: s.from, toPage: s.to })), total);
+    const qs = extractionRanges(sections.map((s) => ({ kind: s.kind, fromPage: s.from, toPage: s.to })), total);
     m.ranges = qs.length ? qs : [{ from: 0, to: 0 }];
     if (sections.length && !sections.some((s) => /QUESTIONS|EXERCISES|ANSWER_KEY/.test(s.kind))) addWarning(p, `«${f.fileName}»: hujjatda savollar aniqlanmadi (nazariy yoki metodik material bo'lishi mumkin).`);
     await setMeta(f, m, { total: toAnswers ? 1 : m.ranges.length, pageCount: total || f.pageCount, ...(toAnswers && { role: "ANSWERS" }) });
@@ -226,14 +257,28 @@ async function stepExtract(userId: string, sessionId: string, files: ImportFile[
     }
     // PDF / rasm
     if (!m.structDone || f.cursor >= f.total) continue;
-    const rg = (m.ranges ?? [{ from: 0, to: 0 }])[f.cursor] ?? { from: 0, to: 0 };
+    const rg: ExtractRange = (m.ranges ?? [{ from: 0, to: 0 }])[f.cursor] ?? { from: 0, to: 0 };
     try {
-      const bytes = await storage().get(f.storagePath);
-      const r = await extractFromFile(userId, { bytes: new Uint8Array(bytes), mime: f.mime }, { fromPage: rg.from || undefined, toPage: rg.to || undefined, hint: `Fayl: ${f.fileName}`, style: m.style });
+      const bytes = new Uint8Array(await storage().get(f.storagePath));
+      // PDF: faqat shu oraliqdagi sahifalar AI'ga yuboriladi (butun fayl emas).
+      let input: { bytes: Uint8Array; mime: string } = { bytes, mime: f.mime };
+      let excerpt = false;
+      if (f.kind === "pdf" && rg.from) {
+        try { input = { bytes: (await slicePdf(bytes, rg.from, rg.to || rg.from)).bytes, mime: f.mime }; excerpt = true; }
+        catch { if (bytes.length > MAX_INLINE_BYTES) throw new ApiError(413, "Fayl AI tahlili uchun juda katta (14 MB gacha) va uni sahifalarga bo'lib bo'lmadi.", "too_big_for_ai"); }
+      }
+      const range = { fromPage: rg.from || undefined, toPage: rg.to || undefined, excerpt };
       m.mode = "AI_FILE";
-      await appendQuestions(sessionId, f, idxOf(f), r.questions, m, true);
-      if (r.answerKey.length) appendKey(m, r.answerKey);
-      r.warnings.slice(0, 3).forEach((w) => addWarning(p, `«${f.fileName}»: ${w}`));
+      if (rg.kind === "K") {
+        // Javoblar kaliti sahifalari: faqat kalit jadvallari o'qiladi (test sarlavhasi bilan).
+        const k = await extractKeyFromFile(userId, input, m.style, range);
+        if (k.key.length) appendKey(m, k.key);
+      } else {
+        const r = await extractFromFile(userId, input, { ...range, hint: `Fayl: ${f.fileName}`, style: m.style });
+        await appendQuestions(sessionId, f, idxOf(f), r.questions, m, true);
+        if (r.answerKey.length) appendKey(m, r.answerKey);
+        r.warnings.slice(0, 3).forEach((w) => addWarning(p, `«${f.fileName}»: ${w}`));
+      }
       await setMeta(f, m, { cursor: f.cursor + 1 });
     } catch (e) {
       if (e instanceof ApiError && ERR_WAIT.has(e.code ?? "")) throw e;
@@ -255,9 +300,17 @@ async function stepKeys(userId: string, sessionId: string, files: ImportFile[], 
         const parsed = parseAnswerKey(((aFile.pages as unknown as Page[] | null) ?? []).map((x) => x.text).join("\n"));
         m.key = parsed.entries; m.style = parsed.style;
       } else {
-        const bytes = await storage().get(aFile.storagePath);
-        const r = await extractKeyFromFile(userId, { bytes: new Uint8Array(bytes), mime: aFile.mime });
-        m.key = []; appendKey(m, r.key);
+        const bytes = new Uint8Array(await storage().get(aFile.storagePath));
+        m.key = [];
+        const spec = aFile.kind === "pdf" ? parsePageSpec(m.pageSpec, aFile.pageCount || 5000) : null;
+        if (spec) {
+          // Katta kalit fayli: tanlangan sahifalar bo'lak-bo'lak o'qiladi (bir chaqiruvda ko'pi bilan 4 bo'lak).
+          const parts = extractionRanges([{ kind: "ANSWER_KEY", fromPage: 1, toPage: 100000 }], aFile.pageCount ?? 0, spec).slice(0, 4);
+          for (const rg of parts) {
+            const s = await slicePdf(bytes, rg.from, rg.to);
+            appendKey(m, (await extractKeyFromFile(userId, { bytes: s.bytes, mime: aFile.mime }, undefined, { fromPage: rg.from, toPage: rg.to, excerpt: true })).key);
+          }
+        } else appendKey(m, (await extractKeyFromFile(userId, { bytes, mime: aFile.mime })).key);
       }
       if (!m.key?.length) addWarning(p, `«${aFile.fileName}»: javoblar kaliti topilmadi.`);
       await setMeta(aFile, m, { cursor: 1, total: 1 });
@@ -281,7 +334,8 @@ async function stepKeys(userId: string, sessionId: string, files: ImportFile[], 
     // fayl ichida kalit bo'limi bo'lmasa, alohida javoblar kaliti fayllari tartib bo'yicha biriktiriladi
     const keyFile = !own.length ? afiles[sep++] : undefined;
     const entries = own.length ? own : keyFile ? meta(keyFile).key ?? [] : [];
-    const km = matchKeys(mine.map((q) => ({ number: q.number, section: q.section, inlineAnswer: q.verification?.keySource === "INLINE" ? (q.verification.keyAnswer as string[] | null) : null })), entries);
+    const groups = meta(f).groups;
+    const km = matchKeys(mine.map((q) => ({ number: q.number, section: q.section, group: groups?.[q.section % 1000] ?? null, inlineAnswer: q.verification?.keySource === "INLINE" ? (q.verification.keyAnswer as string[] | null) : null })), entries);
     for (let i = 0; i < mine.length; i++) {
       const k = km[i], q = mine[i];
       const same = q.verification?.keySource === k.keySource && JSON.stringify(q.verification?.keyAnswer ?? null) === JSON.stringify(k.key);
@@ -335,6 +389,8 @@ const SUPPORT_ORDER: ("WEB" | "HUB" | "LIBRARY")[] = ["WEB", "HUB", "LIBRARY"];
 type AiOut = { answer: string[]; confidence: Confidence; explanation: string | null; usedSources: string[]; needsExternal: boolean; model: string; provider: string };
 type Work = { q: QRow; computed: string[] | null; compNote: { expression: string; value: number } | null; ctx: CtxItem[]; ai?: AiOut; passes: string[]; aiTried: boolean };
 const isChoice = (q: QRow) => ["SINGLE", "SITUATIONAL"].includes(q.qtype) && effOptions(q).length >= 2 && q.reviewStatus !== "INCOMPLETE";
+/** Savolda rasm/jadval/formula joyi (`[[RASM:n]]`) bor: AI matn bilan uni ko'ra olmaydi, shuning uchun mustaqil «yechilmaydi». */
+const hasFigure = (q: QRow) => /\[\[RASM:\d{1,2}\]\]/.test(effText(q));
 
 /** AI chaqiruvi belgilangan vaqtda tugamasa, kutib turmasdan xato qaytaradi (foydalanuvchi uzoq kutib qolmasligi uchun). */
 function within<T>(pr: Promise<T>, ms: number): Promise<T> {
@@ -358,12 +414,12 @@ async function verifyGroup(userId: string, files: ImportFile[], batch: QRow[], p
       const options = effOptions(q);
       const mc = checkArithmetic(effText(q), options);
       if (mc && mc.match.length === 1) { w.computed = [options[mc.match[0]].label]; w.compNote = { expression: mc.expression, value: mc.value }; w.passes.push("computed"); }
-      else if (aiOn) w.ctx = await gatherLocalContext(userId, effText(q)).catch(() => []);
+      else if (aiOn && !hasFigure(q)) w.ctx = await gatherLocalContext(userId, effText(q)).catch(() => []);
     }
     return w;
   }));
 
-  const needAi = works.filter((w) => !w.computed && isChoice(w.q));
+  const needAi = works.filter((w) => !w.computed && isChoice(w.q) && !hasFigure(w.q));
   const toItem = (w: Work): VerifyItem => ({ id: w.q.id, text: effText(w.q), options: effOptions(w.q), context: w.ctx.map((c) => ({ id: c.id, source: `${c.source}${c.url ? `, ${c.url}` : ""}`, text: c.text })) });
   const apply = (w: Work, r: { answer?: string | string[] | null; confidence?: string | null; explanation?: string | null; usedSources?: string[] | null; needsExternal?: boolean | null }, model: string, provider: string) => {
     const ans = (Array.isArray(r.answer) ? r.answer : r.answer ? [r.answer] : []).map((x) => x.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, 1)).filter(Boolean);
@@ -432,7 +488,8 @@ async function verifyGroup(userId: string, files: ImportFile[], batch: QRow[], p
       qtype: q.qtype as QType, incomplete: q.reviewStatus === "INCOMPLETE", options, ocrUncertain: q.ocrUncertain, key, keySource,
       ai: w.ai ? { answer: w.ai.answer, confidence: w.ai.confidence } : null, aiTried: w.aiTried, computed: w.computed, support,
     });
-    const note = [d.note, meta0.keyConflict].filter(Boolean).join(" ");
+    const figNote = hasFigure(q) && !w.computed ? "Savolda rasm/jadval bor: AI uni ko'ra olmaydi, javobni asl rasmga qarab o'zingiz tasdiqlang." : null;
+    const note = [d.note, meta0.keyConflict, figNote].filter(Boolean).join(" ");
     const evidence = buildEvidence({
       fileName: fileName(q.fileId), page: q.sourcePage, key, keySource, keyFileName: meta0.keyFile ?? null,
       computed: w.compNote, aiExplanation: w.ai?.explanation ?? null, aiModel: w.ai?.model ?? null, ctx: contextEvidence(used, usedIds),

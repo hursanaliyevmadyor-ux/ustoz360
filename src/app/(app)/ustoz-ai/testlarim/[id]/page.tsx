@@ -6,6 +6,7 @@ import { ClipboardCheck, FileSearch, Pencil, PlayCircle, Share2, Timer, Trash2, 
 import { api } from "@/lib/admin-client";
 import { useQuery } from "@/lib/use-query";
 import { ANSWER_STATUS_LABEL, COLLECTION_STATE_LABEL, COLLECTION_STATUS_LABEL, type CollectionQuestion, type CollectionView } from "@/lib/import-client";
+import { FigureText } from "@/components/figure-text";
 import { QueryView } from "@/components/layout/query-view";
 import { SectionHeader } from "@/components/layout/section-header";
 import { Badge } from "@/components/ui/badge";
@@ -148,7 +149,7 @@ function Detail({ c, reload }: { c: CollectionView; reload: () => void }) {
               <Card className="p-4">
                 <div className="flex items-start gap-3">
                   <span className="grid h-7 min-w-7 place-items-center rounded-lg bg-muted px-1.5 text-xs font-bold">{n + 1}</span>
-                  <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm font-medium">{q.text}</p>
+                  <div className="min-w-0 flex-1 text-sm font-medium"><FigureText text={q.text} /></div>
                   <Badge variant={ANSWER_TONE[q.answerStatus ?? "UNVERIFIED"] ?? "amber"} className="shrink-0">{ANSWER_STATUS_LABEL[q.answerStatus ?? "UNVERIFIED"] ?? q.answerStatus}</Badge>
                 </div>
                 <ul className="mt-2 space-y-1 pl-10">

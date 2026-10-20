@@ -27,7 +27,7 @@ export const KIND_LABEL: Record<ImportKind, string> = { pdf: "PDF", docx: "Word"
 export const SUPPORTED_LABEL = "PDF, DOCX, XLSX/CSV, PPTX, ODT/ODS/ODP, TXT, JPG/PNG/WEBP";
 export const SUPPORTED_ACCEPT = ".pdf,.docx,.xlsx,.csv,.pptx,.odt,.ods,.odp,.txt,.jpg,.jpeg,.png,.webp";
 
-export const maxImportBytes = () => Math.max(1, Number(process.env.IMPORT_MAX_MB) || 20) * 1024 * 1024;
+export const maxImportBytes = () => Math.max(1, Number(process.env.IMPORT_MAX_MB) || 50) * 1024 * 1024;
 export const MAX_FILES_PER_SESSION = 6;
 export const MAX_SESSIONS_ACTIVE = 5;
 

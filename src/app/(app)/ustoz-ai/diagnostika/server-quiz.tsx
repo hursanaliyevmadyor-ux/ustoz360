@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Clock, Flag } from "lucide-react";
 import { modules } from "@/lib/modules";
+import { FigureText } from "@/components/figure-text";
 import { PageHeader } from "@/components/layout/page";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -138,7 +139,7 @@ export function ServerQuiz({
           <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground"><span>Savol {i + 1} / {s.questions.length}</span>
             <span className="flex gap-2">{q.isDemo && <DemoBadge />}<Badge variant="neutral">{q.topic.name}</Badge><Badge variant="blue">{LEVEL[q.difficulty]}</Badge></span></div>
           <Progress value={(Object.keys(ans).length / s.questions.length) * 100} className="mb-5" label="Javob berilgan savollar" />
-          <h2 className="text-xl font-bold">{q.text}</h2>
+          <h2 className="text-xl font-bold"><FigureText text={q.text} /></h2>
           <fieldset className="mt-5 space-y-2.5"><legend className="sr-only">Javob variantlari</legend>
             {q.options.map((o) => (
               <label key={o.id} className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 text-sm hover:bg-muted", ans[q.id] === o.id ? "border-primary bg-primary/5" : "border-border")}>

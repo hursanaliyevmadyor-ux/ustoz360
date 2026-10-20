@@ -99,8 +99,25 @@ export type KeyMatch = { key: string[] | null; keySource: "INLINE" | "SEPARATE_F
  * Savollar (raqami va bo'limi bilan) va kalit yozuvlarini moslashtiradi. Savol yonidagi javob (INLINE) va alohida kalit farq qilsa, ziddiyat qaydi qo'shiladi.
  * Bo'limlar soni mos kelmasa va raqamlar takrorlansa, noto'g'ri bog'lamaslik uchun faqat birinchi bo'lim kalit oladi.
  */
-export function matchKeys(qs: { number: number | null; section: number; inlineAnswer: string[] | null }[], entries: KeyEntry[]): KeyMatch[] {
-  const secs = keySections(entries);
+/** Test sarlavhasini solishtirish uchun me'yorlash: harf va raqamlar, kichik harf («Diagnostika testi Kuzgi No: 1» == «diagnostika testi kuzgi no 1»). */
+export const normGroup = (g: string | null | undefined) => (g ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const lastNumber = (s: string) => /(\d+)\D*$/.exec(s)?.[1] ?? null;
+
+export function matchKeys(qs: { number: number | null; section: number; inlineAnswer: string[] | null; group?: string | null }[], entries: KeyEntry[]): KeyMatch[] {
+  // Sarlavhali kalit jadvallari (ko'p testli to'plamlar): kalit savolning o'z testi bo'yicha topiladi, taxminiy bo'limlar bo'yicha emas.
+  const grouped = new Map<string, Map<number, string[]>>();
+  for (const e of entries) if (e.group) { const g = normGroup(e.group); if (g) (grouped.get(g) ?? grouped.set(g, new Map()).get(g)!).set(e.number, e.answers); }
+  const byGroup = (group: string | null | undefined, number: number): string[] | null => {
+    const g = normGroup(group);
+    if (!g || !grouped.size) return null;
+    const direct = grouped.get(g);
+    if (direct) return direct.get(number) ?? null;
+    // Sarlavha biroz boshqacha yozilgan bo'lsa: oxirgi raqami bir xil yagona kalit jadvali
+    const n = lastNumber(g);
+    const same = n ? [...grouped.entries()].filter(([k]) => lastNumber(k) === n) : [];
+    return same.length === 1 ? same[0][1].get(number) ?? null : null;
+  };
+  const secs = keySections(entries.filter((e) => !e.group));
   const qSections = [...new Set(qs.map((q) => q.section))].sort((a, b) => a - b);
   const mapSection = (qSec: number): number | null => {
     if (!secs.length) return null;
@@ -110,7 +127,7 @@ export function matchKeys(qs: { number: number | null; section: number; inlineAn
     return k >= 0 && k < secs.length ? k : null;
   };
   return qs.map((q) => {
-    const fromFile = q.number !== null ? (() => { const si = mapSection(q.section); return si === null ? null : secs[si]?.get(q.number as number) ?? null; })() : null;
+    const fromFile = q.number === null ? null : q.group && grouped.size ? byGroup(q.group, q.number) : (() => { const si = mapSection(q.section); return si === null ? null : secs[si]?.get(q.number as number) ?? null; })();
     if (q.inlineAnswer && fromFile) {
       const eq = same([...q.inlineAnswer].sort(), [...fromFile].sort());
       return { key: q.inlineAnswer, keySource: "INLINE" as const, ...(eq ? {} : { conflict: `Savol yonidagi javob (${q.inlineAnswer.join(",")}) va javoblar kaliti (${fromFile.join(",")}) farq qiladi.` }) };

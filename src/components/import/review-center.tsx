@@ -7,6 +7,7 @@ import type { QuestionDetail, QuestionList, SessionView } from "@/lib/import-cli
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select } from "@/components/ui/form";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -38,8 +39,11 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
   const [saveOpen, setSaveOpen] = React.useState(false);
   const [bulk, setBulk] = React.useState(false);
   const [rechecking, setRechecking] = React.useState(false);
+  const [section, setSection] = React.useState("");
+  const [pageOverride, setPageOverride] = React.useState<string | null>(null);
+  const kinds = React.useMemo(() => Object.fromEntries(session.files.map((f) => [f.id, f.kind])), [session.files]);
 
-  const list = useQuery<QuestionList>(`/api/import/${session.id}/questions?filter=${filter}&page=${page}`);
+  const list = useQuery<QuestionList>(`/api/import/${session.id}/questions?filter=${filter}&page=${page}${section ? `&section=${section}` : ""}`);
   const detail = useQuery<QuestionDetail>(selected ? `/api/import/${session.id}/questions/${selected}?t=${detailTick}` : null);
   const items = React.useMemo(() => list.data?.items ?? [], [list.data]);
 
@@ -82,6 +86,9 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
   };
 
   const setF = (f: Filter) => { setFilter(f); setPage(1); setSelected(null); };
+  const pickSection = (v: string) => { setSection(v); setPage(1); setSelected(null); };
+  const openPage = (p: number | null) => { if (p) { setPageOverride(`${p}`); setPane("file"); } };
+  React.useEffect(() => { setPageOverride(null); }, [selected]);
   const tabs: { key: Filter; label: string; n: number }[] = [
     { key: "all", label: "Hammasi", n: c.total - c.removed }, { key: "ready", label: "Tayyor", n: c.ready }, { key: "review", label: "Tekshirish kerak", n: c.review },
     { key: "noanswer", label: "Javobi topilmagan", n: c.noAnswer }, { key: "conflict", label: "Ziddiyatli", n: c.conflict }, { key: "approved", label: "Tasdiqlangan", n: c.approved },
@@ -116,6 +123,16 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
         {c.removed > 0 && <Button variant="ghost" size="sm" onClick={() => setF(filter === "removed" ? "all" : "removed")}>{filter === "removed" ? "Hammasiga qaytish" : `Olib tashlanganlar (${c.removed})`}</Button>}
       </div>
 
+      {session.groups.length > 1 && (
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-semibold">Test:</span>
+          <Select value={section} onChange={(e) => pickSection(e.target.value)} className="h-9 w-full max-w-md text-sm" aria-label="Testni tanlang">
+            <option value="">Hammasi ({session.groups.reduce((a, g) => a + g.count, 0)} ta savol, {session.groups.length} ta test)</option>
+            {session.groups.map((g) => <option key={g.section} value={g.section}>{g.title} ({g.count})</option>)}
+          </Select>
+        </label>
+      )}
+
       <div role="tablist" aria-label="Savollar filtri" className="flex gap-1.5 overflow-x-auto pb-1">
         {tabs.map((t) => (
           <button key={t.key} role="tab" aria-selected={filter === t.key} onClick={() => setF(t.key)}
@@ -133,7 +150,7 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)_minmax(0,340px)] lg:items-start">
         <Card className={cn("p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto", pane !== "file" && "hidden lg:block")}>
-          <FilePreview sessionId={session.id} files={session.files} fileId={selFile} page={sel?.sourcePage ?? null} onPickFile={setFileId} />
+          <FilePreview sessionId={session.id} files={session.files} fileId={selFile} page={pageOverride ?? sel?.sourcePage ?? null} onPickFile={setFileId} />
         </Card>
 
         <div className={cn("min-w-0", pane !== "questions" && "hidden lg:block")}>
@@ -143,7 +160,7 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
             : (
               <>
                 <ul className="space-y-2.5">
-                  {items.map((q) => <QuestionCard key={q.id} sessionId={session.id} q={q} selected={q.id === selected} locked={locked} onSelect={() => { setSelected(q.id); setPane("questions"); }} onChanged={changed} />)}
+                  {items.map((q) => <QuestionCard key={q.id} sessionId={session.id} q={q} selected={q.id === selected} locked={locked} fileKind={q.fileId ? kinds[q.fileId] ?? null : null} onSelect={() => { setSelected(q.id); setPane("questions"); }} onChanged={changed} onOpenPage={openPage} />)}
                 </ul>
                 {(list.data?.pages ?? 1) > 1 && (
                   <nav className="mt-4 flex items-center justify-center gap-3" aria-label="Sahifalar">

@@ -82,7 +82,7 @@ async function aiJson<T>(o: { userId: string; parts?: GeminiPart[]; text?: strin
 const filePart = (f: { bytes: Uint8Array; mime: string }): GeminiPart => ({ inlineData: { mimeType: f.mime, data: Buffer.from(f.bytes).toString("base64") } });
 
 export type FileInput = { bytes: Uint8Array; mime: string };
-export type ExtractResult = { questions: ExtractedDraft[]; answerKey: { number: number; answers: string[] }[]; warnings: string[]; model: string; provider: Provider };
+export type ExtractResult = { questions: ExtractedDraft[]; answerKey: { number: number; answers: string[]; group: string | null }[]; warnings: string[]; model: string; provider: Provider };
 
 export async function classifyDocument(userId: string, f: FileInput): Promise<{ data: AiClassify; model: string; provider: Provider }> {
   if (f.bytes.length > MAX_INLINE_BYTES) throw new ApiError(413, "Fayl AI tahlili uchun juda katta (14 MB gacha). Hajmini kichraytiring yoki qismlarga bo'ling.", "too_big_for_ai");
@@ -94,20 +94,22 @@ export async function classifyText(userId: string, sample: string): Promise<{ da
   return aiJson({ userId, text: `${classifyPrompt()}\n<document>\n${sample}\n</document>`, system: SYSTEM_CLASSIFY, schema: aiClassifySchema, maxTokens: 1200, promptVersion: "import-classify-text@1" });
 }
 
-export async function extractFromFile(userId: string, f: FileInput, o: { fromPage?: number; toPage?: number; hint?: string; style?: LabelStyle; section?: number }): Promise<ExtractResult> {
+/** `excerpt`: `f` asl PDF'dan kesilgan bo'lak (fromPage..toPage); AI bergan bo'lak ichidagi sahifa raqamlari asl fayl raqamiga o'tkaziladi. */
+export async function extractFromFile(userId: string, f: FileInput, o: { fromPage?: number; toPage?: number; hint?: string; style?: LabelStyle; section?: number; excerpt?: boolean }): Promise<ExtractResult> {
   if (f.bytes.length > MAX_INLINE_BYTES) throw new ApiError(413, "Fayl AI tahlili uchun juda katta (14 MB gacha).", "too_big_for_ai");
-  const r = await aiJson({ userId, parts: [filePart(f), { text: extractFromFilePrompt(o) }], system: SYSTEM_EXTRACT, schema: aiExtractSchema, maxTokens: 16000, promptVersion: "import-extract-file@1" });
-  return { questions: normalizeAiQuestions(r.data.questions, { style: o.style, section: o.section, pageFallback: o.fromPage ? `${o.fromPage}-${o.toPage ?? o.fromPage}` : null }), answerKey: normalizeAiKey(r.data.answerKey, o.style), warnings: r.data.warnings, model: r.model, provider: r.provider };
+  const r = await aiJson({ userId, parts: [filePart(f), { text: extractFromFilePrompt(o) }], system: SYSTEM_EXTRACT, schema: aiExtractSchema, maxTokens: 16000, promptVersion: "import-extract-file@2" });
+  const pageOffset = o.excerpt && o.fromPage ? o.fromPage - 1 : 0;
+  return { questions: normalizeAiQuestions(r.data.questions, { style: o.style, section: o.section, pageOffset, pageFallback: o.fromPage ? `${o.fromPage}-${o.toPage ?? o.fromPage}` : null }), answerKey: normalizeAiKey(r.data.answerKey, o.style), warnings: r.data.warnings, model: r.model, provider: r.provider };
 }
 
-export async function extractKeyFromFile(userId: string, f: FileInput, style?: LabelStyle): Promise<{ key: { number: number; answers: string[] }[]; model: string; provider: Provider }> {
+export async function extractKeyFromFile(userId: string, f: FileInput, style?: LabelStyle, o: { fromPage?: number; toPage?: number; excerpt?: boolean } = {}): Promise<{ key: { number: number; answers: string[]; group: string | null }[]; model: string; provider: Provider }> {
   if (f.bytes.length > MAX_INLINE_BYTES) throw new ApiError(413, "Fayl AI tahlili uchun juda katta (14 MB gacha).", "too_big_for_ai");
-  const r = await aiJson({ userId, parts: [filePart(f), { text: extractKeyPrompt() }], system: SYSTEM_EXTRACT, schema: aiExtractSchema, maxTokens: 8000, promptVersion: "import-key-file@1" });
+  const r = await aiJson({ userId, parts: [filePart(f), { text: extractKeyPrompt(o) }], system: SYSTEM_EXTRACT, schema: aiExtractSchema, maxTokens: 8000, promptVersion: "import-key-file@2" });
   return { key: normalizeAiKey(r.data.answerKey, style), model: r.model, provider: r.provider };
 }
 
 export async function extractFromText(userId: string, chunk: string, o: { hint?: string; style?: LabelStyle; section?: number } = {}): Promise<ExtractResult> {
-  const r = await aiJson({ userId, text: extractFromTextPrompt(chunk, { hint: o.hint }), system: SYSTEM_EXTRACT, schema: aiExtractSchema, maxTokens: 12000, promptVersion: "import-extract-text@1" });
+  const r = await aiJson({ userId, text: extractFromTextPrompt(chunk, { hint: o.hint }), system: SYSTEM_EXTRACT, schema: aiExtractSchema, maxTokens: 12000, promptVersion: "import-extract-text@2" });
   return { questions: normalizeAiQuestions(r.data.questions, { style: o.style, section: o.section }), answerKey: normalizeAiKey(r.data.answerKey, o.style), warnings: r.data.warnings, model: r.model, provider: r.provider };
 }
 

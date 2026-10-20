@@ -2,6 +2,8 @@
 import * as React from "react";
 import { AlertTriangle, Check, ChevronDown, Eye, Pencil, Plus, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
 import { api } from "@/lib/admin-client";
+import { plainFigureText, splitFigureText } from "@/lib/figure-text";
+import { FigureCrop } from "./figure-crop";
 import { QTYPE_LABEL, REVIEW_LABEL, type QuestionRow } from "@/lib/import-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,12 +22,25 @@ export function statusBadge(q: QuestionRow) {
 }
 
 type Props = {
-  sessionId: string; q: QuestionRow; selected: boolean; locked: boolean;
-  onSelect: () => void; onChanged: (opts?: { advance?: boolean; detail?: boolean }) => void;
+  sessionId: string; q: QuestionRow; selected: boolean; locked: boolean; fileKind: string | null;
+  onSelect: () => void; onChanged: (opts?: { advance?: boolean; detail?: boolean }) => void; onOpenPage: (page: number | null) => void;
 };
 
+/** Savol matni asl ko'rinishida: qatorlar saqlanadi, rasm/jadval/formula joyi (`[[RASM:n]]`) asl joyida kesilgan rasm bilan almashadi. */
+function QuestionBody({ sessionId, q, fileKind, onOpenPage }: { sessionId: string; q: QuestionRow; fileKind: string | null; onOpenPage: (page: number | null) => void }) {
+  const pieces = React.useMemo(() => splitFigureText(q.text), [q.text]);
+  return (
+    <div className="whitespace-pre-line text-sm font-medium">
+      {pieces.map((p, i) => p.type === "text" ? <React.Fragment key={i}>{p.text}</React.Fragment>
+        : p.type === "slot" ? <FigureCrop key={i} sessionId={sessionId} fileId={q.fileId} fileKind={fileKind} fig={q.figures.find((f) => f.n === p.n) ?? null} onOpenPage={onOpenPage} />
+        // eslint-disable-next-line @next/next/no-img-element
+        : <img key={i} src={`/api/figures/${p.path}`} alt="Savoldagi rasm" className="my-2 block max-h-96 max-w-full rounded-lg border border-border bg-white object-contain" />)}
+    </div>
+  );
+}
+
 /** Bitta savol: yig'ilgan ko'rinishda qisqa, tanlanganda to'liq (variantlar, javob belgilash, tahrirlash, «To'g'ri», qayta tekshirish). Asl matn hech qachon o'zgartirilmaydi — tahrir alohida saqlanadi. */
-export function QuestionCard({ sessionId, q, selected, locked, onSelect, onChanged }: Props) {
+export function QuestionCard({ sessionId, q, selected, locked, fileKind, onSelect, onChanged, onOpenPage }: Props) {
   const toast = useToast();
   const st = statusBadge(q);
   const initial = q.answer.final?.[0] ?? q.answer.proposed?.[0] ?? q.answer.key?.[0] ?? "";
@@ -65,7 +80,7 @@ export function QuestionCard({ sessionId, q, selected, locked, onSelect, onChang
     <li className={cn("rounded-2xl border bg-card transition-colors", selected ? "border-primary shadow-soft" : "border-border hover:border-primary/40", dim && "opacity-60")}>
       <button type="button" onClick={onSelect} aria-expanded={selected} className="flex w-full items-start gap-3 rounded-2xl p-3.5 text-left">
         <span className="mt-0.5 grid h-7 min-w-7 place-items-center rounded-lg bg-muted px-1.5 text-xs font-bold">{q.number ?? q.seq + 1}</span>
-        <span className={cn("min-w-0 flex-1 text-sm", !selected && "line-clamp-2")}>{q.text}</span>
+        <span className={cn("min-w-0 flex-1 text-sm", !selected && "line-clamp-2")}>{plainFigureText(q.text)}</span>
         <Badge variant={st.tone} className="shrink-0">{st.label}</Badge>
         <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform", selected && "rotate-180")} aria-hidden />
       </button>
@@ -73,7 +88,9 @@ export function QuestionCard({ sessionId, q, selected, locked, onSelect, onChang
       {selected && (
         <div className="space-y-3 border-t border-border p-3.5">
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            {q.group && <Badge variant="blue">{q.group}</Badge>}
             <Badge variant="neutral">{QTYPE_LABEL[q.qtype] ?? q.qtype}</Badge>
+            {q.figures.length > 0 && <Badge variant="amber">Rasm bor</Badge>}
             {q.sourcePage && <span>{q.fileName} · {q.sourcePage}</span>}
             {q.topicGuess && <span>· {q.topicGuess}</span>}
             {q.edited && <Badge variant="blue">Tahrirlangan</Badge>}
@@ -106,7 +123,7 @@ export function QuestionCard({ sessionId, q, selected, locked, onSelect, onChang
             </div>
           ) : (
             <>
-              <p className="whitespace-pre-wrap text-sm font-medium">{q.text}</p>
+              <QuestionBody sessionId={sessionId} q={q} fileKind={fileKind} onOpenPage={onOpenPage} />
               {q.options.length > 0 ? (
                 <div role="radiogroup" aria-label="To'g'ri javobni tanlang" className="space-y-1.5">
                   {q.options.map((o) => {

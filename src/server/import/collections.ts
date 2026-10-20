@@ -6,6 +6,7 @@ import { audit } from "../audit";
 import { db } from "../db";
 import { notify } from "../notify";
 import { startFixedPractice } from "../practice";
+import { attachFigures, figMeta, figuresReady, removeFigures } from "./figures";
 import { FALLBACK_SUBJECT, FALLBACK_TOPIC } from "./verifylogic";
 
 /**
@@ -41,15 +42,20 @@ export const saveSchema = z.object({
 /** Tasdiqlangan savollarni shaxsiy testga saqlash. Faqat o'qituvchi «To'g'ri» deb tasdiqlagan, bitta to'g'ri javobli, to'liq savollar o'tadi. */
 export async function saveCollection(viewer: Viewer, sessionId: string, input: z.infer<typeof saveSchema>) {
   await requireVerified(viewer.id);
-  const s = await db.importSession.findFirst({ where: { id: sessionId, ownerId: viewer.id }, include: { files: { select: { id: true, fileName: true } } } });
+  const s = await db.importSession.findFirst({ where: { id: sessionId, ownerId: viewer.id }, include: { files: { select: { id: true, fileName: true, docKinds: true } } } });
   if (!s) throw new ApiError(404, "Import topilmadi.");
   if (ACTIVE_SESSION.includes(s.status)) throw new ApiError(409, "Import hali tugamagan: tugashini kuting.");
   const qs = await db.extractedQuestion.findMany({ where: { importSessionId: sessionId, userDecision: "APPROVED", ...(input.questionIds && { id: { in: input.questionIds } }) }, orderBy: { seq: "asc" }, include: { verification: true } });
-  const eligible = qs.filter((q) => {
+  const metaOf = (fid: string | null) => figMeta(s.files.find((f) => f.id === fid)?.docKinds);
+  const choiceOk = (q: (typeof qs)[number]) => {
     const v = q.verification;
     return ["SINGLE", "SITUATIONAL"].includes(q.qtype) && effOptions(q).length >= 2 && labelsOf(v?.finalAnswer).length === 1 && effOptions(q).some((o) => o.label === labelsOf(v?.finalAnswer)[0]);
-  });
-  if (!eligible.length) throw new ApiError(400, "Saqlash uchun tasdiqlangan savol yo'q: avval savollarni «To'g'ri» deb belgilang.", "nothing_to_save");
+  };
+  const textOf = (q: (typeof qs)[number]) => q.editedText ?? q.originalText;
+  // Rasm joyi bor savol faqat rasmi kesib yuklangan bo'lsa saqlanadi (aks holda savol rasmsiz buzuq bo'lib qoladi).
+  const eligible = qs.filter((q) => choiceOk(q) && figuresReady(textOf(q), q.id, metaOf(q.fileId)));
+  const waitingFigures = qs.filter((q) => choiceOk(q) && !figuresReady(textOf(q), q.id, metaOf(q.fileId))).length;
+  if (!eligible.length) throw new ApiError(400, waitingFigures ? "Tasdiqlangan savollarda rasmlar hali tayyor emas: rasmlarni tayyorlab, qayta saqlang yoki savol matnidan rasm belgisini olib tashlang." : "Saqlash uchun tasdiqlangan savol yo'q: avval savollarni «To'g'ri» deb belgilang.", waitingFigures ? "figures_pending" : "nothing_to_save");
 
   let col = input.collectionId ? await db.personalQuestionCollection.findFirst({ where: { id: input.collectionId, ownerId: viewer.id } }) : null;
   if (input.collectionId && !col) throw new ApiError(404, "Test topilmadi.");
@@ -72,8 +78,9 @@ export async function saveCollection(viewer: Viewer, sessionId: string, input: z
     const correct = labelsOf(v.finalAnswer)[0];
     const basis = ((v.providerMetadata as { basis?: string } | null)?.basis) ?? "USER_SET";
     const qid = id("pq");
+    const text = await attachFigures(textOf(q), { owner: viewer.id, sessionId, importQid: q.id, newQid: qid });
     qRows.push({
-      id: qid, topicId: q.topicId ?? input.topicId ?? fallback!, text: q.editedText ?? q.originalText, explanation: v.explanation ?? "", difficulty: (["EASY", "MEDIUM", "HARD"].includes(q.difficulty) ? q.difficulty : "MEDIUM") as "EASY" | "MEDIUM" | "HARD",
+      id: qid, topicId: q.topicId ?? input.topicId ?? fallback!, text, explanation: v.explanation ?? "", difficulty: (["EASY", "MEDIUM", "HARD"].includes(q.difficulty) ? q.difficulty : "MEDIUM") as "EASY" | "MEDIUM" | "HARD",
       status: "DRAFT", isDemo: false, source: "IMPORT", sourceRef: [fileName(q.fileId), q.sourcePage].filter(Boolean).join(" · ").slice(0, 300) || null, kind: q.qtype === "SITUATIONAL" ? "SITUATIONAL" : "CLASSIC",
       ownerId: viewer.id, collectionId: colId, collectionPos: pos++, importSourceId: q.id, answerStatus: ["VERIFIED", "USER_SET", "UNVERIFIED"].includes(basis) ? basis : "USER_SET",
     });
@@ -83,7 +90,7 @@ export async function saveCollection(viewer: Viewer, sessionId: string, input: z
   await db.personalQuestionCollection.update({ where: { id: colId }, data: { updatedAt: new Date() } });
   await db.importSession.update({ where: { id: sessionId }, data: { status: "USER_APPROVED" } });
   await audit(viewer.id, "import.save_collection", { session: sessionId, collection: colId, added: qRows.length, skipped });
-  return { collectionId: colId, added: qRows.length, skipped, notEligible: qs.length - eligible.length };
+  return { collectionId: colId, added: qRows.length, skipped, notEligible: qs.length - eligible.length, waitingFigures };
 }
 
 // ---------- ko'rinishlar ----------
@@ -181,9 +188,10 @@ async function purgeQuestions(tx: Prisma.TransactionClient, ids: string[]) {
 
 export async function removeQuestion(viewer: Viewer, colId: string, qid: string) {
   await editable(viewer.id, colId);
-  const q = await db.question.findFirst({ where: { id: qid, collectionId: colId, ownerId: viewer.id }, select: { id: true } });
+  const q = await db.question.findFirst({ where: { id: qid, collectionId: colId, ownerId: viewer.id }, select: { id: true, text: true } });
   if (!q) throw new ApiError(404, "Savol topilmadi.");
   await db.$transaction((tx) => purgeQuestions(tx, [qid]), TX);
+  await removeFigures([q.text], viewer.id);
   return { ok: true as const };
 }
 
@@ -198,8 +206,10 @@ export async function updateCollection(viewer: Viewer, colId: string, patch: z.i
 export async function deleteCollection(viewer: Viewer, colId: string) {
   const c = await ownCollection(viewer.id, colId);
   if (c.status === "SUBMITTED_TO_ADMIN") throw new ApiError(409, "Test admin ko'rib chiqishida: avval yuborishni qaytarib oling.");
-  const ids = (await db.question.findMany({ where: { collectionId: colId, ownerId: viewer.id }, select: { id: true } })).map((q) => q.id);
+  const rows = await db.question.findMany({ where: { collectionId: colId, ownerId: viewer.id }, select: { id: true, text: true } });
+  const ids = rows.map((q) => q.id);
   await db.$transaction(async (tx) => { await purgeQuestions(tx, ids); await tx.personalQuestionCollection.delete({ where: { id: colId } }); }, TX);
+  await removeFigures(rows.map((q) => q.text), viewer.id);
   await audit(viewer.id, "import.delete_collection", { collection: colId, questions: ids.length });
   return { ok: true as const };
 }
