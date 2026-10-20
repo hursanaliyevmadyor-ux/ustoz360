@@ -102,7 +102,7 @@ function Workspace({ session, reload }: { session: SessionView; reload: () => vo
       )}
 
       {session.status === "NEEDS_REVIEW" && session.aiBlocked && (
-        <p role="status" className="flex items-start gap-2 rounded-xl bg-amber/10 p-3 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber" aria-hidden /><span>{session.aiBlocked} Ajratilgan savollar saqlandi: limit yangilangach «Hammasini qayta tekshirish»ni bosing.</span></p>
+        <p role="status" className="flex items-start gap-2 rounded-xl bg-amber/10 p-3 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber" aria-hidden /><span>{session.aiBlocked} Savollar saqlandi va fayldagi kalit bo'yicha ko'rib chiqildi. AI tayyor bo'lgach «Hammasini qayta tekshirish»ni bosing.</span></p>
       )}
       {!active && session.warnings.length > 0 && (
         <details className="rounded-xl border border-border bg-card p-3 text-sm">

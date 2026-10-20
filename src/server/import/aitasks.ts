@@ -48,7 +48,8 @@ async function aiJson<T>(o: { userId: string; parts?: GeminiPart[]; text?: strin
     try {
       for (let attempt = 0; attempt < 2; attempt++) {
         const extra: GeminiPart[] = attempt === 0 ? [] : [{ text: "Your previous answer was not valid JSON for the required shape. Return ONLY the JSON object." }];
-        const r = await runGeminiJson({ userId: o.userId, parts: [...parts, ...extra], system: o.system, maxTokens: o.maxTokens, heavy: o.heavy, promptVersion: o.promptVersion });
+        // Matnli so'rovlar tez bo'lishi kerak (foydalanuvchi kutib qolmasligi uchun); fayl tahlili uzoqroq vaqt oladi.
+        const r = await runGeminiJson({ userId: o.userId, parts: [...parts, ...extra], system: o.system, maxTokens: o.maxTokens, heavy: o.heavy, promptVersion: o.promptVersion, ...(o.parts ? {} : { timeoutMs: 25_000 }) });
         const p = parseStructured(r.text, o.schema);
         if (p.ok) return { data: p.data, model: r.model, provider: "gemini" };
         lastErr = new ApiError(502, `AI javobi kutilgan formatda emas (${p.error}).`);
@@ -61,12 +62,17 @@ async function aiJson<T>(o: { userId: string; parts?: GeminiPart[]; text?: strin
   }
   if (textOnly && aiAvailable().any) {
     const system = o.system;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const msgs = [{ role: "user" as const, content: attempt === 0 ? `${textOnly}\n\nReturn ONLY one JSON object.` : `${textOnly}\n\nYour previous answer was not valid JSON for the required shape. Return ONLY the JSON object.` }];
-      const r = await runAnyAi({ userId: o.userId, feature: "verify", messages: msgs, system, maxTokens: Math.min(o.maxTokens, 6000), promptVersion: o.promptVersion, knowledge: false });
-      const p = parseStructured(r.text, o.schema);
-      if (p.ok) return { data: p.data, model: r.model, provider: r.provider ? "free" : "claude" };
-      lastErr = new ApiError(502, `AI javobi kutilgan formatda emas (${p.error}).`);
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const msgs = [{ role: "user" as const, content: attempt === 0 ? `${textOnly}\n\nReturn ONLY one JSON object.` : `${textOnly}\n\nYour previous answer was not valid JSON for the required shape. Return ONLY the JSON object.` }];
+        const r = await runAnyAi({ userId: o.userId, feature: "verify", messages: msgs, system, maxTokens: Math.min(o.maxTokens, 6000), promptVersion: o.promptVersion, knowledge: false });
+        const p = parseStructured(r.text, o.schema);
+        if (p.ok) return { data: p.data, model: r.model, provider: r.provider ? "free" : "claude" };
+        lastErr = new ApiError(502, `AI javobi kutilgan formatda emas (${p.error}).`);
+      }
+    } catch (e) {
+      // Birinchi (asosiy) xizmat sababi aniqroq va foydali (masalan, kalit yoki model noto'g'ri): shuni ko'rsatamiz.
+      if (!lastErr) throw e;
     }
   }
   if (lastErr instanceof ApiError) throw lastErr;
