@@ -3,7 +3,7 @@ import { ApiError } from "./auth";
 import { db } from "./db";
 import { aiConfigured, freeConfigured } from "./ai/gateway";
 import {
-  DB_MODE, ENGINE_MODES, KIND_LABEL, LABELS, MASTERY_HINT, MASTERY_LABEL, allocate, defaultCount, headline, masteryState, nextStep, parseConfig, policyOf,
+  DB_MODE, ENGINE_MODES, LABELS, MASTERY_HINT, MASTERY_LABEL, allocate, defaultCount, headline, labelOf, masteryState, nextStep, parseConfig, policyOf,
   skillStats, summarizeTopics, weakWeight, type Kind, type PracticeConfig, type StartInput, type TopicStat,
 } from "./practicelogic";
 import { confidenceFor, groupByTopic, nextReview, shuffle } from "./scoring";
@@ -93,7 +93,7 @@ export async function activePractice(userId: string) {
 
 export async function topicsData(userId: string) {
   const [subjects, groups, last] = await Promise.all([
-    db.subject.findMany({ include: { topics: { orderBy: { name: "asc" } } }, orderBy: { name: "asc" } }),
+    db.subject.findMany({ where: { slug: { not: "shaxsiy-testlar" } }, include: { topics: { orderBy: { name: "asc" } } }, orderBy: { name: "asc" } }),
     db.question.groupBy({ by: ["topicId", "difficulty", "kind"], where: { status: "APPROVED" }, _count: { _all: true } }),
     db.testSession.findFirst({ where: engineWhere(userId), orderBy: { startedAt: "desc" }, select: { config: true } }),
   ]);
@@ -192,12 +192,7 @@ export async function startPractice(userId: string, input: StartInput) {
     skills: input.skills ?? [], answers: {}, flags: {},
   };
 
-  // Faqat eng so'nggi mashq davom ettiriladi. Eskilari yopiladi; yakunda tekshiriladigan testda saqlangan javoblar yo'qolmasligi uchun baholanadi.
-  const old = await db.testSession.findMany({ where: { ...engineWhere(userId), status: "IN_PROGRESS" } });
-  for (const o of old) {
-    if (parseConfig(o.config).policy === "deferred" && Object.keys(parseConfig(o.config).answers).length > 0) await gradeDeferred(o);
-    else await db.testSession.updateMany({ where: { id: o.id, status: "IN_PROGRESS" }, data: { status: "EXPIRED" } });
-  }
+  await closeOldSessions(userId);
   const s = await db.testSession.create({
     data: {
       userId, mode: DB_MODE[kind], questionIds: ids, config: asJson(cfg),
@@ -205,6 +200,36 @@ export async function startPractice(userId: string, input: StartInput) {
     },
   });
   return { id: s.id, count: ids.length, requested, short: ids.length < requested };
+}
+
+/** Faqat eng so'nggi mashq davom ettiriladi. Eskilari yopiladi; yakunda tekshiriladigan testda saqlangan javoblar yo'qolmasligi uchun baholanadi. */
+async function closeOldSessions(userId: string) {
+  const old = await db.testSession.findMany({ where: { ...engineWhere(userId), status: "IN_PROGRESS" } });
+  for (const o of old) {
+    if (parseConfig(o.config).policy === "deferred" && Object.keys(parseConfig(o.config).answers).length > 0) await gradeDeferred(o);
+    else await db.testSession.updateMany({ where: { id: o.id, status: "IN_PROGRESS" }, data: { status: "EXPIRED" } });
+  }
+}
+
+/**
+ * Oldindan tanlangan savollar bilan sessiya (shaxsiy testlar, aqlli import): mavjud dvigatel, javob yozish va natija qoidalari o'zgarishsiz ishlaydi.
+ * Savollar `Question` jadvalida bo'lgani uchun alohida dvigatel yaratilmaydi. Tasdiqlanmagan (DRAFT) savollar mavzu bilimi va xatolar daftariga ta'sir qilmaydi.
+ */
+export async function startFixedPractice(userId: string, o: { kind: Kind; ids: string[]; topicIds?: string[]; durationMin?: number | null; personal: NonNullable<PracticeConfig["personal"]> }) {
+  if (o.ids.length === 0) throw new ApiError(404, "Testda savollar yo'q.");
+  const options = await db.answerOption.findMany({ where: { questionId: { in: o.ids } }, select: { id: true, questionId: true } });
+  const order: Record<string, string[]> = {};
+  for (const id of o.ids) order[id] = shuffle(options.filter((x) => x.questionId === id).map((x) => x.id));
+  const durationSec = o.durationMin ? o.durationMin * 60 : null;
+  const cfg: PracticeConfig = {
+    v: 1, kind: o.kind, topicIds: o.topicIds ?? [], difficulty: "MIXED", requested: o.ids.length, order, hints: {}, reinforce: {},
+    policy: policyOf(o.kind), durationSec, variant: null, distribution: null, skills: [], answers: {}, flags: {}, personal: o.personal,
+  };
+  await closeOldSessions(userId);
+  const s = await db.testSession.create({
+    data: { userId, mode: DB_MODE[o.kind], questionIds: o.ids, config: asJson(cfg), expiresAt: new Date(Date.now() + (durationSec ? durationSec * 1000 + GRACE : 7 * DAY)) },
+  });
+  return { id: s.id, kind: o.kind, count: o.ids.length };
 }
 
 // ---------- Ko'rinish (davom ettirish uchun ham) ----------
@@ -256,7 +281,7 @@ export async function practiceView(userId: string, id: string) {
   const now = Date.now();
   const endsAt = cfg.durationSec ? s.startedAt.getTime() + cfg.durationSec * 1000 : null;
   return {
-    id: s.id, kind: cfg.kind, kindLabel: KIND_LABEL[cfg.kind], policy: cfg.policy, status: s.status, total: items.length, answered,
+    id: s.id, kind: cfg.kind, kindLabel: labelOf(cfg), personal: cfg.personal ?? null, policy: cfg.policy, status: s.status, total: items.length, answered,
     score: items.filter((i) => i.answer?.isCorrect).length, aiAvailable: aiOn(), items,
     // Taymer server vaqti bo'yicha: mijoz faqat qolgan soniyalarni ko'rsatadi.
     timer: endsAt ? { durationSec: cfg.durationSec, remainingSec: Math.max(0, Math.round((endsAt - now) / 1000)) } : null,
@@ -478,7 +503,7 @@ export async function practiceResult(userId: string, id: string) {
   }));
   const spent = s.submittedAt ? Math.max(0, Math.round((s.submittedAt.getTime() - s.startedAt.getTime()) / 1000)) : null;
   return {
-    id: s.id, kind: cfg.kind, kindLabel: KIND_LABEL[cfg.kind], policy: cfg.policy, status: s.status, score, total, answered, percent, skipped: Math.max(0, ids.length - answered),
+    id: s.id, kind: cfg.kind, kindLabel: labelOf(cfg), personal: cfg.personal ?? null, policy: cfg.policy, status: s.status, score, total, answered, percent, skipped: Math.max(0, ids.length - answered),
     // Savol soni kam bo'lsa, natija taxminiy ekanini ochiq aytamiz.
     approximate: total < 8, headline: headline(percent), topics: stats, skills, ...summarizeTopics(stats), wrong, next: nextStep(stats, wrong.length, skills),
     timing: { spentSec: spent, limitSec: cfg.durationSec, timedOut: !!(cfg.durationSec && spent !== null && spent >= cfg.durationSec) },
@@ -512,7 +537,7 @@ export async function practiceHistory(userId: string, f: HistoryFilter = {}) {
     const cfg = diag ? null : parseConfig(s.config);
     const kind = diag ? "diagnostic" : cfg!.kind;
     return {
-      id: s.id, kind, kindLabel: diag ? "Diagnostika" : KIND_LABEL[cfg!.kind], status: s.status, at: s.startedAt,
+      id: s.id, kind, kindLabel: diag ? "Diagnostika" : labelOf(cfg!), status: s.status, at: s.startedAt,
       score: s.score ?? 0, total: s.total ?? (s.questionIds as string[]).length, answered: answered.get(s.id) ?? 0,
       topics: [...(topics.get(s.id) ?? [])], subjects: [...(subjects.get(s.id) ?? [])],
       spentSec: s.submittedAt ? Math.round((s.submittedAt.getTime() - s.startedAt.getTime()) / 1000) : null,
@@ -545,7 +570,7 @@ export async function errorsProgress(userId: string) {
 // ---------- Bilim xaritasi 2.0 ----------
 export async function knowledgeMap(userId: string) {
   const [topics, mastery, cards, nonEasy] = await Promise.all([
-    db.topic.findMany({ include: { subject: { select: { name: true } } }, orderBy: { name: "asc" } }),
+    db.topic.findMany({ where: { subject: { slug: { not: "shaxsiy-testlar" } } }, include: { subject: { select: { name: true } } }, orderBy: { name: "asc" } }),
     db.topicMastery.findMany({ where: { userId } }),
     db.errorCard.findMany({ where: { userId, mastered: false }, select: { question: { select: { topicId: true } } } }),
     db.userAnswer.findMany({ where: { session: { userId }, isCorrect: true, question: { difficulty: { in: ["MEDIUM", "HARD"] } } }, select: { question: { select: { topicId: true } } } }),

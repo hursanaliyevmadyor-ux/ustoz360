@@ -94,6 +94,8 @@ export const configSchema = z.object({
   answers: z.record(z.string(), z.object({ o: z.string(), t: z.number() })).default({}),
   /** Belgilab qo'yilgan savollar. */
   flags: z.record(z.string(), z.boolean()).default({}),
+  /** Shaxsiy test (aqlli import) bo'yicha sessiya: to'plam, nom va tur (UI sarlavhasi va tarix uchun). Boshqa rejimlarda yo'q. */
+  personal: z.object({ collectionId: z.string(), title: z.string(), mode: z.enum(["practice", "test", "diagnostic"]) }).optional(),
   /** asosiy savol id -> "Tushundimmi?" qo'shimcha savoli va natijasi */
   reinforce: z.record(z.string(), z.object({
     questionId: z.string(),
@@ -114,6 +116,9 @@ export const KIND_LABEL: Record<Kind, string> = {
   quick: "Tezkor mashq", topic: "Mavzuli mashq", errors: "Xatolar testi", ai: "AI bilan o'rganish",
   timed: "Vaqtli test", topictest: "Mavzuli test", mixed: "Aralash test", situational: "Murakkab vaziyatli test",
 };
+export const PERSONAL_LABEL = { practice: "Shaxsiy mashq", test: "Shaxsiy test", diagnostic: "Shaxsiy diagnostika" } as const;
+/** Sessiya sarlavhasi: shaxsiy test bo'lsa uning turi, aks holda dvigatel rejimi. */
+export const labelOf = (cfg: { kind: Kind; personal?: { mode: keyof typeof PERSONAL_LABEL } }) => (cfg.personal ? PERSONAL_LABEL[cfg.personal.mode] : KIND_LABEL[cfg.kind]);
 
 // ---------- Bilim xaritasi 2.0 ----------
 export type MasteryState = "NEW" | "LEARNING" | "REINFORCING" | "STABLE";

@@ -19,7 +19,7 @@ export async function adminStats() {
     db.user.count({ where: { deletedAt: null } }),
     db.user.count({ where: { createdAt: { gte: week }, deletedAt: null } }),
     db.userRole.groupBy({ by: ["role"], _count: true }),
-    db.question.groupBy({ by: ["status"], _count: true }),
+    db.question.groupBy({ by: ["status"], where: { collectionId: null }, _count: true }),
     db.exam.count({ where: { active: true } }),
     db.examAttempt.count(),
     db.testSession.count({ where: { startedAt: { gte: monthAgo } } }),
