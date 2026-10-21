@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { BookMarked, CheckCheck, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { BookMarked, CheckCheck, ChevronLeft, ChevronRight, KeyRound, RefreshCw } from "lucide-react";
 import { api } from "@/lib/admin-client";
 import { useQuery } from "@/lib/use-query";
 import type { QuestionDetail, QuestionList, SessionView } from "@/lib/import-client";
@@ -38,6 +38,7 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
   const [detailTick, setDetailTick] = React.useState(0);
   const [saveOpen, setSaveOpen] = React.useState(false);
   const [bulk, setBulk] = React.useState(false);
+  const [keying, setKeying] = React.useState(false);
   const [rechecking, setRechecking] = React.useState(false);
   const [section, setSection] = React.useState("");
   const [pageOverride, setPageOverride] = React.useState<string | null>(null);
@@ -74,6 +75,19 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
     setBulk(false);
     if (!r.ok) { toast("error", r.error); return; }
     toast("success", r.data.confirmed ? `${r.data.confirmed} ta tayyor savol qabul qilindi.` : "Qabul qilinadigan tayyor savol qolmadi.");
+    changed();
+  };
+  /** Javoblar kaliti savol raqamiga qarab moslashgan: kalitdagi javoblar birdan «To'g'ri» deb belgilanadi (ziddiyatli va noaniq savollar o'tkazib yuboriladi). */
+  const confirmKey = async () => {
+    if (!window.confirm(`Fayldagi javoblar kaliti savol raqamiga qarab ${c.withKey} ta savolga moslashgan. Kalitdagi javoblar «To'g'ri» deb belgilanadi; ziddiyatli yoki noaniq o'qilgan savollar o'tkazib yuboriladi. Davom etamizmi?`)) return;
+    setKeying(true);
+    const r = await api<{ confirmed: number; skipped: { conflict: number; uncertain: number; unsupported: number; other: number }; total: number }>(`/api/import/${session.id}/questions/confirm-key`, "POST");
+    setKeying(false);
+    if (!r.ok) { toast("error", r.error); return; }
+    const sk = r.data.skipped, skippedN = sk.conflict + sk.uncertain + sk.unsupported + sk.other;
+    toast(r.data.confirmed ? "success" : "info", r.data.confirmed
+      ? `${r.data.confirmed} ta savolning javobi kalit bo'yicha belgilandi.${skippedN ? ` ${skippedN} tasi o'tkazib yuborildi (ziddiyat yoki noaniq): ularni o'zingiz ko'rib chiqing.` : ""}`
+      : "Kalit bo'yicha belgilanadigan savol qolmadi (hammasi qaror qilingan yoki ko'rib chiqishni talab qiladi).");
     changed();
   };
   const recheckAll = async () => {
@@ -119,6 +133,7 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
       <div className="flex flex-wrap items-center gap-2">
         <Button disabled={locked || c.approved === 0} onClick={() => setSaveOpen(true)}><BookMarked className="h-4 w-4" aria-hidden />Testga saqlash{c.approved > 0 ? ` (${c.approved})` : ""}</Button>
         <Button variant="outline" disabled={locked || c.ready === 0} loading={bulk} onClick={confirmReady}><CheckCheck className="h-4 w-4" aria-hidden />Tayyorlarini qabul qilish</Button>
+        {c.withKey > 0 && <Button variant="outline" disabled={locked} loading={keying} onClick={confirmKey}><KeyRound className="h-4 w-4" aria-hidden />Kalit bo&apos;yicha belgilash ({c.withKey})</Button>}
         <Button variant="ghost" disabled={locked} loading={rechecking} onClick={recheckAll}><RefreshCw className="h-4 w-4" aria-hidden />Hammasini qayta tekshirish</Button>
         {c.removed > 0 && <Button variant="ghost" size="sm" onClick={() => setF(filter === "removed" ? "all" : "removed")}>{filter === "removed" ? "Hammasiga qaytish" : `Olib tashlanganlar (${c.removed})`}</Button>}
       </div>
