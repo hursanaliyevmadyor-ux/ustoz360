@@ -31,6 +31,17 @@ export function FigureCrop({ sessionId, fileId, fileKind, fig, onOpenPage }: { s
   }, [ok, sessionId, fileId, fileKind, page, boxKey]);
 
   const label = KIND[fig?.kind ?? "figure"] ?? "Rasm";
+  // DOCX ichidagi rasm: fayldan olinib saqlangan, o'z joyida ko'rsatiladi
+  if (fig?.src) {
+    return (
+      <span className="my-2 block rounded-xl border border-dashed border-primary/40 bg-primary/5 p-2">
+        {/* Himoyalangan rasm: next/image sozlamalarisiz oddiy <img>. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`/api/figures/${fig.src}`} alt="Savoldagi rasm (asl fayldan)" loading="lazy" className="mx-auto block max-h-96 max-w-full rounded-lg bg-white object-contain" />
+        <span className="mt-1 block text-xs text-muted-foreground">Rasm · asl fayldagi joyida</span>
+      </span>
+    );
+  }
   return (
     <span className="my-2 block rounded-xl border border-dashed border-primary/40 bg-primary/5 p-2">
       {url ? (
