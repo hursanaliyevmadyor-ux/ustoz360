@@ -17,7 +17,7 @@ import { checkArithmetic } from "./mathcheck";
 import { extractOfficeText, type Page } from "./officetext";
 import type { VerifyItem } from "./prompts";
 import { classifyPages, parseQuestions, type QType } from "./qparse";
-import { contentHash, decide, matchKeys, matchTopic, normGroup, type Confidence } from "./verifylogic";
+import { contentHash, decide, matchKeys, matchTopic, normGroup, numbersForKey, type Confidence } from "./verifylogic";
 
 /**
  * Asinxron import jarayoni (docs/SMART-IMPORT.md). Yuklash va qayta ishlash ajratilgan: har bir `advanceImport` chaqiruvi BITTA cheklangan ish
@@ -364,7 +364,9 @@ async function stepKeys(userId: string, sessionId: string, files: ImportFile[], 
     const keyFile = !own.length ? afiles[sep++] : undefined;
     const entries = own.length ? own : keyFile ? meta(keyFile).key ?? [] : [];
     const groups = meta(f).groups;
-    const km = matchKeys(mine.map((q) => ({ number: q.number, section: q.section, group: groups?.[q.section % 1000] ?? null, inlineAnswer: q.verification?.keySource === "INLINE" ? (q.verification.keyAnswer as string[] | null) : null })), entries);
+    // Savol raqamlari ko'rinmasa bo'limdagi tartib raqami bo'yicha moslanadi.
+    const nums = numbersForKey(mine);
+    const km = matchKeys(mine.map((q, i) => ({ number: nums[i], section: q.section, group: groups?.[q.section % 1000] ?? null, inlineAnswer: q.verification?.keySource === "INLINE" ? (q.verification.keyAnswer as string[] | null) : null })), entries);
     for (let i = 0; i < mine.length; i++) {
       const k = km[i], q = mine[i];
       // Izoh: kalit yozuvidagi izoh, bo'lmasa savol yonidagi izoh (yaratilganda saqlangan) qoladi.

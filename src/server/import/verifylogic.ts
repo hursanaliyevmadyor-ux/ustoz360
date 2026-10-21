@@ -92,6 +92,33 @@ export function decide(i: DecideInput): Decision {
   return dec("NOT_FOUND", "NO_ANSWER", "NONE", null, null, NOT_VERIFIED_TEXT);
 }
 
+// ---------- «Kalit bo'yicha belgilash» ----------
+export type KeyMarkInput = { reviewStatus: string; ocrUncertain: boolean; options: Opt[]; keyAnswer: string[] | null; keyConflict?: string | null; verificationStatus: string | null; proposedAnswer: string[] | null };
+export type KeyMark = { mark: true; label: string; independent: boolean } | { mark: false; reason: "conflict" | "uncertain" | "nokey" | "unsupported" | "notready" };
+
+/**
+ * Javoblar kaliti raqam bo'yicha savolga moslashgan bo'lsa, kalitdagi javob «To'g'ri» deb belgilanadi. O'tkazib yuboriladi: kalit bilan AI/savol yonidagi javob
+ * ziddiyatli, matn noaniq o'qilgan (OCR), savol to'liq emas yoki turi qo'llab-quvvatlanmaydi, kalitda bitta aniq variant yo'q yoki savolda bunday variant yo'q.
+ * `independent`: kalitni mustaqil tekshiruv (hisob/AI) ham tasdiqlagan bo'lsa true (savol «tasdiqlangan» asosda saqlanadi).
+ */
+export function keyMark(i: KeyMarkInput): KeyMark {
+  if (i.reviewStatus === "CONFLICT" || i.keyConflict) return { mark: false, reason: "conflict" };
+  if (i.reviewStatus === "INCOMPLETE" || i.reviewStatus === "UNSUPPORTED") return { mark: false, reason: "unsupported" };
+  if (i.reviewStatus !== "READY" && i.reviewStatus !== "NEEDS_REVIEW") return { mark: false, reason: "notready" };
+  if (i.ocrUncertain) return { mark: false, reason: "uncertain" };
+  const k = i.keyAnswer;
+  if (!k || k.length !== 1 || !i.options.some((o) => o.label === k[0])) return { mark: false, reason: "nokey" };
+  return { mark: true, label: k[0], independent: i.verificationStatus === "CONFIRMED" && !!i.proposedAnswer?.includes(k[0]) };
+}
+
+/** Savol raqamlari ko'rinmasa (avtoraqamlash yo'qolgan): bo'limdagi hamma savolda raqam yo'q bo'lsa, shu bo'limda tartib raqami (1, 2, 3...) olinadi; aks holda asl raqam. */
+export function numbersForKey(qs: { number: number | null; section: number }[]): (number | null)[] {
+  const none = new Map<number, boolean>();
+  for (const q of qs) none.set(q.section, (none.get(q.section) ?? true) && q.number === null);
+  const pos = new Map<number, number>();
+  return qs.map((q) => { if (q.number !== null || !none.get(q.section)) return q.number; const k = (pos.get(q.section) ?? 0) + 1; pos.set(q.section, k); return k; });
+}
+
 // ---------- kalitni savollarga bog'lash ----------
 /** explanation: kalit yozuvida javob yonida berilgan izoh (bo'lsa). */
 export type KeyMatch = { key: string[] | null; keySource: "INLINE" | "SEPARATE_FILE" | null; conflict?: string; explanation?: string };

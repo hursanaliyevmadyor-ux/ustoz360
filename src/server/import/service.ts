@@ -11,6 +11,7 @@ import { detectImportKind, KIND_LABEL, maxImportBytes, MAX_FILES_PER_SESSION, MA
 import { parsePageSpec } from "./chunking";
 import { pdfPageCount } from "./pdfslice";
 import { queueRecheck, type Progress } from "./pipeline";
+import { keyMark } from "./verifylogic";
 import type { Page } from "./officetext";
 
 /** Foydalanuvchi bilan ishlaydigan import amallari: sessiya, fayl, savollarni ko'rib chiqish (docs/SMART-IMPORT.md). Barcha amallar egasi bo'yicha cheklangan. */
@@ -413,6 +414,30 @@ export async function confirmAllReady(viewer: Viewer, id: string) {
     n++;
   }
   return { confirmed: n };
+}
+
+/**
+ * «Kalit bo'yicha belgilash»: javoblar kaliti raqam bo'yicha moslashgan, hali qaror qilinmagan savollarga kalitdagi javob «To'g'ri» deb belgilanadi
+ * (o'qituvchining bir marta bosgan tugmasi bilan). Ziddiyatli, noaniq o'qilgan, to'liq bo'lmagan savollar o'tkazib yuboriladi: ularni o'zingiz ko'rib chiqasiz.
+ */
+export async function confirmByKey(viewer: Viewer, id: string) {
+  await own(viewer.id, id);
+  const rows = await db.extractedQuestion.findMany({ where: { importSessionId: id, userDecision: null, verification: { is: { keySource: { not: null } } } }, include: { verification: true } });
+  const skipped = { conflict: 0, uncertain: 0, unsupported: 0, other: 0 };
+  let confirmed = 0;
+  for (const q of rows) {
+    const v = q.verification!;
+    const meta = (v.providerMetadata ?? {}) as Record<string, unknown>;
+    const r = keyMark({ reviewStatus: q.reviewStatus, ocrUncertain: q.ocrUncertain, options: effOptions(q), keyAnswer: labelsOf(v.keyAnswer), keyConflict: typeof meta.keyConflict === "string" ? meta.keyConflict : null, verificationStatus: v.verificationStatus, proposedAnswer: labelsOf(v.proposedAnswer) });
+    if (!r.mark) { if (r.reason === "conflict") skipped.conflict++; else if (r.reason === "uncertain") skipped.uncertain++; else if (r.reason === "unsupported") skipped.unsupported++; else skipped.other++; continue; }
+    await db.answerVerification.update({
+      where: { questionId: q.id },
+      data: { finalAnswer: [r.label], verificationStatus: r.independent ? "CONFIRMED" : "USER_CONFIRMED", providerMetadata: asJson({ ...meta, basis: r.independent ? "VERIFIED" : "USER_SET", confirmedAt: new Date().toISOString(), byKey: true }) },
+    });
+    await db.extractedQuestion.update({ where: { id: q.id }, data: { userDecision: "APPROVED" } });
+    confirmed++;
+  }
+  return { confirmed, skipped, total: rows.length };
 }
 
 export async function setDecision(viewer: Viewer, id: string, qid: string, decision: "REMOVED" | null) {
