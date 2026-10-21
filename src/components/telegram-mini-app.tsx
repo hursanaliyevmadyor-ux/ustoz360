@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { usePathname } from "next/navigation";
+import { BookLoader } from "@/components/book-loader";
 
 /**
  * Telegram Mini App: sayt bot ichida ochilganda (Telegram initData bergan bo'lsa) foydalanuvchi o'zi kiradi, ilova to'liq ekranga
@@ -68,9 +69,8 @@ export function TelegramMiniApp() {
     <div role={state.s === "error" ? "alert" : "status"} className="fixed inset-0 z-[100] grid place-items-center bg-background p-6 text-center">
       {state.s === "auth" ? (
         <div className="space-y-3">
-          <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-primary/20 border-t-primary" aria-hidden />
           <p className="font-bold">USTOZ 360</p>
-          <p className="text-sm text-muted-foreground">Kirilmoqda…</p>
+          <BookLoader variant={2} size="lg" label="Kirilmoqda…" />
         </div>
       ) : (
         <div className="max-w-xs space-y-4">
