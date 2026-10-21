@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { canonLabel, type LabelStyle } from "./keyparse";
+import { canonLabel, cleanNote, type LabelStyle } from "./keyparse";
 import type { DraftQuestion, Opt, QType } from "./qparse";
 
 /**
@@ -27,10 +27,12 @@ export const aiQuestionSchema = z.object({
   subject: optString, topic: optString, grade: optString, difficulty: optString,
   uncertain: z.boolean().nullable().optional(),
   note: optString,
+  /** Faylda savol javobi yonida berilgan izoh/yechim (bor bo'lsa). */
+  explanation: optString,
 });
 export type AiQuestion = z.infer<typeof aiQuestionSchema>;
 
-export const aiKeyItem = z.object({ number: z.union([z.number(), z.string()]), answer: z.union([z.array(z.string()), z.string()]), group: optString });
+export const aiKeyItem = z.object({ number: z.union([z.number(), z.string()]), answer: z.union([z.array(z.string()), z.string()]), group: optString, explanation: optString });
 
 /**
  * Savoldagi rasm/jadval/formula joyi. `box`: [ymin, xmin, ymax, xmax], sahifaning 0..1000 me'yorlashtirilgan koordinatalari (yuqori-chap burchakdan).
@@ -148,7 +150,7 @@ export function normalizeAiQuestions(items: AiQuestion[], opts: { pageFallback?:
     for (const f of figures) if (!new RegExp(`\\[\\[RASM:${f.n}\\]\\]`).test(qtext)) qtext += `\n[[RASM:${f.n}]]`;
     out.push({
       number: toNum(it.number), text: qtext, options, page, section: opts.section ?? 0, qtype, inlineAnswer: ans.length ? ans : null, incomplete,
-      note: it.note ? clean(it.note) : undefined,
+      note: it.note ? clean(it.note) : undefined, ...(it.explanation && clean(it.explanation) ? { explanation: cleanNote(it.explanation) } : {}),
       subject: it.subject ? clean(it.subject) : null, topic: it.topic ? clean(it.topic) : null, grade: it.grade ? clean(it.grade) : null,
       difficulty: normalizeDifficulty(it.difficulty), uncertain: !!it.uncertain || figures.some((f) => f.kind === "unreadable"),
       group: cleanGroup(it.group), figures,
@@ -160,8 +162,13 @@ export function normalizeAiQuestions(items: AiQuestion[], opts: { pageFallback?:
 /** Test/bo'lim sarlavhasi: ortiqcha belgilar tozalanadi, juda uzun bo'lsa qisqartiriladi. */
 export const cleanGroup = (g: unknown): string | null => { const s = typeof g === "string" ? clean(g).replace(/^[\s:.\-–—]+|[\s:.\-–—]+$/g, "").slice(0, 120) : ""; return s || null; };
 
-export function normalizeAiKey(items: z.infer<typeof aiKeyItem>[], style: LabelStyle = "latin"): { number: number; answers: string[]; group: string | null }[] {
-  const out: { number: number; answers: string[]; group: string | null }[] = [];
-  for (const k of items) { const n = toNum(k.number); const a = labelsOf(k.answer, style); if (n && a.length) out.push({ number: n, answers: a, group: cleanGroup(k.group) }); }
+export type AiKeyOut = { number: number; answers: string[]; group: string | null; explanation?: string };
+export function normalizeAiKey(items: z.infer<typeof aiKeyItem>[], style: LabelStyle = "latin"): AiKeyOut[] {
+  const out: AiKeyOut[] = [];
+  for (const k of items) {
+    const n = toNum(k.number); const a = labelsOf(k.answer, style);
+    const ex = k.explanation ? cleanNote(k.explanation) : "";
+    if (n && a.length) out.push({ number: n, answers: a, group: cleanGroup(k.group), ...(ex ? { explanation: ex } : {}) });
+  }
   return out;
 }

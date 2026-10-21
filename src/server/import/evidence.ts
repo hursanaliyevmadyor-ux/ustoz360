@@ -67,6 +67,8 @@ export type EvidenceInput = {
   computed: { expression: string; value: number } | null;
   aiExplanation: string | null; aiModel: string | null;
   ctx: Evidence[];
+  /** Faylda javob yonida berilgan izoh (kalitdagi yoki savol yonidagi): dalil emas, faqat fayldagi ma'lumot. */
+  keyExplanation?: string | null;
 };
 
 /** Savol uchun «Javobni qanday aniqladik?» dalillari ro'yxati. */
@@ -76,6 +78,7 @@ export function buildEvidence(i: EvidenceInput): Evidence[] {
   if (i.key) out.push(i.keySource === "SEPARATE_FILE"
     ? { type: "SEPARATE_KEY", title: i.keyFileName ? `Alohida javoblar kaliti: ${i.keyFileName}` : "Fayl ichidagi javoblar kaliti (ro'yxat)", note: `Kalitda: ${i.key.join(", ")}. Bu tekshirilgan haqiqat emas, faqat fayldagi ma'lumot.` }
     : { type: "FILE_KEY", title: "Fayldagi javob belgisi / kalit", page: i.page ?? undefined, note: `Faylda: ${i.key.join(", ")}. Bu tekshirilgan haqiqat emas, faqat fayldagi ma'lumot.` });
+  if (i.keyExplanation) out.push({ type: i.keySource === "SEPARATE_FILE" ? "SEPARATE_KEY" : "FILE_KEY", title: "Fayldagi izoh", quote: i.keyExplanation, note: "Muallifning izohi: tekshirilgan haqiqat emas, faqat fayldagi ma'lumot." });
   if (i.computed) out.push({ type: "COMPUTED", title: "Hisoblab tekshirildi", note: `${i.computed.expression} = ${i.computed.value}` });
   out.push(...i.ctx);
   if (i.aiExplanation) out.push({ type: "AI", title: "AI izohi", note: i.aiModel ? `Model: ${i.aiModel}` : undefined, quote: i.aiExplanation });

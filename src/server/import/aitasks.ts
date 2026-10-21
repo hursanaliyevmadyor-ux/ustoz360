@@ -3,7 +3,7 @@ import { ApiError } from "../auth";
 import { aiAvailable, runAi, runGeminiJson, visionConfigured, type GeminiPart } from "../ai/gateway";
 import { parseStructured } from "../ai/parse";
 import { runAnyAi } from "../ai/structured";
-import { aiClassifySchema, aiExtractSchema, aiVerifySchema, normalizeAiKey, normalizeAiQuestions, type AiClassify, type AiVerify, type ExtractedDraft } from "./aischema";
+import { aiClassifySchema, aiExtractSchema, aiVerifySchema, normalizeAiKey, normalizeAiQuestions, type AiClassify, type AiKeyOut, type AiVerify, type ExtractedDraft } from "./aischema";
 import { classifyPrompt, extractFromFilePrompt, extractFromTextPrompt, extractKeyPrompt, SYSTEM_CLASSIFY, SYSTEM_EXTRACT, SYSTEM_VERIFY, verifyPrompt, type VerifyItem } from "./prompts";
 import type { LabelStyle } from "./keyparse";
 
@@ -82,7 +82,7 @@ async function aiJson<T>(o: { userId: string; parts?: GeminiPart[]; text?: strin
 const filePart = (f: { bytes: Uint8Array; mime: string }): GeminiPart => ({ inlineData: { mimeType: f.mime, data: Buffer.from(f.bytes).toString("base64") } });
 
 export type FileInput = { bytes: Uint8Array; mime: string };
-export type ExtractResult = { questions: ExtractedDraft[]; answerKey: { number: number; answers: string[]; group: string | null }[]; warnings: string[]; model: string; provider: Provider };
+export type ExtractResult = { questions: ExtractedDraft[]; answerKey: AiKeyOut[]; warnings: string[]; model: string; provider: Provider };
 
 export async function classifyDocument(userId: string, f: FileInput): Promise<{ data: AiClassify; model: string; provider: Provider }> {
   if (f.bytes.length > MAX_INLINE_BYTES) throw new ApiError(413, "Fayl AI tahlili uchun juda katta (14 MB gacha). Hajmini kichraytiring yoki qismlarga bo'ling.", "too_big_for_ai");
@@ -102,7 +102,7 @@ export async function extractFromFile(userId: string, f: FileInput, o: { fromPag
   return { questions: normalizeAiQuestions(r.data.questions, { style: o.style, section: o.section, pageOffset, pageFallback: o.fromPage ? `${o.fromPage}-${o.toPage ?? o.fromPage}` : null }), answerKey: normalizeAiKey(r.data.answerKey, o.style), warnings: r.data.warnings, model: r.model, provider: r.provider };
 }
 
-export async function extractKeyFromFile(userId: string, f: FileInput, style?: LabelStyle, o: { fromPage?: number; toPage?: number; excerpt?: boolean } = {}): Promise<{ key: { number: number; answers: string[]; group: string | null }[]; model: string; provider: Provider }> {
+export async function extractKeyFromFile(userId: string, f: FileInput, style?: LabelStyle, o: { fromPage?: number; toPage?: number; excerpt?: boolean } = {}): Promise<{ key: AiKeyOut[]; model: string; provider: Provider }> {
   if (f.bytes.length > MAX_INLINE_BYTES) throw new ApiError(413, "Fayl AI tahlili uchun juda katta (14 MB gacha).", "too_big_for_ai");
   const r = await aiJson({ userId, parts: [filePart(f), { text: extractKeyPrompt(o) }], system: SYSTEM_EXTRACT, schema: aiExtractSchema, maxTokens: 8000, promptVersion: "import-key-file@2" });
   return { key: normalizeAiKey(r.data.answerKey, style), model: r.model, provider: r.provider };

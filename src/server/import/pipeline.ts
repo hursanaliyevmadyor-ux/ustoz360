@@ -114,7 +114,8 @@ async function appendQuestions(sessionId: string, file: ImportFile, fileIndex: n
       sourcePage: d.page, ocrUncertain: uncertain, note,
       reviewStatus: d.incomplete ? "INCOMPLETE" : "PENDING", contentHash: hash,
     });
-    vRows.push({ id: newId("av"), questionId: id, evidence: [] as unknown as Json, ...(d.inlineAnswer ? { keyAnswer: d.inlineAnswer as unknown as Json, keySource: "INLINE" } : {}) });
+    // Faylda javob yonida berilgan izoh (bo'lsa) saqlanadi: tekshiruvdan keyin ham yo'qolmaydi va savolga izoh bo'lib ko'chadi.
+    vRows.push({ id: newId("av"), questionId: id, evidence: [] as unknown as Json, ...(d.inlineAnswer ? { keyAnswer: d.inlineAnswer as unknown as Json, keySource: "INLINE" } : {}), ...(d.explanation ? { providerMetadata: { keyExplanation: d.explanation } as unknown as Json } : {}) });
   }
   if (qRows.length) {
     await db.extractedQuestion.createMany({ data: qRows });
@@ -126,17 +127,18 @@ async function appendQuestions(sessionId: string, file: ImportFile, fileIndex: n
 const draftFromRule = (q: ReturnType<typeof parseQuestions>["questions"][number]): ExtractedDraft => ({ ...q, subject: null, topic: null, grade: null, difficulty: "MEDIUM", uncertain: false, group: null, figures: [] });
 
 /** Kalit yozuvlarini qo'shadi. Sarlavhali (test nomi bilan) jadvallarning bo'limi sarlavha bo'yicha, sarlavhasizlarniki raqamlash qayta boshlanishi bo'yicha. */
-const appendKey = (m: FileMeta, items: { number: number; answers: string[]; group?: string | null }[]) => {
+const appendKey = (m: FileMeta, items: { number: number; answers: string[]; group?: string | null; explanation?: string }[]) => {
   const key = m.key ?? [];
   let section = key.length ? key[key.length - 1].section : 0, last = key.length ? key[key.length - 1].number : 0;
   for (const it of items) {
+    const ex = it.explanation ? { explanation: it.explanation } : {};
     if (it.group) {
       const prev = key.find((e) => e.group && normGroup(e.group) === normGroup(it.group));
       if (prev) section = prev.section; else { section = key.length ? Math.max(...key.map((e) => e.section)) + 1 : 0; }
-      key.push({ number: it.number, answers: it.answers, section, group: it.group });
+      key.push({ number: it.number, answers: it.answers, section, group: it.group, ...ex });
     } else {
       if (it.number === 1 && last > 1) section++;
-      key.push({ number: it.number, answers: it.answers, section });
+      key.push({ number: it.number, answers: it.answers, section, ...ex });
     }
     last = it.number;
   }
@@ -350,7 +352,7 @@ async function stepKeys(userId: string, sessionId: string, files: ImportFile[], 
   }
   if (p.keysMatched) return null;
 
-  const qs = await db.extractedQuestion.findMany({ where: { importSessionId: sessionId }, orderBy: { seq: "asc" }, select: { id: true, fileId: true, number: true, section: true, verification: { select: { keyAnswer: true, keySource: true } } } });
+  const qs = await db.extractedQuestion.findMany({ where: { importSessionId: sessionId }, orderBy: { seq: "asc" }, select: { id: true, fileId: true, number: true, section: true, verification: { select: { keyAnswer: true, keySource: true, providerMetadata: true } } } });
   const qfiles = files.filter((f) => f.role !== "ANSWERS" && f.parseStatus === "PARSED");
   const afiles = files.filter((f) => f.role === "ANSWERS" && f.parseStatus === "PARSED");
   let sep = 0, matched = 0;
@@ -365,10 +367,13 @@ async function stepKeys(userId: string, sessionId: string, files: ImportFile[], 
     const km = matchKeys(mine.map((q) => ({ number: q.number, section: q.section, group: groups?.[q.section % 1000] ?? null, inlineAnswer: q.verification?.keySource === "INLINE" ? (q.verification.keyAnswer as string[] | null) : null })), entries);
     for (let i = 0; i < mine.length; i++) {
       const k = km[i], q = mine[i];
-      const same = q.verification?.keySource === k.keySource && JSON.stringify(q.verification?.keyAnswer ?? null) === JSON.stringify(k.key);
+      // Izoh: kalit yozuvidagi izoh, bo'lmasa savol yonidagi izoh (yaratilganda saqlangan) qoladi.
+      const prevExpl = ((q.verification?.providerMetadata ?? {}) as { keyExplanation?: string }).keyExplanation;
+      const expl = k.explanation ?? prevExpl;
+      const same = q.verification?.keySource === k.keySource && JSON.stringify(q.verification?.keyAnswer ?? null) === JSON.stringify(k.key) && (expl ?? null) === (prevExpl ?? null);
       if (same && !k.conflict) continue;
       // Kalit o'zgargan savol qayta tekshiriladi (verifiedAt bo'shatiladi): yangi qo'shilgan kalit fayli ham hisobga olinadi.
-      await db.answerVerification.update({ where: { questionId: q.id }, data: { keyAnswer: (k.key ?? undefined) as Json | undefined, keySource: k.keySource, verifiedAt: null, providerMetadata: { ...(k.conflict && { keyConflict: k.conflict }), keyFile: keyFile?.fileName ?? null } as unknown as Json } });
+      await db.answerVerification.update({ where: { questionId: q.id }, data: { keyAnswer: (k.key ?? undefined) as Json | undefined, keySource: k.keySource, verifiedAt: null, providerMetadata: { ...(k.conflict && { keyConflict: k.conflict }), keyFile: keyFile?.fileName ?? null, ...(expl && { keyExplanation: expl }) } as unknown as Json } });
       matched++;
     }
   }
@@ -507,7 +512,7 @@ async function verifyGroup(userId: string, files: ImportFile[], batch: QRow[], p
     const q = w.q, options = effOptions(q);
     const key = (q.verification?.keyAnswer as string[] | null) ?? null;
     const keySource = (q.verification?.keySource as "INLINE" | "SEPARATE_FILE" | null) ?? null;
-    const meta0 = (q.verification?.providerMetadata ?? {}) as { keyConflict?: string; keyFile?: string | null };
+    const meta0 = (q.verification?.providerMetadata ?? {}) as { keyConflict?: string; keyFile?: string | null; keyExplanation?: string };
     const usedIds = w.ai?.usedSources ?? [];
     const used = w.ctx.filter((c) => usedIds.includes(c.id));
     const support = SUPPORT_ORDER.find((k) => used.some((c) => c.kind === k)) ?? null;
@@ -519,15 +524,16 @@ async function verifyGroup(userId: string, files: ImportFile[], batch: QRow[], p
     const note = [d.note, meta0.keyConflict, figNote].filter(Boolean).join(" ");
     const evidence = buildEvidence({
       fileName: fileName(q.fileId), page: q.sourcePage, key, keySource, keyFileName: meta0.keyFile ?? null,
-      computed: w.compNote, aiExplanation: w.ai?.explanation ?? null, aiModel: w.ai?.model ?? null, ctx: contextEvidence(used, usedIds),
+      computed: w.compNote, aiExplanation: w.ai?.explanation ?? null, aiModel: w.ai?.model ?? null, ctx: contextEvidence(used, usedIds), keyExplanation: meta0.keyExplanation ?? null,
     });
     await db.answerVerification.update({
       where: { questionId: q.id },
       data: {
         proposedAnswer: (d.proposed ?? undefined) as Json | undefined, answerOrigin: d.origin,
-        explanation: w.ai?.explanation ?? (w.compNote ? `${w.compNote.expression} = ${w.compNote.value}` : null),
+        // Fayldagi izoh (muallifning o'zi yozgani) birinchi o'rinda; bo'lmasa AI yoki hisob izohi.
+        explanation: meta0.keyExplanation ?? w.ai?.explanation ?? (w.compNote ? `${w.compNote.expression} = ${w.compNote.value}` : null),
         evidence: evidence as unknown as Json, verificationStatus: d.verificationStatus, confidence: d.confidence, verifiedAt: new Date(),
-        providerMetadata: { passes: w.passes, provider: w.ai?.provider ?? null, model: w.ai?.model ?? null, aiTried: w.aiTried, note: note || null, keyFile: meta0.keyFile ?? null, ...(meta0.keyConflict && { keyConflict: meta0.keyConflict }), ...(limitNote && { limit: limitNote }) } as unknown as Json,
+        providerMetadata: { passes: w.passes, provider: w.ai?.provider ?? null, model: w.ai?.model ?? null, aiTried: w.aiTried, note: note || null, keyFile: meta0.keyFile ?? null, ...(meta0.keyConflict && { keyConflict: meta0.keyConflict }), ...(meta0.keyExplanation && { keyExplanation: meta0.keyExplanation }), ...(limitNote && { limit: limitNote }) } as unknown as Json,
       },
     });
     await db.extractedQuestion.update({ where: { id: q.id }, data: { reviewStatus: d.reviewStatus, note: note ? short(note, 400) : q.note } });

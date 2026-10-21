@@ -25,9 +25,24 @@ export function detectLabelStyle(samples: string): LabelStyle {
   return /[БГбг]/.test(samples) ? "ru" : "latin";
 }
 
-/** group: kalit jadvali qaysi test/bo'limga tegishli (masalan «Diagnostika testi Kuzgi No: 1»); AI aniqlagan bo'lsa to'ldiriladi. */
-export type KeyEntry = { number: number; answers: string[]; section: number; group?: string };
+/** group: kalit jadvali qaysi test/bo'limga tegishli (masalan «Diagnostika testi Kuzgi No: 1»); AI aniqlagan bo'lsa to'ldiriladi. explanation: kalitda javob yonida izoh/yechim berilgan bo'lsa, o'sha matn. */
+export type KeyEntry = { number: number; answers: string[]; section: number; group?: string; explanation?: string };
 export type KeyParse = { entries: KeyEntry[]; style: LabelStyle };
+
+/** «Izoh», «Yechim», «Tushuntirish» kabi so'zlar: javobning izohi shu so'z bilan boshlanadi. */
+export const NOTE_LABEL = "(?:izoh(?:i)?|yechim(?:i)?|tushuntirish(?:i)?|sharh|explanation|solution|пояснение|объяснение|решение|изох)";
+const MAX_NOTE = 600;
+export const cleanNote = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, MAX_NOTE);
+// «1-B. Izoh: matn», «1) B — matn», «12. AB: matn»: javobdan keyin kamida 6 belgili matn
+const ENTRY_NOTE = new RegExp(`^\\s*(\\d{1,4})\\s*[-–—.):=]?\\s*([${LETTER_CLASS}]{1,4}(?:\\s*[,;&]\\s*[${LETTER_CLASS}])*)\\s*(?:[-–—:.)]\\s*|\\s+)(?:${NOTE_LABEL}\\s*[:\\-–—]\\s*)?(\\S.{5,})$`, "iu");
+const NOTE_ONLY = new RegExp(`^\\s*${NOTE_LABEL}\\s*[:\\-–—]\\s*(\\S.*)$`, "iu");
+/** «Izoh: matn» qatori (butun qator) va qator oxiridagi «... Izoh: matn». */
+export const NOTE_LINE = NOTE_ONLY;
+export const NOTE_INLINE = new RegExp(`${NOTE_LABEL}\\s*[:\\-–—]\\s*(\\S.*)$`, "iu");
+const TABLE_LETTERS = new RegExp(`^[${LETTER_CLASS}](?:\\s*[,;&]?\\s*[${LETTER_CLASS}]){0,3}$`);
+
+/** Kalit bo'limidagi qator javob + izoh ko'rinishidami («1-B. Izoh: ...»). Bunday qator savol emas, kalit yozuvi. */
+export const isKeyNoteLine = (line: string): boolean => !isKeyLine(line) && ENTRY_NOTE.test(line.trim());
 
 const SEP = "[\\s|]*";
 const RANGE = new RegExp(`(\\d{1,4})\\s*[-–—]\\s*(\\d{1,4})\\s*[:.)=]\\s*([${LETTER_CLASS}](?:[\\s,;]*[${LETTER_CLASS}])+)`, "gu");
@@ -54,14 +69,37 @@ export const KEY_HEADING = /^\s*(?:test\s+)?(?:javoblar(?:\s+kaliti)?|kalit(?:la
 export function parseAnswerKey(text: string, styleHint?: LabelStyle): KeyParse {
   const style = styleHint ?? detectLabelStyle(text);
   const entries: KeyEntry[] = [];
-  let section = 0, last = 0;
-  const push = (number: number, answers: string[]) => {
+  let section = 0, last = 0, noteOpen = false;
+  const push = (number: number, answers: string[], note?: string) => {
     if (!answers.length) return;
     if (number === 1 && last > 1) section++;
-    entries.push({ number, answers, section });
+    entries.push({ number, answers, section, ...(note ? { explanation: cleanNote(note) } : {}) });
     last = number;
   };
+  const addNote = (note: string) => { const e = entries[entries.length - 1]; if (e) e.explanation = cleanNote(`${e.explanation ?? ""} ${note}`); };
   for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) { noteOpen = false; continue; }
+    if (KEY_HEADING.test(t)) { noteOpen = false; continue; }
+    // jadval qatori: «1 | B | izoh matni» (uchinchi katak raqam emas, matn)
+    if (t.includes("|")) {
+      const cells = t.split("|").map((c) => c.trim());
+      if (cells.length >= 3 && /^\d{1,4}$/.test(cells[0]) && TABLE_LETTERS.test(cells[1]) && cells[2].length >= 3 && !/^\d{1,4}$/.test(cells[2]) && !TABLE_LETTERS.test(cells[2])) {
+        push(Number(cells[0]), splitLetters(cells[1], style), cells.slice(2).filter(Boolean).join(" "));
+        noteOpen = true; continue;
+      }
+    }
+    if (!isKeyLine(t)) {
+      // «Izoh: ...» qatori oldingi javobga tegishli
+      const nm = NOTE_ONLY.exec(t);
+      if (nm && entries.length) { addNote(nm[1]); noteOpen = true; continue; }
+      // «1-B. Izoh: ...» — javob va izoh bir qatorda
+      const em = ENTRY_NOTE.exec(t);
+      if (em) { push(Number(em[1]), splitLetters(em[2], style), em[3]); noteOpen = true; continue; }
+      // izohning davomi (o'ralgan matn)
+      if (noteOpen && entries[entries.length - 1]?.explanation !== undefined) { addNote(t); continue; }
+    }
+    noteOpen = false;
     let rest = line;
     for (const m of line.matchAll(RANGE)) {
       const a = Number(m[1]), b = Number(m[2]);
@@ -75,9 +113,14 @@ export function parseAnswerKey(text: string, styleHint?: LabelStyle): KeyParse {
   return { entries, style };
 }
 
+/** Kalit bo'limlari (raqamlash qayta boshlanishi bo'yicha) → raqam → yozuv (javoblar va izoh). */
+export function keySectionEntries(entries: KeyEntry[]): Map<number, KeyEntry>[] {
+  const out: Map<number, KeyEntry>[] = [];
+  for (const e of entries) { (out[e.section] ??= new Map()).set(e.number, e); }
+  return out.filter(Boolean);
+}
+
 /** Kalit bo'limlari (raqamlash qayta boshlanishi bo'yicha) → raqam → javoblar. */
 export function keySections(entries: KeyEntry[]): Map<number, string[]>[] {
-  const out: Map<number, string[]>[] = [];
-  for (const e of entries) { (out[e.section] ??= new Map()).set(e.number, e.answers); }
-  return out.filter(Boolean);
+  return keySectionEntries(entries).map((m) => new Map([...m].map(([n, e]) => [n, e.answers] as const)));
 }
