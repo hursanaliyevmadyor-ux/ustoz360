@@ -7,7 +7,13 @@ import { openZip, readText, type Zip } from "./zipx";
  * Natija: sahifalar ro'yxati — keyingi bosqichlarda savol manbasini («Slayd 3», «Varaq Sheet1») ko'rsatish uchun.
  */
 export type Page = { label: string; text: string };
-export type ParsedDoc = { pages: Page[]; images: number; note?: string };
+/** DOCX ichidagi rasm: matnda `[[IMG:k]]` belgisi bilan o'z joyida turadi. `bytes` faqat so'ralganda o'qiladi (null: o'qilmadi yoki juda katta). */
+export type DocImage = { path: string; bytes: Buffer | null };
+export type ParsedDoc = { pages: Page[]; images: number; note?: string; media?: Map<number, DocImage> };
+/** DOCX matnidagi rasm joyi belgisi: savol ajratilganda `[[RASM:n]]` ga almashtiriladi. */
+export const IMG_MARK = /\[\[IMG:(\d{1,4})\]\]/g;
+const MAX_DOC_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_DOC_IMAGES = 300;
 
 const MAX_ROWS = 5000;
 const MAX_SHEETS = 20;
@@ -72,10 +78,39 @@ function docxNumbering(z: Zip) {
   return { abstracts, nums };
 }
 
-export function extractDocx(z: Zip): ParsedDoc | null {
+/** word/_rels/document.xml.rels: rasm bog'lanishlari (rId -> zip ichidagi yo'l). */
+function docxImageRels(z: Zip): Map<string, string> {
+  const out = new Map<string, string>();
+  const xml = readText(z, "word/_rels/document.xml.rels");
+  if (!xml) return out;
+  for (const t of xmlTokens(xml)) {
+    if ((t.k !== "self" && t.k !== "open") || t.n !== "Relationship") continue;
+    const id = attr(t.a, "Id"), target = attr(t.a, "Target"), type = attr(t.a, "Type") ?? "";
+    if (!id || !target || !/\/image$/i.test(type) || attr(t.a, "TargetMode") === "External") continue;
+    const parts = (target.startsWith("/") ? target.slice(1) : `word/${target}`).split("/");
+    const stack: string[] = [];
+    for (const p of parts) { if (p === "..") stack.pop(); else if (p && p !== ".") stack.push(p); }
+    out.set(id, stack.join("/"));
+  }
+  return out;
+}
+
+export function extractDocx(z: Zip, withMedia = false): ParsedDoc | null {
   const xml = readText(z, "word/document.xml");
   if (!xml) return null;
   const { abstracts, nums } = docxNumbering(z);
+  const imageRels = docxImageRels(z);
+  const media = new Map<number, DocImage>();
+  let fallback = 0;
+  /** Rasm paragrafdagi o'z joyiga belgi bo'lib qo'yiladi (Word'dagi `mc:Fallback` nusxasi qayta sanalmaydi). */
+  const addImage = (rid: string | undefined) => {
+    const path = rid ? imageRels.get(rid) : undefined;
+    if (!path || fallback > 0 || media.size >= MAX_DOC_IMAGES) return;
+    const k = media.size + 1;
+    const e = z.entries.get(path);
+    media.set(k, { path, bytes: withMedia && e && e.usize <= MAX_DOC_IMAGE_BYTES ? z.read(path) : null });
+    para += `[[IMG:${k}]]`;
+  };
   const counters = new Map<string, number[]>();
   const pages: Page[] = [];
   let lines: string[] = [];
@@ -110,11 +145,15 @@ export function extractDocx(z: Zip): ParsedDoc | null {
       else if (n === "w:br") { if (attr(t.a, "w:type") === "page") { if (tblDepth === 0) { if (para.trim()) lines.push(para); para = ""; pushPage(); } } else para += "\n"; }
       else if (n === "w:lastRenderedPageBreak") { /* Word hisoblagan taxminiy sahifa chegarasi: ishonchsiz, e'tiborga olinmaydi */ }
       else if (n === "w:drawing" || n === "w:pict") images++;
+      else if (n === "mc:Fallback") { if (t.k === "open") fallback++; }
+      else if (n === "a:blip") addImage(attr(t.a, "r:embed"));
+      else if (n === "v:imagedata") addImage(attr(t.a, "r:id"));
       else if (n === "w:tbl") { tblDepth++; if (tblDepth === 1) rows = []; }
       else if (n === "w:tr" && tblDepth === 1) row = [];
       else if (n === "w:tc" && tblDepth === 1) { cell = ""; inCell = true; }
     } else {
       if (n === "w:t" || n === "m:t") inT = false;
+      else if (n === "mc:Fallback") fallback = Math.max(0, fallback - 1);
       else if (n === "w:numPr") inNumPr = false;
       else if (n === "w:p") {
         inPara = false;
@@ -131,8 +170,9 @@ export function extractDocx(z: Zip): ParsedDoc | null {
   }
   void inPara;
   pushPage();
-  const note = images > 0 ? `Hujjatda ${images} ta rasm/chizma bor: rasmdagi matn, formula yoki variantlar matnga aylantirilmadi.` : undefined;
-  return pages.length ? { pages, images, note } : { pages: [], images, note: note ?? "Hujjatdan matn topilmadi." };
+  const note = media.size > 0 ? `Hujjatda ${media.size} ta rasm bor: ular savolning o'z joyida saqlanadi (rasmdagi matn, formula yoki variantlar matnga aylantirilmaydi).`
+    : images > 0 ? `Hujjatda ${images} ta rasm/chizma bor: rasmdagi matn, formula yoki variantlar matnga aylantirilmadi.` : undefined;
+  return pages.length ? { pages, images, note, media } : { pages: [], images, note: note ?? "Hujjatdan matn topilmadi.", media };
 }
 
 // ---------- XLSX ----------
@@ -295,7 +335,7 @@ export function parseCsv(text: string): string[][] {
 }
 
 /** Fayl turiga qarab matn sahifalarini ajratadi. PDF va rasm bu yerda ishlanmaydi (null): ular multimodal AI orqali o'qiladi. */
-export function extractOfficeText(kind: ImportKind, bytes: Uint8Array): ParsedDoc | null {
+export function extractOfficeText(kind: ImportKind, bytes: Uint8Array, opts: { media?: boolean } = {}): ParsedDoc | null {
   if (kind === "txt") {
     const t = decodeText(bytes);
     if (t === null) return null;
@@ -311,7 +351,7 @@ export function extractOfficeText(kind: ImportKind, bytes: Uint8Array): ParsedDo
   if (kind === "docx" || kind === "xlsx" || kind === "pptx" || kind === "odt" || kind === "ods" || kind === "odp") {
     const z = openZip(bytes);
     if (!z) return null;
-    if (kind === "docx") return extractDocx(z);
+    if (kind === "docx") return extractDocx(z, !!opts.media);
     if (kind === "xlsx") return extractXlsx(z);
     if (kind === "pptx") return extractPptx(z);
     return extractOdf(z, kind);

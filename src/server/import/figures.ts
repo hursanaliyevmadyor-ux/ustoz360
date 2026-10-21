@@ -12,8 +12,18 @@ export const MAX_FIGURE_BYTES = 3 * 1024 * 1024;
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const isPng = (b: Uint8Array) => b.length > 64 && PNG.every((x, i) => b[i] === x);
 
+/** Rasm turini bayt belgilaridan aniqlaydi (fayl nomiga ishonilmaydi). Brauzer kesgan rasmlar PNG, DOCX ichidagilar PNG/JPEG/GIF/WebP bo'lishi mumkin. */
+export function sniffImage(b: Uint8Array): "image/png" | "image/jpeg" | "image/gif" | "image/webp" | null {
+  if (b.length < 12) return null;
+  if (PNG.every((x, i) => b[i] === x)) return "image/png";
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return "image/gif";
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "image/webp";
+  return null;
+}
+
 export const figureKey = (owner: string, name: string) => `figures/${owner}/${name}.png`;
-type FigMeta = { figures?: Record<string, Figure[]>; figureUp?: Record<string, number[]> };
+export type FigMeta = { figures?: Record<string, Figure[]>; figureUp?: Record<string, number[]> };
 export const figMeta = (docKinds: unknown): FigMeta => (docKinds && typeof docKinds === "object" && !Array.isArray(docKinds) ? (docKinds as FigMeta) : {});
 
 /** Savoldagi barcha rasm joylari kesib yuklanganmi (yoki rasm joyi umuman yo'qmi). */
@@ -69,6 +79,43 @@ export async function uploadFigure(userId: string, sessionId: string, qid: strin
   return { ok: true as const };
 }
 
+/** DOCX rasmlari: matndagi `[[IMG:k]]` belgilari tekshiruvdagi `[[RASM:n]]` joylariga aylanadi va rasm baytlari darhol saqlanadi (brauzerda kesish kerak emas). */
+export type DocImageSource = { owner: string; sessionId: string; images: Map<number, { bytes: Buffer | null }> };
+export const hasImgMark = (s: string) => /\[\[IMG:\d{1,4}\]\]/.test(s);
+export async function bindDocImages(text: string, options: { label: string; text: string }[], o: DocImageSource & { qid: string }) {
+  const order: number[] = [];
+  const base = Math.max(0, ...slotNumbers(text), ...options.flatMap((x) => slotNumbers(x.text)));
+  const slot = (s: string) => s.replace(/\[\[IMG:(\d{1,4})\]\]/g, (_m, k: string) => {
+    const key = Number(k);
+    let i = order.indexOf(key);
+    if (i < 0) { order.push(key); i = order.length - 1; }
+    return base + i + 1 <= 20 ? `[[RASM:${base + i + 1}]]` : "";
+  });
+  const outText = slot(text);
+  const outOptions = options.map((x) => ({ ...x, text: slot(x.text) }));
+  const figures: Figure[] = [];
+  const up: number[] = [];
+  let missing = 0;
+  const st = storage();
+  for (let i = 0; i < order.length && base + i + 1 <= 20; i++) {
+    const n = base + i + 1;
+    const bytes = o.images.get(order[i])?.bytes ?? null;
+    const mime = bytes ? sniffImage(bytes) : null;
+    if (bytes && mime && st.configured()) {
+      try {
+        const name = `${o.sessionId}-${o.qid}-${n}`;
+        await st.put(figureKey(o.owner, name), bytes, mime);
+        figures.push({ n, page: null, box: null, kind: "figure", src: `${o.owner}/${name}` });
+        up.push(n);
+        continue;
+      } catch { /* saqlab bo'lmadi: quyida «o'qib bo'lmaydigan» deb belgilanadi */ }
+    }
+    missing++;
+    figures.push({ n, page: null, box: null, kind: "unreadable" });
+  }
+  return { text: outText, options: outOptions, figures, up, missing };
+}
+
 /** Rasmni o'qish (ko'rsatish uchun). `owner`: egasining id'si yoki `global`; ruxsatni chaqiruvchi tekshiradi. */
 export async function readFigure(owner: string, name: string): Promise<Buffer | null> {
   const st = storage();
@@ -88,7 +135,7 @@ export async function attachFigures(text: string, o: { owner: string; sessionId:
     try { bytes = await st.get(figureKey(o.owner, `${o.sessionId}-${o.importQid}-${n}`)); }
     catch { throw new ApiError(502, "Savol rasmi topilmadi: rasmlarni qayta tayyorlab ko'ring.", "figure_missing"); }
     const name = `${o.newQid}-${n}`;
-    await st.put(figureKey(o.owner, name), bytes, "image/png");
+    await st.put(figureKey(o.owner, name), bytes, sniffImage(bytes) ?? "image/png");
     out = out.split(`[[RASM:${n}]]`).join(`[[rasm:${o.owner}/${name}]]`);
   }
   return out;
@@ -104,7 +151,7 @@ export async function globalizeFigures(text: string, o: { fromOwner: string; new
     let bytes: Buffer;
     try { bytes = await st.get(figureKey(owner, name)); } catch { throw new ApiError(502, "Savol rasmi topilmadi: umumiy bankka o'tkazib bo'lmadi.", "figure_missing"); }
     const next = `global/${o.newQid}-${++i}`;
-    await st.put(figureKey("global", `${o.newQid}-${i}`), bytes, "image/png");
+    await st.put(figureKey("global", `${o.newQid}-${i}`), bytes, sniffImage(bytes) ?? "image/png");
     out = out.split(`[[rasm:${p}]]`).join(`[[rasm:${next}]]`);
   }
   return out;

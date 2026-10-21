@@ -8,6 +8,7 @@ import { storage } from "../storage";
 import { buildTextChunks, extractionRanges, pageRanges, parsePageSpec, pdfPageCountGuess, type ExtractRange } from "./chunking";
 import { canReadFiles, canReadText, classifyDocument, classifyText, extractFromFile, extractFromText, extractKeyFromFile, MAX_INLINE_BYTES, verifyBatch } from "./aitasks";
 import type { ExtractedDraft, Figure } from "./aischema";
+import { bindDocImages, hasImgMark, type DocImageSource } from "./figures";
 import { pdfPageCount, slicePdf } from "./pdfslice";
 import { buildEvidence, contextEvidence, gatherLocalContext, webContext, type CtxItem } from "./evidence";
 import type { ImportKind } from "./formats";
@@ -43,6 +44,8 @@ export type FileMeta = {
   pageSpec?: string;
   /** Test/bo'lim sarlavhalari (indeks = savolning `section % 1000` qiymati) va savollardagi rasm joylari (savol id bo'yicha). */
   groups?: string[]; figures?: Record<string, Figure[]>;
+  /** Saqlangan rasm joylari (savol id bo'yicha): brauzer kesgan yoki DOCX'dan olingan rasmlar tayyor. */
+  figureUp?: Record<string, number[]>;
   key?: KeyEntry[]; style?: LabelStyle; lastNum?: number; sec?: number;
   attempts?: Record<string, number>; failed?: number[];
   structDone?: boolean; classified?: boolean; keyDone?: boolean;
@@ -70,7 +73,7 @@ const addWarning = (p: Progress, w: string) => { p.warnings = [...new Set([...(p
 
 // ---------- savollarni saqlash ----------
 /** Ajratilgan savollarni saqlaydi (dublikatlar tashlanadi). Savol yonidagi javob belgisi AnswerVerification.keyAnswer ga yoziladi. */
-async function appendQuestions(sessionId: string, file: ImportFile, fileIndex: number, drafts: ExtractedDraft[], m: FileMeta, ai: boolean) {
+async function appendQuestions(sessionId: string, file: ImportFile, fileIndex: number, drafts: ExtractedDraft[], m: FileMeta, ai: boolean, docImages?: DocImageSource) {
   if (!drafts.length) return 0;
   const last = await db.extractedQuestion.findFirst({ where: { importSessionId: sessionId }, orderBy: { seq: "desc" }, select: { seq: true } });
   let seq = (last?.seq ?? 0) + 1;
@@ -93,12 +96,22 @@ async function appendQuestions(sessionId: string, file: ImportFile, fileIndex: n
       section = m.sec ?? 0;
     }
     const id = newId("iq");
-    if (d.figures.length) (m.figures ??= {})[id] = d.figures;
+    let text = d.text, options = d.options, figures = d.figures, uncertain = !!d.uncertain, note = d.note ?? null;
+    // DOCX ichidagi rasmlar: matndagi o'z joyida `[[RASM:n]]` bo'lib qoladi, rasm baytlari darhol saqlanadi.
+    if (hasImgMark(text) || options.some((o) => hasImgMark(o.text))) {
+      if (docImages) {
+        const b = await bindDocImages(text, options, { ...docImages, qid: id });
+        text = b.text; options = b.options; figures = [...figures, ...b.figures];
+        if (b.up.length) { (m.figureUp ??= {})[id] = b.up; }
+        if (b.missing) { uncertain = true; note = [note, "Savolda faylga joylangan rasm bor, lekin uni ko'chirib bo'lmadi (format qo'llab-quvvatlanmaydi yoki juda katta): asl faylga qarang."].filter(Boolean).join(" "); }
+      } else { text = text.replace(/\[\[IMG:\d{1,4}\]\]/g, "").trim(); options = options.map((o) => ({ ...o, text: o.text.replace(/\[\[IMG:\d{1,4}\]\]/g, "").trim() })); }
+    }
+    if (figures.length) (m.figures ??= {})[id] = figures;
     qRows.push({
       id, importSessionId: sessionId, fileId: file.id, number: d.number, seq: seq++, section: fileIndex * 1000 + section,
-      originalText: d.text, options: d.options as unknown as Json, qtype: d.qtype,
+      originalText: text, options: options as unknown as Json, qtype: d.qtype,
       subjectGuess: d.subject ?? null, topicGuess: d.topic ?? null, grade: d.grade ?? null, difficulty: d.difficulty ?? "MEDIUM",
-      sourcePage: d.page, ocrUncertain: !!d.uncertain, note: d.note ?? null,
+      sourcePage: d.page, ocrUncertain: uncertain, note,
       reviewStatus: d.incomplete ? "INCOMPLETE" : "PENDING", contentHash: hash,
     });
     vRows.push({ id: newId("av"), questionId: id, evidence: [] as unknown as Json, ...(d.inlineAnswer ? { keyAnswer: d.inlineAnswer as unknown as Json, keySource: "INLINE" } : {}) });
@@ -211,6 +224,18 @@ async function unitFailed(f: ImportFile, m: FileMeta, key: string, what: string,
   } else await setMeta(f, m);
 }
 
+/** DOCX'dagi rasmlar: faqat matnda `[[IMG:k]]` belgisi bo'lsa fayl qayta o'qiladi. O'qib bo'lmasa, belgilar olib tashlanadi va ogohlantirish qo'shiladi. */
+async function loadDocImages(userId: string, sessionId: string, f: ImportFile, pages: Page[], p: Progress): Promise<DocImageSource | undefined> {
+  if (f.kind !== "docx" || !pages.some((x) => hasImgMark(x.text))) return undefined;
+  try {
+    const bytes = await storage().get(f.storagePath);
+    const doc = extractOfficeText("docx", new Uint8Array(bytes), { media: true });
+    if (doc?.media?.size) return { owner: userId, sessionId, images: doc.media };
+  } catch { /* quyida ogohlantiriladi */ }
+  addWarning(p, `«${f.fileName}»: fayldagi rasmlarni o'qib bo'lmadi, savollarda rasmlar yo'q.`);
+  return undefined;
+}
+
 /** Savollarni ajratish: bitta ish birligi. */
 async function stepExtract(userId: string, sessionId: string, files: ImportFile[], p: Progress): Promise<Unit> {
   const idxOf = (f: ImportFile) => files.findIndex((x) => x.id === f.id);
@@ -227,7 +252,8 @@ async function stepExtract(userId: string, sessionId: string, files: ImportFile[
         if (good || !canReadText()) {
           m.mode = "RULES";
           if (!good && parsed.candidates > parsed.questions.length) addWarning(p, `«${f.fileName}»: qoidalar bilan ${parsed.questions.length} ta savol ajratildi; AI ulanmagani uchun qolganlarini aniqlab bo'lmadi.`);
-          const n = await appendQuestions(sessionId, f, idxOf(f), parsed.questions.map(draftFromRule), m, false);
+          const docImages = await loadDocImages(userId, sessionId, f, pages, p);
+          const n = await appendQuestions(sessionId, f, idxOf(f), parsed.questions.map(draftFromRule), m, false, docImages);
           const keyOnly = parsed.keyEntries.length >= 3 && parsed.questions.length === 0 && f.role === "AUTO";
           await setMeta(f, m, { cursor: 1, total: 1, ...(keyOnly && { role: "ANSWERS" }) });
           if (!n && !parsed.keyEntries.length) addWarning(p, `«${f.fileName}»: savol topilmadi.`);
@@ -243,7 +269,8 @@ async function stepExtract(userId: string, sessionId: string, files: ImportFile[
         try {
           if (!chunk) { await setMeta(f, m, { cursor: f.total }); return { label: "Matn bo'laklari tugadi", done: f.total, total: f.total }; }
           const r = await extractFromText(userId, chunk.text, { hint: `Fayl: ${f.fileName}`, style: m.style });
-          await appendQuestions(sessionId, f, idxOf(f), r.questions, m, true);
+          const docImages = await loadDocImages(userId, sessionId, f, [{ label: "", text: chunk.text }], p);
+          await appendQuestions(sessionId, f, idxOf(f), r.questions, m, true, docImages);
           if (r.answerKey.length) appendKey(m, r.answerKey);
           r.warnings.slice(0, 3).forEach((w) => addWarning(p, `«${f.fileName}»: ${w}`));
           await setMeta(f, m, { cursor: f.cursor + 1 });

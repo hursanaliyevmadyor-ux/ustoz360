@@ -162,6 +162,59 @@ function pageItems(page: Page, style: LabelStyle): Item[] {
   return items;
 }
 
+// ---------- rasm belgilari (DOCX: `[[IMG:k]]`) ----------
+const IMG_LEAD = /^((?:\[\[IMG:\d{1,4}\]\]\s*)+)([\s\S]*)$/;
+const IMG_ANY = /\[\[IMG:\d{1,4}\]\]/g;
+const IMG_ONLY = /^(?:\[\[IMG:\d{1,4}\]\]\s*)+$/;
+
+// ---------- savol chegarasi: variantlar (A, B, C, D) bloklari ----------
+/** `t` qatori `expect` raqamli variantdan boshlansa, shu qatordagi variantlar soni (aks holda 0). Bir qatordagi «A) x B) y» ham hisoblanadi. */
+function optionsAt(t: string, style: LabelStyle, expect: number): number {
+  if (expect === 0) { const inl = splitInlineOptions(t, style); if (inl && inl.opts[0].label === "A") return inl.opts.length; }
+  const om = OPT.exec(t);
+  const lab = om ? canonLabel(om[1], style) : null;
+  return lab && LABELS.indexOf(lab) === expect ? 1 : 0;
+}
+
+type Entry = { it: Item; page: Page; stat: PageStat };
+type Block = { at: number; next: number | null };
+
+/**
+ * Variantlar bloklari: «A», «B», ... ketma-ket kelgan joylar (kamida ikkita variant). Har blok uchun undan keyingi birinchi savol raqami saqlanadi.
+ * QAT'IY QOIDA: savol o'z raqamidan boshlanib variantlari tugaguncha davom etadi; variantlardan oldingi raqamli qatorlar (1., 2., 3. gaplar)
+ * savol matnining ichki qismi. Keyingi savol faqat variantlar tugagach raqam tartibida keladi.
+ */
+function findBlocks(stream: Entry[], style: LabelStyle): { blocks: Block[]; barriers: number[] } {
+  const blocks: Block[] = [], barriers: number[] = [];
+  let i = 0;
+  while (i < stream.length) {
+    const it = stream[i].it;
+    if (it.kind !== "line") { barriers.push(i); i++; continue; }
+    const t = it.text.trim();
+    if (!t) { i++; continue; }
+    if (KEY_HEADING.test(t) || SECTION_HEAD.test(t)) { barriers.push(i); i++; continue; }
+    const first = optionsAt(IMG_LEAD.exec(t)?.[2]?.trim() || t, style, 0);
+    if (!first) { i++; continue; }
+    let expect = first, j = i + 1, next: number | null = null;
+    for (; j < stream.length; j++) {
+      const e = stream[j].it;
+      if (e.kind !== "line") break;
+      const u = e.text.trim();
+      if (!u) continue;
+      if (KEY_HEADING.test(u) || SECTION_HEAD.test(u)) break;
+      const body = IMG_LEAD.exec(u)?.[2]?.trim() || u;
+      const k = optionsAt(body, style, expect);
+      if (k > 0) { expect += k; continue; }
+      const qm = QSTART.exec(body);
+      if (qm) { next = Number(qm[1]); break; }
+      // variant davomi (o'ralgan matn), rasm yoki «Javob: B» qatori: blokka kiradi
+    }
+    if (expect >= 2) blocks.push({ at: i, next });
+    i = Math.max(j, i + 1);
+  }
+  return { blocks, barriers };
+}
+
 // ---------- asosiy ajratish ----------
 export function parseQuestions(pages: Page[]): RuleParse {
   const optSample = pages.map((p) => p.text).join("\n").match(new RegExp(`^\\s*\\(?[${L}]\\s*[).]`, "gm"))?.join("") ?? "";
@@ -169,18 +222,65 @@ export function parseQuestions(pages: Page[]): RuleParse {
   const questions: DraftQuestion[] = [];
   const keyLines: string[] = [];
   const perPage: PageStat[] = [];
-  const S = { cur: null as DraftQuestion | null, open: null as Opt | null, expect: 0, lastNum: 0, section: 0, inKey: false, candidates: 0 };
+  const S = { cur: null as DraftQuestion | null, open: null as Opt | null, expect: 0, lastNum: 0, section: 0, inKey: false, candidates: 0, nested: false };
+
+  // Hamma sahifa elementlari bitta oqimda: savol chegarasini aniqlash uchun oldinga qarash kerak.
+  const stream: Entry[] = [];
+  for (const page of pages) {
+    const stat: PageStat = { label: page.label, questions: 0, keyLines: 0, chars: page.text.length };
+    perPage.push(stat);
+    for (const it of pageItems(page, style)) stream.push({ it, page, stat });
+  }
+  const { blocks, barriers } = findBlocks(stream, style);
+  /** `idx` dan keyingi, oralig'ida jadval/bo'lim/kalit sarlavhasi bo'lmagan birinchi variantlar bloki. */
+  const nextBlock = (idx: number): Block | null => {
+    const b = blocks.find((x) => x.at > idx);
+    return b && !barriers.some((x) => x > idx && x < b.at) ? b : null;
+  };
+  /**
+   * Hali variantlari yo'q savol ichida raqamli qator uchraganda: bu yangi savolmi yoki savol matnidagi ichki gap (1., 2., 3.)mi?
+   * Oldinda variantlar bloki bo'lsa va undan keyin raqam shu savoldan keyingisiga davom etsa (yoki blokdan keyin raqam bo'lmasa),
+   * blok shu savolniki: raqamli qatorlar savol matniga kiradi.
+   */
+  const insideStem = (idx: number, num: number, q: DraftQuestion): boolean => {
+    if (q.options.length > 0 || S.expect > 0) return false;
+    if (S.nested) return true;
+    const nb = nextBlock(idx);
+    if (!nb) return false;
+    const owner = q.number;
+    const yes = nb.next === null || (owner !== null && nb.next === owner + 1) || (num === 1 && owner !== null && owner > 1);
+    if (yes) S.nested = true;
+    return yes;
+  };
 
   const finish = () => {
     const q = S.cur;
     if (q) {
+      // Variant yonidagi rasm (matn bilan birga) savolga tegishli: savol matni oxiriga ko'chiriladi; faqat rasmdan iborat variant o'z joyida qoladi.
+      const moved: string[] = [];
+      q.options = q.options.map((o) => {
+        const marks = o.text.match(IMG_ANY) ?? [];
+        const rest = o.text.replace(IMG_ANY, " ").trim();
+        if (marks.length && rest) { moved.push(...marks); return { label: o.label, text: rest }; }
+        return o;
+      });
+      if (moved.length) q.text += " " + moved.join(" ");
+      // Faqat rasmdan iborat variantlar: platforma variantlarda rasm ko'rsatmaydi, shuning uchun rasm savol matniga variant harfi bilan qo'shiladi.
+      if (q.options.some((o) => IMG_ONLY.test(o.text.trim()))) {
+        q.options = q.options.map((o) => {
+          if (!IMG_ONLY.test(o.text.trim())) return o;
+          q.text += `\n${o.label}) ${o.text.trim()}`;
+          return { label: o.label, text: "(rasm)" };
+        });
+        q.note = "Variantlari rasm ko'rinishida: rasmlar savol matniga variant harflari bilan qo'shildi.";
+      }
       q.text = clean(q.text);
       q.options = q.options.map((o) => ({ label: o.label, text: clean(o.text) }));
       q.qtype = inferType(q.text, q.options, q.inlineAnswer);
       q.incomplete = isIncomplete(q);
       if (q.text) questions.push(q);
     }
-    S.cur = null; S.open = null; S.expect = 0;
+    S.cur = null; S.open = null; S.expect = 0; S.nested = false;
   };
   const begin = (num: number, text: string, page: string) => {
     finish();
@@ -198,13 +298,12 @@ export function parseQuestions(pages: Page[]): RuleParse {
     const o: Opt = { label: LABELS[idx], text: mk.text };
     q.options.push(o);
     if (mk.marked) q.inlineAnswer = [...new Set([...(q.inlineAnswer ?? []), o.label])].sort();
-    S.open = o; S.expect = idx + 1;
+    S.open = o; S.expect = idx + 1; S.nested = false;
   };
 
-  for (const page of pages) {
-    const stat: PageStat = { label: page.label, questions: 0, keyLines: 0, chars: page.text.length };
-    perPage.push(stat);
-    for (const it of pageItems(page, style)) {
+  for (let idx = 0; idx < stream.length; idx++) {
+    const { it, page, stat } = stream[idx];
+    {
       if (it.kind === "table") {
         finish();
         for (const q of it.qs) {
@@ -236,33 +335,47 @@ export function parseQuestions(pages: Page[]): RuleParse {
         q.inlineAnswer = letters.length ? letters : null;
         continue;
       }
+      // Qator boshidagi rasm belgisi («[[IMG:3]]16. Savol...») savol/variant raqamini yashirmasin: belgi ajratib olinadi.
+      const lead = IMG_LEAD.exec(t);
+      const marks = lead ? lead[1].trim() : "";
+      const body = lead ? lead[2].trim() : t;
+      if (lead && !body) {
+        // faqat rasm qatori: variantdan keyin kelsa va variant matni bor bo'lsa, rasm savolga tegishli (savol matni oxiriga)
+        if (q) {
+          if (S.open && q.options.length && !S.open.text.trim()) S.open.text = marks;
+          else q.text += (q.text ? (S.nested ? "\n" : " ") : "") + marks;
+        }
+        continue;
+      }
       // variant
       if (q) {
         // Bir qatorda bir nechta variant («A) 5 B) 6 C) 7») avval tekshiriladi, so'ng oddiy variant qatori.
-        const inl = splitInlineOptions(t, style);
+        const inl = splitInlineOptions(body, style);
         if (inl && inl.opts[0].label === LABELS[S.expect]) {
           if (inl.head && S.expect === 0) q.text += " " + inl.head;
           for (const o of inl.opts) addOption(LABELS.indexOf(o.label), o.text);
+          if (marks) q.text += " " + marks;
           continue;
         }
-        const om = OPT.exec(t);
+        const om = OPT.exec(body);
         if (om) {
           const lab = canonLabel(om[1], style);
-          const idx = lab ? LABELS.indexOf(lab) : -1;
-          if (idx >= 0 && idx === S.expect) { addOption(idx, om[2]); continue; }
+          const oi = lab ? LABELS.indexOf(lab) : -1;
+          if (oi >= 0 && oi === S.expect) { addOption(oi, marks ? `${om[2]} ${marks}` : om[2]); continue; }
         }
       }
-      // yangi savol
-      const qm = QSTART.exec(t);
+      // yangi savol (yoki variantlardan oldingi savol matnidagi raqamli gap: 1., 2., 3.)
+      const qm = QSTART.exec(body);
       if (qm) {
         const num = Number(qm[1]);
+        if (q && insideStem(idx, num, q)) { q.text += "\n" + t; continue; }
         const plausible = !q ? num <= 500 : num === S.lastNum + 1 || num === 1 || (num > S.lastNum && num <= S.lastNum + 2);
-        if (plausible && num <= 500) { begin(num, qm[2], page.label); stat.questions++; continue; }
+        if (plausible && num <= 500) { begin(num, marks ? `${qm[2]} ${marks}` : qm[2], page.label); stat.questions++; continue; }
       }
       // davomi
       if (q) {
         if (S.open && q.options.length) S.open.text += " " + t;
-        else q.text += (q.text ? " " : "") + t;
+        else q.text += (q.text ? (S.nested ? "\n" : " ") : "") + t;
       }
     }
   }

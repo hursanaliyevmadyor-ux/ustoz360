@@ -19,7 +19,7 @@ export type FileView = {
   pageSpec: string | null; groups: number;
 };
 /** Savoldagi rasm/jadval/formula joyi: `box` = [ymin, xmin, ymax, xmax], sahifaning 0..1000 koordinatalari. */
-export type FigureInfo = { n: number; page: number | null; box: [number, number, number, number] | null; kind: string; caption?: string };
+export type FigureInfo = { n: number; page: number | null; box: [number, number, number, number] | null; kind: string; caption?: string; src?: string };
 
 export type SessionView = {
   id: string; title: string; status: string; step: string; subject: string | null; error: string | null; label: string | null; warnings: string[]; aiBlocked: string | null;

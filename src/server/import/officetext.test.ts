@@ -34,6 +34,47 @@ describe("DOCX matni", () => {
     expect(extractOfficeText("docx", new Uint8Array([1, 2, 3]))).toBeNull();
     expect(extractOfficeText("docx", docx(""))!.pages).toEqual([]);
   });
+
+  describe("rasmlar o'z joyida", () => {
+    const REL = `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/><Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.emf"/></Relationships>`;
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 1, 2, 3, 4]);
+    const draw = (rid: string) => `<w:r><mc:AlternateContent><mc:Choice><w:drawing><wp:anchor><a:graphic><pic:pic><pic:blipFill><a:blip r:embed="${rid}"/></pic:blipFill></pic:pic></a:graphic></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:pict><v:shape><v:imagedata r:id="${rid}"/></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r>`;
+    const withImages = (body: string) => buildZip({
+      "word/document.xml": `<?xml version="1.0"?><w:document ${W}><w:body>${body}</w:body></w:document>`,
+      "word/_rels/document.xml.rels": REL, "word/media/image1.png": PNG, "word/media/image2.emf": Buffer.from("EMF-bytes-not-supported"),
+    });
+
+    it("rasm belgisi paragrafdagi o'z joyiga qo'yiladi; mc:Fallback nusxasi ikkinchi marta sanalmaydi", () => {
+      const body = para("16. ABCD to'g'ri to'rtburchak. BC ni toping.") + `<w:p><w:r><w:t>B) 40 cm</w:t></w:r>${draw("rId5")}</w:p>` + para("A) 30 cm") ;
+      const r = extractOfficeText("docx", withImages(body))!;
+      expect(r.pages[0].text).toBe("16. ABCD to'g'ri to'rtburchak. BC ni toping.\nB) 40 cm[[IMG:1]]\nA) 30 cm");
+      expect(r.media!.size).toBe(1);
+      expect(r.note).toMatch(/o'z joyida/);
+    });
+
+    it("rasm baytlari faqat so'ralganda o'qiladi", () => {
+      const body = `<w:p><w:r><w:t>Shakl:</w:t></w:r>${draw("rId5")}</w:p>`;
+      const bytes = withImages(body);
+      expect(extractOfficeText("docx", bytes)!.media!.get(1)!.bytes).toBeNull();
+      const r = extractOfficeText("docx", bytes, { media: true })!;
+      expect(r.media!.get(1)!.path).toBe("word/media/image1.png");
+      expect(Buffer.compare(r.media!.get(1)!.bytes!, PNG)).toBe(0);
+    });
+
+    it("DOCX → savol: rasm savol matnining oxirida (variant yonidan ko'chgan) va savollar to'g'ri ajraladi", () => {
+      const body = para("1. Maydon 450 cm². BC ni toping.") + para("A) 30 cm") + `<w:p><w:r><w:t>B) 40 cm</w:t></w:r>${draw("rId5")}</w:p>` + para("C) 40,2 cm") + para("D) 42 cm") + para("2. Ikkinchi?") + para("A) x") + para("B) y");
+      const q = parseQuestions(extractOfficeText("docx", withImages(body))!.pages);
+      expect(q.questions).toHaveLength(2);
+      expect(q.questions[0].text).toBe("Maydon 450 cm². BC ni toping. [[IMG:1]]");
+      expect(q.questions[0].options.map((o) => o.text)).toEqual(["30 cm", "40 cm", "40,2 cm", "42 cm"]);
+    });
+
+    it("qo'llab-quvvatlanmaydigan format (EMF) ham joyida belgilanadi: keyingi bosqich uni «o'qib bo'lmaydigan» deb ko'rsatadi", () => {
+      const r = extractOfficeText("docx", withImages(`<w:p><w:r><w:t>Chizma</w:t></w:r>${draw("rId6")}</w:p>`), { media: true })!;
+      expect(r.pages[0].text).toBe("Chizma[[IMG:1]]");
+      expect(r.media!.get(1)!.path).toBe("word/media/image2.emf");
+    });
+  });
 });
 
 describe("XLSX, PPTX, ODT matni", () => {

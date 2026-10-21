@@ -76,6 +76,96 @@ describe("savollarni qoidalar bilan ajratish", () => {
   });
 });
 
+describe("savol chegarasi: savol variantlar tugaguncha davom etadi (qat'iy qoida)", () => {
+  const STEM = [
+    "3. Qaysi javobdagi gapda vergul uch o'rinda tushirib qoldirilgan?",
+    "1. Bozor oyoqqa turdi shovqin-suron yer-u ko'kni tutdi.",
+    "2. Odamda tasavvur bor: xayoliga nimaningdir yoki kimningdir suratini keltira oladi.",
+    "3. Yo'ldan adashsang orqaga qaytishing mumkin ammo so'zdan adashsang hech nima qila olmaysan.",
+    "4. Do'stim yo'q demang sizdan yana bir o'ylab ko'rishingizni iltimos qilaman.",
+    "To'g'ri javobni aniqlang",
+    "A. 1 va 3", "B. 2 va 4", "C. 3 va 4", "D. Faqat 3",
+  ];
+
+  it("savol ichidagi 1., 2., 3., 4. gaplar alohida savol bo'lmaydi: A-D variantlar shu savolniki", () => {
+    const r = parse(["2. Oldingi savol?", "A) a", "B) b", "C) c", "D) d", ...STEM, "4. Keyingi savol?", "A) x", "B) y", "C) z", "D) w"].join("\n"));
+    expect(r.questions.map((q) => q.number)).toEqual([2, 3, 4]);
+    const q = r.questions[1];
+    expect(q.options.map((o) => `${o.label}:${o.text}`)).toEqual(["A:1 va 3", "B:2 va 4", "C:3 va 4", "D:Faqat 3"]);
+    expect(q.qtype).toBe("SINGLE");
+    expect(q.incomplete).toBe(false);
+    // gaplar o'z tartibida, har biri yangi qatorda; ko'rsatma ham savol matniga kiradi
+    expect(q.text.split("\n")).toEqual([
+      "Qaysi javobdagi gapda vergul uch o'rinda tushirib qoldirilgan?",
+      "1. Bozor oyoqqa turdi shovqin-suron yer-u ko'kni tutdi.",
+      "2. Odamda tasavvur bor: xayoliga nimaningdir yoki kimningdir suratini keltira oladi.",
+      "3. Yo'ldan adashsang orqaga qaytishing mumkin ammo so'zdan adashsang hech nima qila olmaysan.",
+      "4. Do'stim yo'q demang sizdan yana bir o'ylab ko'rishingizni iltimos qilaman.",
+      "To'g'ri javobni aniqlang",
+    ]);
+    // variantlar tugagach raqam tartibida keyingi savol boshlanadi
+    expect(r.questions[2].text).toBe("Keyingi savol?");
+    expect(r.questions[2].options).toHaveLength(4);
+  });
+
+  it("birinchi savolning ichki gaplari ham (raqam 1 bilan to'qnashsa ham) savol matnida qoladi; oxirgi savol ham", () => {
+    const r = parse(["1. Qaysi gaplar to'g'ri?", "1. Birinchi gap.", "2. Ikkinchi gap.", "A. 1", "B. 2", "2. Keyingi?", "A. x", "B. y", "3. Oxirgi, ichki gaplar bilan:", "1. gap bir", "2. gap ikki", "A. 1", "B. 2"].join("\n"));
+    expect(r.questions.map((q) => q.number)).toEqual([1, 2, 3]);
+    expect(r.questions[0].text).toContain("2. Ikkinchi gap.");
+    expect(r.questions[0].options).toHaveLength(2);
+    expect(r.questions[2].text).toContain("2. gap ikki");
+    expect(r.questions[2].options.map((o) => o.text)).toEqual(["1", "2"]);
+  });
+
+  it("variantsiz savol alohida qoladi (keyingi savol uning ichki gapi hisoblanmaydi)", () => {
+    const r = parse(["1. Bir?", "A) a", "B) b", "2. Variantsiz savol?", "3. Variantli savol?", "A) a", "B) b", "4. Oxirgi?", "A) a", "B) b"].join("\n"));
+    expect(r.questions.map((q) => q.number)).toEqual([1, 2, 3, 4]);
+    expect(r.questions[1].options).toHaveLength(0);
+    expect(r.questions[2].options).toHaveLength(2);
+  });
+
+  it("bo'lim sarlavhasi (Test 2) oldidagi variantsiz savol keyingi bo'limga qo'shilib ketmaydi", () => {
+    const r = parse(["1. Bir?", "A) a", "B) b", "2. Variantsiz?", "Test 2", "1. Yangi bo'lim savoli?", "A) a", "B) b"].join("\n"));
+    expect(r.questions.map((q) => q.number)).toEqual([1, 2, 1]);
+  });
+});
+
+describe("rasm belgilari (DOCX [[IMG:k]]) savolda o'z joyida qoladi", () => {
+  it("savol matni ichidagi belgi so'zdan keyingi joyida saqlanadi", () => {
+    const r = parse("5. Shakldagi [[IMG:2]] burchakni toping.\nA) 30\nB) 40");
+    expect(r.questions[0].text).toBe("Shakldagi [[IMG:2]] burchakni toping.");
+  });
+
+  it("faqat rasmdan iborat qator (savol va variantlar orasida) savol matniga qo'shiladi", () => {
+    const r = parse("5. Rasmga qarab toping:\n[[IMG:2]]\nA) 30\nB) 40");
+    expect(r.questions[0].text).toBe("Rasmga qarab toping: [[IMG:2]]");
+    expect(r.questions[0].options.map((o) => o.text)).toEqual(["30", "40"]);
+  });
+
+  it("variant yonida yozuv bilan birga kelgan rasm savolga tegishli: savol matni oxiriga ko'chadi", () => {
+    const r = parse("16. ABCD to'g'ri to'rtburchakning bo'yalgan sohasi 450 cm² ga teng. BC ni toping.\nA) 30 cm\nB) 40 cm [[IMG:1]]\nC) 40,2 cm\nD) 42 cm");
+    const q = r.questions[0];
+    expect(q.text).toBe("ABCD to'g'ri to'rtburchakning bo'yalgan sohasi 450 cm² ga teng. BC ni toping. [[IMG:1]]");
+    expect(q.options.map((o) => o.text)).toEqual(["30 cm", "40 cm", "40,2 cm", "42 cm"]);
+  });
+
+  it("variantning o'zi rasm bo'lsa: rasm savol matniga variant harfi bilan qo'shiladi (variantlarda rasm ko'rsatilmaydi)", () => {
+    const r = parse("7. Qaysi shakl uchburchak?\nA) [[IMG:3]]\nB) [[IMG:4]]\nC) [[IMG:5]]");
+    const q = r.questions[0];
+    expect(q.text).toBe("Qaysi shakl uchburchak?\nA) [[IMG:3]]\nB) [[IMG:4]]\nC) [[IMG:5]]");
+    expect(q.options.map((o) => o.text)).toEqual(["(rasm)", "(rasm)", "(rasm)"]);
+    expect(q.note).toMatch(/rasm/);
+    expect(q.incomplete).toBe(false);
+  });
+
+  it("qator boshidagi rasm belgisi savol raqamini yashirmaydi", () => {
+    const r = parse("[[IMG:4]]7. Rasmdagi uchburchak yuzi?\nA) 1\nB) 2");
+    expect(r.questions[0].number).toBe(7);
+    expect(r.questions[0].text).toContain("[[IMG:4]]");
+    expect(r.questions[0].options).toHaveLength(2);
+  });
+});
+
 describe("jadvaldan savollar", () => {
   it("sarlavhali jadval: № | Savol | A | B | C | D | Javob", () => {
     const rows = [["№", "Savol", "A", "B", "C", "D", "Javob"], ["1", "2+2?", "3", "4", "5", "6", "B"], ["2", "3+3?", "5", "6", "7", "8", "b"]];

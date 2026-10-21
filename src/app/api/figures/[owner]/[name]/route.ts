@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ApiError, hasRole, requireUser } from "@/server/auth";
-import { readFigure } from "@/server/import/figures";
+import { readFigure, sniffImage } from "@/server/import/figures";
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ owner: string; name: string }> };
 
@@ -16,7 +16,7 @@ export async function GET(_req: Request, { params }: Ctx) {
     if (owner !== "global" && owner !== u.id && !hasRole(u, "ADMIN", "SUPERADMIN")) throw new ApiError(404, "Rasm topilmadi.");
     const bytes = await readFigure(owner, name);
     if (!bytes) throw new ApiError(404, "Rasm topilmadi.");
-    return new NextResponse(new Uint8Array(bytes), { headers: { "content-type": "image/png", "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff" } });
+    return new NextResponse(new Uint8Array(bytes), { headers: { "content-type": sniffImage(bytes) ?? "image/png", "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff" } });
   } catch (e) {
     if (e instanceof ApiError) return NextResponse.json({ error: e.message }, { status: e.status });
     console.error("figure:", (e as Error).message);

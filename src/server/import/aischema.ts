@@ -36,7 +36,8 @@ export const aiKeyItem = z.object({ number: z.union([z.number(), z.string()]), a
  * Savoldagi rasm/jadval/formula joyi. `box`: [ymin, xmin, ymax, xmax], sahifaning 0..1000 me'yorlashtirilgan koordinatalari (yuqori-chap burchakdan).
  * Matnda joyi `[[RASM:n]]` belgisi bilan ko'rsatiladi (asl joyida).
  */
-export type Figure = { n: number; page: number | null; box: [number, number, number, number] | null; kind: "figure" | "table" | "formula" | "unreadable"; caption?: string };
+/** `src`: rasm allaqachon saqlangan bo'lsa (DOCX ichidagi rasm) uning yo'li `egasi/nom`; PDF/rasmlarda yo'q: brauzer `page` va `box` bo'yicha kesadi. */
+export type Figure = { n: number; page: number | null; box: [number, number, number, number] | null; kind: "figure" | "table" | "formula" | "unreadable"; caption?: string; src?: string };
 export const FIGURE_MARK = /\[\[RASM:(\d{1,2})\]\]/g;
 
 export const aiExtractSchema = z.object({
