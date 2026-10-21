@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock, ListChecks, LogOut, Maximize, XCircle } from "lucide-react";
+import { BookLoader } from "@/components/book-loader";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -187,7 +188,7 @@ export default function Page() {
   if (err && !view) return (
     <Shell><div className="m-auto max-w-sm space-y-4 p-6 text-center"><AlertTriangle className="mx-auto h-10 w-10 text-danger" /><p className="font-bold">{err}</p><Button onClick={() => router.push("/imtihon")}>Imtihonlar ro'yxati</Button></div></Shell>
   );
-  if (!view) return <Shell><div className="m-auto text-sm text-muted-foreground">Imtihon yuklanmoqda...</div></Shell>;
+  if (!view) return <Shell><div className="m-auto"><BookLoader variant={2} size="lg" label="Imtihon yuklanmoqda..." /></div></Shell>;
 
   if (view.submitted && view.result) return <Results v={view} onBack={() => router.push("/imtihon")} />;
 
