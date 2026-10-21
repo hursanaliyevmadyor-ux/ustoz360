@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { KeyEntry } from "./keyparse";
-import { keySections } from "./keyparse";
+import { keySectionEntries } from "./keyparse";
 import type { Opt, QType } from "./qparse";
 
 /**
@@ -93,7 +93,8 @@ export function decide(i: DecideInput): Decision {
 }
 
 // ---------- kalitni savollarga bog'lash ----------
-export type KeyMatch = { key: string[] | null; keySource: "INLINE" | "SEPARATE_FILE" | null; conflict?: string };
+/** explanation: kalit yozuvida javob yonida berilgan izoh (bo'lsa). */
+export type KeyMatch = { key: string[] | null; keySource: "INLINE" | "SEPARATE_FILE" | null; conflict?: string; explanation?: string };
 
 /**
  * Savollar (raqami va bo'limi bilan) va kalit yozuvlarini moslashtiradi. Savol yonidagi javob (INLINE) va alohida kalit farq qilsa, ziddiyat qaydi qo'shiladi.
@@ -105,9 +106,9 @@ const lastNumber = (s: string) => /(\d+)\D*$/.exec(s)?.[1] ?? null;
 
 export function matchKeys(qs: { number: number | null; section: number; inlineAnswer: string[] | null; group?: string | null }[], entries: KeyEntry[]): KeyMatch[] {
   // Sarlavhali kalit jadvallari (ko'p testli to'plamlar): kalit savolning o'z testi bo'yicha topiladi, taxminiy bo'limlar bo'yicha emas.
-  const grouped = new Map<string, Map<number, string[]>>();
-  for (const e of entries) if (e.group) { const g = normGroup(e.group); if (g) (grouped.get(g) ?? grouped.set(g, new Map()).get(g)!).set(e.number, e.answers); }
-  const byGroup = (group: string | null | undefined, number: number): string[] | null => {
+  const grouped = new Map<string, Map<number, KeyEntry>>();
+  for (const e of entries) if (e.group) { const g = normGroup(e.group); if (g) (grouped.get(g) ?? grouped.set(g, new Map()).get(g)!).set(e.number, e); }
+  const byGroup = (group: string | null | undefined, number: number): KeyEntry | null => {
     const g = normGroup(group);
     if (!g || !grouped.size) return null;
     const direct = grouped.get(g);
@@ -117,7 +118,7 @@ export function matchKeys(qs: { number: number | null; section: number; inlineAn
     const same = n ? [...grouped.entries()].filter(([k]) => lastNumber(k) === n) : [];
     return same.length === 1 ? same[0][1].get(number) ?? null : null;
   };
-  const secs = keySections(entries.filter((e) => !e.group));
+  const secs = keySectionEntries(entries.filter((e) => !e.group));
   const qSections = [...new Set(qs.map((q) => q.section))].sort((a, b) => a - b);
   const mapSection = (qSec: number): number | null => {
     if (!secs.length) return null;
@@ -127,13 +128,16 @@ export function matchKeys(qs: { number: number | null; section: number; inlineAn
     return k >= 0 && k < secs.length ? k : null;
   };
   return qs.map((q) => {
-    const fromFile = q.number === null ? null : q.group && grouped.size ? byGroup(q.group, q.number) : (() => { const si = mapSection(q.section); return si === null ? null : secs[si]?.get(q.number as number) ?? null; })();
+    const found = q.number === null ? null : q.group && grouped.size ? byGroup(q.group, q.number) : (() => { const si = mapSection(q.section); return si === null ? null : secs[si]?.get(q.number as number) ?? null; })();
+    const fromFile = found?.answers ?? null;
+    const explanation = found?.explanation ? { explanation: found.explanation } : {};
     if (q.inlineAnswer && fromFile) {
       const eq = same([...q.inlineAnswer].sort(), [...fromFile].sort());
-      return { key: q.inlineAnswer, keySource: "INLINE" as const, ...(eq ? {} : { conflict: `Savol yonidagi javob (${q.inlineAnswer.join(",")}) va javoblar kaliti (${fromFile.join(",")}) farq qiladi.` }) };
+      // Izoh javobga tegishli: kalit bilan javob farq qilsa, izoh boshqa javobni tushuntirgani uchun olinmaydi.
+      return { key: q.inlineAnswer, keySource: "INLINE" as const, ...(eq ? explanation : { conflict: `Savol yonidagi javob (${q.inlineAnswer.join(",")}) va javoblar kaliti (${fromFile.join(",")}) farq qiladi.` }) };
     }
     if (q.inlineAnswer) return { key: q.inlineAnswer, keySource: "INLINE" as const };
-    if (fromFile) return { key: fromFile, keySource: "SEPARATE_FILE" as const };
+    if (fromFile) return { key: fromFile, keySource: "SEPARATE_FILE" as const, ...explanation };
     return { key: null, keySource: null };
   });
 }

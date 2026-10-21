@@ -36,7 +36,10 @@ export const SYSTEM_VERIFY = [
   "Explanations: 1-2 short sentences in Uzbek (Latin script).",
 ].join(" ");
 
-const EXTRACT_SHAPE = `{"questions":[{"number":1,"group":"Test No: 1","text":"...","options":[{"label":"A","text":"..."}],"type":"SINGLE","page":"3","answer":null,"figures":[],"subject":null,"topic":null,"grade":null,"difficulty":null,"uncertain":false,"note":null}],"answerKey":[{"number":1,"group":"Test No: 1","answer":["B"]}],"warnings":[]}`;
+const EXTRACT_SHAPE = `{"questions":[{"number":1,"group":"Test No: 1","text":"...","options":[{"label":"A","text":"..."}],"type":"SINGLE","page":"3","answer":null,"explanation":null,"figures":[],"subject":null,"topic":null,"grade":null,"difficulty":null,"uncertain":false,"note":null}],"answerKey":[{"number":1,"group":"Test No: 1","answer":["B"],"explanation":null}],"warnings":[]}`;
+
+/** Javob izohi: faylda javob yonida izoh/yechim berilgan bo'lsa, aynan ko'chiriladi (o'ylab topilmaydi). */
+const EXPLAIN_RULE = "EXPLANATIONS: when the document gives an explanation, solution or comment for an answer (words like 'Izoh', 'Yechim', 'Tushuntirish', 'Explanation', or a text next to the answer in the key), copy it exactly into `explanation` of that question or answer-key item (keep it short, at most ~600 characters). Never write your own explanation here; use null when the document has none.";
 
 /** PDF/rasm sahifalaridan savollarni ajratish. */
 export function extractFromFilePrompt(o: { fromPage?: number; toPage?: number; hint?: string; excerpt?: boolean }): string {
@@ -48,6 +51,7 @@ export function extractFromFilePrompt(o: { fromPage?: number; toPage?: number; h
     "If the correct answer is explicitly marked next to a question (for example 'Javob: B', a checkmark), put it into 'answer'; otherwise 'answer' is null. Do NOT solve questions here.",
     "If this part of the document contains an answer key table/list (like '1-A 2-C 3-B' or grids under a test heading), put it into 'answerKey' with the test `group` (do not repeat it in 'questions').",
     "Also fill subject, grade/level and topic guesses when the document states or clearly implies them; otherwise null.",
+    EXPLAIN_RULE,
     o.hint ? `Context: ${o.hint}` : "",
     `Return JSON in exactly this shape: ${EXTRACT_SHAPE}`,
   ].filter(Boolean).join("\n");
@@ -60,6 +64,7 @@ export function extractFromTextPrompt(chunk: string, o: { hint?: string } = {}):
     "Tables are written as 'cell | cell | cell' lines. Auto-numbered lists may have lost their numbers: keep 'number' null when it is not visible.",
     "Pictures inside the document are written as markers [[IMG:n]] at the place where they appear. Keep every marker exactly as written (do not remove, renumber or describe it) inside the question `text` right after the word it follows. If a marker stands next to an option but the picture belongs to the whole question, move it to the end of the question text. A marker that is the whole option text stays in that option.",
     "If the correct answer is explicitly marked, put it into 'answer'; otherwise null. Do NOT solve questions here. Answer keys go to 'answerKey'.",
+    EXPLAIN_RULE,
     o.hint ? `Context: ${o.hint}` : "",
     `Return JSON in exactly this shape: ${EXTRACT_SHAPE}`,
     `<document>\n${chunk}\n</document>`,
@@ -73,6 +78,7 @@ export function extractKeyPrompt(o: { fromPage?: number; toPage?: number; excerp
     "The attached file (or these pages) should contain an ANSWER KEY (a list or table of question numbers and correct options).",
     "Return every pair in 'answerKey' as {number, group, answer:[letters]}. `group` is the heading of the test the key table belongs to (for example 'Diagnostika testi Kuzgi No: 1'); null when the key has no heading. Key grids can have several columns (1-10, 11-20, 21-30 ...): read every cell and never guess missing ones.",
     "Use Latin letters A, B, C, D... (map Cyrillic А Б В Г to A B C D). Several correct options go into the same array.",
+    EXPLAIN_RULE,
     "Leave 'questions' empty unless the file also contains questions. Do not guess missing entries.",
     `Return JSON in exactly this shape: ${EXTRACT_SHAPE}`,
   ].join("\n");

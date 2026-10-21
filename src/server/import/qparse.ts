@@ -1,4 +1,4 @@
-import { canonLabel, detectLabelStyle, isKeyLine, KEY_HEADING, LETTER_CLASS, parseAnswerKey, type KeyEntry, type LabelStyle } from "./keyparse";
+import { canonLabel, cleanNote, detectLabelStyle, isKeyLine, isKeyNoteLine, KEY_HEADING, LETTER_CLASS, NOTE_INLINE, NOTE_LINE, parseAnswerKey, type KeyEntry, type LabelStyle } from "./keyparse";
 import type { Page } from "./officetext";
 
 /**
@@ -11,6 +11,8 @@ export type Opt = { label: string; text: string };
 export type DraftQuestion = {
   number: number | null; text: string; options: Opt[]; page: string | null; section: number; qtype: QType;
   inlineAnswer: string[] | null; incomplete: boolean; note?: string;
+  /** Faylda javob yonida berilgan izoh/yechim («Izoh: ...»): savolga izoh sifatida ko'chiriladi, tekshirilgan haqiqat emas. */
+  explanation?: string;
 };
 export type PageStat = { label: string; questions: number; keyLines: number; chars: number };
 export type RuleParse = {
@@ -222,7 +224,7 @@ export function parseQuestions(pages: Page[]): RuleParse {
   const questions: DraftQuestion[] = [];
   const keyLines: string[] = [];
   const perPage: PageStat[] = [];
-  const S = { cur: null as DraftQuestion | null, open: null as Opt | null, expect: 0, lastNum: 0, section: 0, inKey: false, candidates: 0, nested: false };
+  const S = { cur: null as DraftQuestion | null, open: null as Opt | null, expect: 0, lastNum: 0, section: 0, inKey: false, candidates: 0, nested: false, explOpen: false, keyNote: false };
 
   // Hamma sahifa elementlari bitta oqimda: savol chegarasini aniqlash uchun oldinga qarash kerak.
   const stream: Entry[] = [];
@@ -280,7 +282,7 @@ export function parseQuestions(pages: Page[]): RuleParse {
       q.incomplete = isIncomplete(q);
       if (q.text) questions.push(q);
     }
-    S.cur = null; S.open = null; S.expect = 0; S.nested = false;
+    S.cur = null; S.open = null; S.expect = 0; S.nested = false; S.explOpen = false;
   };
   const begin = (num: number, text: string, page: string) => {
     finish();
@@ -298,7 +300,7 @@ export function parseQuestions(pages: Page[]): RuleParse {
     const o: Opt = { label: LABELS[idx], text: mk.text };
     q.options.push(o);
     if (mk.marked) q.inlineAnswer = [...new Set([...(q.inlineAnswer ?? []), o.label])].sort();
-    S.open = o; S.expect = idx + 1; S.nested = false;
+    S.open = o; S.expect = idx + 1; S.nested = false; S.explOpen = false;
   };
 
   for (let idx = 0; idx < stream.length; idx++) {
@@ -317,9 +319,12 @@ export function parseQuestions(pages: Page[]): RuleParse {
       const t = it.text.trim();
       if (!t) continue;
 
-      if (KEY_HEADING.test(t)) { finish(); S.inKey = true; continue; }
+      if (KEY_HEADING.test(t)) { finish(); S.inKey = true; S.keyNote = false; continue; }
       if (S.inKey) {
-        if (isKeyLine(t)) { keyLines.push(t); stat.keyLines++; continue; }
+        if (isKeyLine(t)) { keyLines.push(t); stat.keyLines++; S.keyNote = false; continue; }
+        // javob yonidagi izoh: «1-B. Izoh: ...», «Izoh: ...» va uning davomi kalitga qo'shiladi (savol bo'lib ketmasligi uchun)
+        if (isKeyNoteLine(t) || NOTE_LINE.test(t)) { keyLines.push(t); stat.keyLines++; S.keyNote = true; continue; }
+        if (S.keyNote && !QSTART.test(t) && !SECTION_HEAD.test(t)) { keyLines.push(t); continue; }
         if (t.length <= 40) continue;
         S.inKey = false;
       }
@@ -333,7 +338,16 @@ export function parseQuestions(pages: Page[]): RuleParse {
         const tail = am[0].slice(am[0].search(/[:=\-–]/) + 1);
         const letters = [...new Set([...tail.matchAll(LETTER_G)].map((x) => canonLabel(x[0], style)).filter((x): x is string => !!x))].sort();
         q.inlineAnswer = letters.length ? letters : null;
+        // «Javob: B. Izoh: ...» — izoh shu qatorda bo'lsa
+        const nm = NOTE_INLINE.exec(t.slice(am[0].length));
+        if (nm) { q.explanation = cleanNote(nm[1]); S.explOpen = true; } else S.explOpen = false;
         continue;
+      }
+      // «Izoh: ...» qatori va uning davomi: savolning izohi (variantlar tugagandan keyin)
+      if (q && q.options.length) {
+        const nm = NOTE_LINE.exec(t);
+        if (nm) { q.explanation = cleanNote(`${q.explanation ?? ""} ${nm[1]}`); S.explOpen = true; continue; }
+        if (S.explOpen && !QSTART.test(t) && !OPT.test(t) && !SECTION_HEAD.test(t)) { q.explanation = cleanNote(`${q.explanation ?? ""} ${t}`); continue; }
       }
       // Qator boshidagi rasm belgisi («[[IMG:3]]16. Savol...») savol/variant raqamini yashirmasin: belgi ajratib olinadi.
       const lead = IMG_LEAD.exec(t);
