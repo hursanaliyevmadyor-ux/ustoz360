@@ -37,8 +37,11 @@ const MARK_END = /\s*(?:\*|✓|✔|\(\+\)|\(to['’ʻ‘`]?g['’ʻ‘`]?ri\)|\(
 
 const clean = (s: string) => s.replace(/ /g, " ").replace(/[ \t]+/g, " ").trim();
 
-/** Bir qatordagi «A) .. B) .. C) ..» variantlarni ajratadi (A dan boshlanib ketma-ket bo'lsa). */
-export function splitInlineOptions(line: string, style: LabelStyle): { head: string; opts: Opt[] } | null {
+/**
+ * Bir qatordagi «A) .. B) .. C) ..» variantlarni ajratadi (ketma-ket bo'lsa). `from`: zanjir boshlanadigan variant raqami (0 = A).
+ * Ikki ustunli variantlarda qator B, C yoki D dan boshlanishi mumkin («C) 40 cm   D) 42 cm»): bunda qator variant yorlig'idan boshlanishi shart.
+ */
+export function splitInlineOptions(line: string, style: LabelStyle, from = 0): { head: string; opts: Opt[] } | null {
   const re = new RegExp(`(?:^|\\s)\\(?([${L}])\\s*[).]\\s`, "g");
   const marks: { idx: number; start: number; end: number; label: string }[] = [];
   let m: RegExpExecArray | null;
@@ -46,13 +49,15 @@ export function splitInlineOptions(line: string, style: LabelStyle): { head: str
     const lab = canonLabel(m[1], style);
     if (lab) marks.push({ idx: LABELS.indexOf(lab), start: m.index + (/^\s/.test(m[0]) ? 1 : 0), end: m.index + m[0].length, label: lab });
   }
-  const first = marks.findIndex((x) => x.idx === 0);
+  const first = marks.findIndex((x) => x.idx === from);
   if (first < 0) return null;
   const chain = [marks[first]];
   for (let i = first + 1; i < marks.length; i++) if (marks[i].idx === chain[chain.length - 1].idx + 1) chain.push(marks[i]);
   if (chain.length < 2) return null;
+  const head = clean(line.slice(0, chain[0].start));
+  if (from > 0 && head) return null; // variantlar o'rtasidan boshlangan qator oldingi variantning davomi bo'lishi mumkin
   const opts = chain.map((c, i) => ({ label: c.label, text: clean(line.slice(c.end, i + 1 < chain.length ? chain[i + 1].start : line.length)) }));
-  return { head: clean(line.slice(0, chain[0].start)), opts };
+  return { head, opts };
 }
 
 function markedAnswer(text: string): { text: string; marked: boolean } {
@@ -172,7 +177,8 @@ const IMG_ONLY = /^(?:\[\[IMG:\d{1,4}\]\]\s*)+$/;
 // ---------- savol chegarasi: variantlar (A, B, C, D) bloklari ----------
 /** `t` qatori `expect` raqamli variantdan boshlansa, shu qatordagi variantlar soni (aks holda 0). Bir qatordagi «A) x B) y» ham hisoblanadi. */
 function optionsAt(t: string, style: LabelStyle, expect: number): number {
-  if (expect === 0) { const inl = splitInlineOptions(t, style); if (inl && inl.opts[0].label === "A") return inl.opts.length; }
+  const inl = splitInlineOptions(t, style, expect);
+  if (inl && inl.opts[0].label === LABELS[expect]) return inl.opts.length;
   const om = OPT.exec(t);
   const lab = om ? canonLabel(om[1], style) : null;
   return lab && LABELS.indexOf(lab) === expect ? 1 : 0;
@@ -219,7 +225,8 @@ function findBlocks(stream: Entry[], style: LabelStyle): { blocks: Block[]; barr
 
 // ---------- asosiy ajratish ----------
 export function parseQuestions(pages: Page[]): RuleParse {
-  const optSample = pages.map((p) => p.text).join("\n").match(new RegExp(`^\\s*\\(?[${L}]\\s*[).]`, "gm"))?.join("") ?? "";
+  // Variant yorliqlari uslubi: qator boshidagi va qator ichidagi («А) .. Б) ..») yorliqlar bo'yicha (Б va Г faqat qator ichida kelishi mumkin).
+  const optSample = pages.map((p) => p.text).join("\n").match(new RegExp(`(?:^|\\s)\\(?[${L}]\\s*[).](?=\\s)`, "gm"))?.join("") ?? "";
   const style = detectLabelStyle(optSample);
   const questions: DraftQuestion[] = [];
   const keyLines: string[] = [];
@@ -364,7 +371,7 @@ export function parseQuestions(pages: Page[]): RuleParse {
       // variant
       if (q) {
         // Bir qatorda bir nechta variant («A) 5 B) 6 C) 7») avval tekshiriladi, so'ng oddiy variant qatori.
-        const inl = splitInlineOptions(body, style);
+        const inl = splitInlineOptions(body, style, S.expect);
         if (inl && inl.opts[0].label === LABELS[S.expect]) {
           if (inl.head && S.expect === 0) q.text += " " + inl.head;
           for (const o of inl.opts) addOption(LABELS.indexOf(o.label), o.text);
