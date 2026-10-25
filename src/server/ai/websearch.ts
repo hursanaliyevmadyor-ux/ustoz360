@@ -6,6 +6,7 @@ import type { Source } from "../../lib/websources";
 import { checkRate } from "./gateway";
 import { analyzeQuery, refineQuery } from "./intent";
 import { kbStrong, questionTokenCount, searchKnowledge } from "./kb";
+import { rankGeminiModels, type GeminiModelInfo } from "./geminimodels";
 import { runAnyAi } from "./structured";
 import { creditsThisMonth, tavilyConfigured, tavilyMonthlyCap, tavilyRemoteUsage, tavilySearch } from "./tavily";
 import { OFFICIAL_DOMAINS, hasOfficial, rankHits } from "./trust";
@@ -146,7 +147,7 @@ export async function runWebSearch(userId: string, messages: Msg[], opts: WebOpt
  * Tavily'ga qidiruv so'rovi yuborilmaydi (kredit sarflaydi): faqat ulanganligi va /usage (kreditsiz) ko'rsatiladi.
  */
 export async function webHealth() {
-  const gemini: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string } = { configured: geminiConfigured(), model: geminiConfigured() ? geminiModel() : null };
+  const gemini: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string; suggest?: string[] } = { configured: geminiConfigured(), model: geminiConfigured() ? geminiModel() : null };
   if (gemini.configured) {
     const t0 = Date.now();
     try {
@@ -157,6 +158,13 @@ export async function webHealth() {
       gemini.ok = res.ok; if (!res.ok) gemini.error = String(res.status);
     } catch (e) { gemini.ok = false; gemini.error = (e as Error).name; }
     gemini.ms = Date.now() - t0;
+    // Model topilmadi (404): kalit ko'ra oladigan mos model nomlari tavsiya qilinadi (GEMINI_MODEL ni yangilash uchun).
+    if (gemini.error === "404") {
+      try {
+        const r = await fetch(`${GEMINI}/models?pageSize=200`, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, signal: AbortSignal.timeout(8_000) });
+        if (r.ok) gemini.suggest = rankGeminiModels(((await r.json()) as { models?: GeminiModelInfo[] }).models ?? [], false).slice(0, 3);
+      } catch { /* tavsiya ixtiyoriy */ }
+    }
   }
   return { gemini, tavily: { configured: tavilyConfigured() } };
 }
