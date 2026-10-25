@@ -475,5 +475,7 @@ export async function filePreview(viewer: Viewer, id: string, fileId: string, pa
   }
   const pages = (f.pages as unknown as Page[] | null) ?? [];
   const hit = (page && pages.find((p) => p.label === page)) || null;
-  return { kind: f.kind, fileName: f.fileName, url: null as string | null, text: hit ? hit.text : pages.map((p) => `[${p.label}]\n${p.text}`).join("\n\n").slice(0, 20000), label: hit?.label ?? page ?? null };
+  const text = hit ? hit.text : pages.map((p) => `[${p.label}]\n${p.text}`).join("\n\n").slice(0, 20000);
+  // DOCX ichidagi rasm belgisi (`[[IMG:k]]`) ko'rsatishda tushunarli «[rasm]» bo'ladi.
+  return { kind: f.kind, fileName: f.fileName, url: null as string | null, text: text.replace(/\[\[IMG:\d{1,4}\]\]/g, "[rasm]"), label: hit?.label ?? page ?? null };
 }

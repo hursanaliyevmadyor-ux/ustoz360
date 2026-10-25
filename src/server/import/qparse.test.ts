@@ -76,6 +76,33 @@ describe("savollarni qoidalar bilan ajratish", () => {
   });
 });
 
+describe("ikki ustunli variantlar bitta variantga qo'shilib ketmaydi", () => {
+  it("«A) .. B) ..» va keyingi qatorda «C) .. D) ..»", () => {
+    const r = parse("1. BC ni toping.\nA) 30 cm\tB) 40 cm\nC) 40,2 cm\tD) 42 cm\n2. Keyingi?\nA) x\nB) y");
+    expect(r.questions).toHaveLength(2);
+    expect(r.questions[0].options.map((o) => `${o.label}:${o.text}`)).toEqual(["A:30 cm", "B:40 cm", "C:40,2 cm", "D:42 cm"]);
+    expect(r.questions[0].incomplete).toBe(false);
+  });
+
+  it("variantlar qator o'rtasidan boshlansa ham (B C yoki C D) ajraladi; bir variant ichidagi o'ralgan matn buzilmaydi", () => {
+    const r = parse("1. Savol?\nA) birinchi\nB) ikkinchi C) uchinchi\nD) to'rtinchi\n2. Boshqa?\nA) bir\nB) ikki variant matni\nuzun davomi\nC) uch");
+    expect(r.questions[0].options.map((o) => `${o.label}:${o.text}`)).toEqual(["A:birinchi", "B:ikkinchi", "C:uchinchi", "D:to'rtinchi"]);
+    expect(r.questions[1].options.map((o) => o.text)).toEqual(["bir", "ikki variant matni uzun davomi", "uch"]);
+  });
+
+  it("variant matni ichidagi «C) ...» o'ralgan davom qatori oldingi variantga qo'shiladi (qator variant yorlig'idan boshlanmasa)", () => {
+    expect(splitInlineOptions("matn davomi C) x D) y", "latin", 2)).toBeNull();
+    expect(splitInlineOptions("C) x D) y", "latin", 2)?.opts.map((o) => o.label + o.text)).toEqual(["Cx", "Dy"]);
+  });
+
+  it("A-D to'rt ustunli bitta qator va Kirill yorliqlar", () => {
+    const a = parse("1. Q?\nA) 1  B) 2  C) 3  D) 4");
+    expect(a.questions[0].options).toHaveLength(4);
+    const b = parse("1. Столица?\nА) Москва\tБ) Ташкент\nВ) Минск\tГ) Киев");
+    expect(b.questions[0].options.map((o) => o.label + o.text)).toEqual(["AМосква", "BТашкент", "CМинск", "DКиев"]);
+  });
+});
+
 describe("savol chegarasi: savol variantlar tugaguncha davom etadi (qat'iy qoida)", () => {
   const STEM = [
     "3. Qaysi javobdagi gapda vergul uch o'rinda tushirib qoldirilgan?",

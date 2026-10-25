@@ -57,7 +57,10 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
   const det = detail.data && detail.data.id === selected ? detail.data : null;
 
   const sel = items.find((x) => x.id === selected) ?? null;
-  const selFile = sel?.fileId ?? fileId ?? session.files[0]?.id ?? null;
+  // Foydalanuvchi «Asl fayl» ro'yxatidan tanlagan fayl (fileId) birinchi o'rinda: avval tanlangan savolning fayli har doim ustun kelib, ikkinchi fayl ochilmasdi.
+  const selFile = fileId ?? sel?.fileId ?? session.files[0]?.id ?? null;
+  // Savolning sahifasi faqat o'sha savolning o'z faylida ko'rsatiladi (boshqa faylga o'tilganda sahifa raqami olinmaydi).
+  const previewPage = selFile && selFile === sel?.fileId ? pageOverride ?? sel?.sourcePage ?? null : null;
 
   const changed = (opts?: { advance?: boolean; detail?: boolean }) => {
     if (opts?.advance) {
@@ -101,8 +104,9 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
 
   const setF = (f: Filter) => { setFilter(f); setPage(1); setSelected(null); };
   const pickSection = (v: string) => { setSection(v); setPage(1); setSelected(null); };
-  const openPage = (p: number | null) => { if (p) { setPageOverride(`${p}`); setPane("file"); } };
-  React.useEffect(() => { setPageOverride(null); }, [selected]);
+  const openPage = (p: number | null) => { if (p) { setFileId(null); setPageOverride(`${p}`); setPane("file"); } };
+  // Boshqa savol tanlansa, ko'rsatiladigan fayl ham shu savolning fayliga qaytadi.
+  React.useEffect(() => { setPageOverride(null); setFileId(null); }, [selected]);
   const tabs: { key: Filter; label: string; n: number }[] = [
     { key: "all", label: "Hammasi", n: c.total - c.removed }, { key: "ready", label: "Tayyor", n: c.ready }, { key: "review", label: "Tekshirish kerak", n: c.review },
     { key: "noanswer", label: "Javobi topilmagan", n: c.noAnswer }, { key: "conflict", label: "Ziddiyatli", n: c.conflict }, { key: "approved", label: "Tasdiqlangan", n: c.approved },
@@ -165,7 +169,7 @@ export function ReviewCenter({ session, locked, onSessionChanged }: { session: S
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)_minmax(0,340px)] lg:items-start">
         <Card className={cn("p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto", pane !== "file" && "hidden lg:block")}>
-          <FilePreview sessionId={session.id} files={session.files} fileId={selFile} page={pageOverride ?? sel?.sourcePage ?? null} onPickFile={setFileId} />
+          <FilePreview sessionId={session.id} files={session.files} fileId={selFile} page={previewPage} onPickFile={setFileId} />
         </Card>
 
         <div className={cn("min-w-0", pane !== "questions" && "hidden lg:block")}>
