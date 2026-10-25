@@ -8,7 +8,7 @@ import { SETTING_DEFAULTS } from "../settingsdef";
 import { withHubKnowledge } from "../hub/context";
 import { Breaker, orderProviders, type Role } from "../hub/routing";
 import { costMicro, isRetryableStatus, retryDelayMs } from "./gatewaylogic";
-import { pickGeminiModel, type GeminiModelInfo } from "./geminimodels";
+import { geminiCooldown, rankGeminiModels, type GeminiModelInfo } from "./geminimodels";
 
 /**
  * AI shlyuzi: barcha AI so'rovlari shu yerdan o'tadi (Claude yoki OpenAI-mos bepul xizmatlar).
@@ -222,6 +222,20 @@ export async function runFreeAi(userId: string, messages: { role: "user" | "assi
 /** Qaysi AI xizmati ulangan (admin panel va UI uchun). */
 export const aiAvailable = () => ({ claude: aiConfigured(), free: freeConfigured(), any: aiConfigured() || freeConfigured() });
 
+/** 404 bergan bepul xizmat uchun: shu xizmat/kalit ko'ra oladigan mos model nomlari (OpenRouter: `:free`, Gemini: flash/lite, boshqa: ro'yxat boshi). Kalit chiqarilmaydi. */
+async function suggestModels(p: FreeProvider): Promise<string[]> {
+  try {
+    const res = await fetch(`${p.base}/models`, { headers: { authorization: `Bearer ${p.key}` }, signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) return [];
+    const d = (await res.json()) as { data?: { id?: string; context_length?: number }[] };
+    const items = (d.data ?? []).filter((m): m is { id: string; context_length?: number } => typeof m.id === "string" && m.id.length > 0);
+    const host = new URL(p.base).host;
+    if (/openrouter\.ai$/.test(host)) return items.filter((m) => /:free$/.test(m.id)).sort((a, b) => (b.context_length ?? 0) - (a.context_length ?? 0)).slice(0, 3).map((m) => m.id);
+    if (/generativelanguage\.googleapis\.com$/.test(host)) return rankGeminiModels(items.map((m) => ({ name: m.id, supportedGenerationMethods: ["generateContent"] })), false).slice(0, 3);
+    return items.slice(0, 3).map((m) => m.id);
+  } catch { return []; }
+}
+
 /**
  * Sog'liq tekshiruvi (admin "ulanishni sinash"): har bir ulangan xizmatga juda qisqa so'rov. Foydalanuvchi limiti sarflanmaydi.
  * Natijada kalit ham, to'liq manzil ham yo'q: faqat xost, holat va vaqt.
@@ -236,7 +250,7 @@ export async function aiHealth() {
     } catch (e) { claude.ok = false; claude.error = `${(e as { status?: number }).status ?? (e as Error).name}`; }
     claude.ms = Date.now() - t0;
   }
-  const free: { host: string; model: string; ok: boolean; ms: number; error?: string }[] = [];
+  const free: { host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[] }[] = [];
   for (const p of freeProviders()) {
     const t0 = Date.now();
     let ok = false, error: string | undefined;
@@ -244,7 +258,10 @@ export async function aiHealth() {
       const res = await fetch(`${p.base}/chat/completions`, { method: "POST", signal: AbortSignal.timeout(20_000), headers: { "content-type": "application/json", authorization: `Bearer ${p.key}` }, body: JSON.stringify({ model: p.model, max_tokens: 5, messages: [{ role: "user", content: "ping" }] }) });
       ok = res.ok; if (!res.ok) error = String(res.status);
     } catch (e) { error = (e as Error).name; }
-    free.push({ host: new URL(p.base).host, model: p.model, ok, ms: Date.now() - t0, ...(error && { error }) });
+    const ms = Date.now() - t0;
+    // Model topilmadi (404): shu xizmat ko'ra oladigan mos nomlar tavsiya qilinadi (muhitdagi nomni yangilash uchun).
+    const suggest = error === "404" ? await suggestModels(p) : [];
+    free.push({ host: new URL(p.base).host, model: p.model, ok, ms, ...(error && { error }), ...(suggest.length && { suggest }) });
   }
   return { claude, free, checkedAt: new Date().toISOString() };
 }
@@ -255,18 +272,26 @@ export type GeminiPart = { text: string } | { inlineData: { mimeType: string; da
 const GEMINI_BASE = () => (process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
 /** Model nomlari kodga qattiq bog'lanmagan: tezkor import uchun IMPORT_FAST_MODEL, murakkab tahlil uchun IMPORT_COMPLEX_MODEL (admin muhitda sozlaydi). */
 export const importModel = (heavy = false) => (heavy ? process.env.IMPORT_COMPLEX_MODEL : process.env.IMPORT_FAST_MODEL) || process.env.GEMINI_MODEL || "gemini-2.5-flash";
-/** Sozlangan nom 404 bergan bo'lsa, topilgan ishchi model shu jarayon davomida eslab qolinadi (har so'rovda qayta qidirilmaydi). */
+/** Oxirgi ishlagan model shu jarayon davomida eslab qolinadi (har so'rovda qayta qidirilmaydi). */
 const discovered: Record<string, string> = {};
 const modelFor = (heavy = false) => discovered[heavy ? "heavy" : "fast"] ?? importModel(heavy);
-async function discoverModel(heavy: boolean): Promise<string | null> {
+/** Xato bergan model (404 yo'q, 429 kvota tugagan, 503 band) qisqa muddat chetga qo'yiladi: shu vaqt ichida keyingi model sinaladi, har so'rovda bir xil xato takrorlanmaydi. */
+const cooling = new Map<string, number>();
+const isCooling = (m: string) => (cooling.get(m) ?? 0) > Date.now();
+/** Kalit ko'ra oladigan mos modellar (eng yaxshisidan boshlab), 10 daqiqa eslab qolinadi. */
+const candidateCache: Record<string, { at: number; names: string[] }> = {};
+async function candidateModels(heavy: boolean): Promise<string[]> {
+  const k = heavy ? "heavy" : "fast";
+  const c = candidateCache[k];
+  if (c && Date.now() - c.at < 10 * 60_000) return c.names;
   try {
     const res = await fetch(`${GEMINI_BASE()}/models?pageSize=200`, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return null;
+    if (!res.ok) return c?.names ?? [];
     const d = (await res.json()) as { models?: GeminiModelInfo[] };
-    const pick = pickGeminiModel(d.models ?? [], heavy);
-    if (pick) discovered[heavy ? "heavy" : "fast"] = pick;
-    return pick;
-  } catch { return null; }
+    const names = rankGeminiModels(d.models ?? [], heavy);
+    candidateCache[k] = { at: Date.now(), names };
+    return names;
+  } catch { return c?.names ?? []; }
 }
 export const visionConfigured = () => Boolean(process.env.GEMINI_API_KEY);
 const importDailyLimit = () => Math.max(1, Number(process.env.IMPORT_AI_DAILY_LIMIT) || 80);
@@ -288,6 +313,8 @@ export async function runGeminiJson(c: { userId: string; parts: GeminiPart[]; sy
   const l = await limitsFor(c.userId);
   if (!l.enabled) throw new ApiError(503, "AI xizmati administrator tomonidan vaqtincha o'chirilgan.", "ai_disabled");
   let model = modelFor(c.heavy);
+  // Tanlangan model yaqinda 404/429/503 bergan bo'lsa, ishlaydigan keyingisidan boshlanadi (har so'rov bir xil xatoga urilmaydi).
+  if (isCooling(model)) { const alt = (await candidateModels(c.heavy ?? false)).find((n) => !isCooling(n)); if (alt) model = alt; }
   const recent = await db.aiRequest.count({ where: { userId: c.userId, feature: "import", createdAt: { gte: new Date(Date.now() - 60_000) }, status: { not: "blocked" } } });
   if (recent >= importPerMinute()) throw new ApiError(429, "Fayl tahlili juda tez-tez so'raldi. Bir daqiqadan so'ng avtomatik davom etadi.", "rate_limited");
   const day = await importUsageToday(c.userId);
@@ -303,10 +330,11 @@ export async function runGeminiJson(c: { userId: string; parts: GeminiPart[]; sy
       ...(/2\.5-flash/.test(m) && !/pro/.test(m) ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
     },
   });
-  let status = "ok", input = 0, output = 0, discoveredOnce = false;
+  let status = "ok", input = 0, output = 0;
+  const tried = new Set<string>();
   const t0 = Date.now();
   try {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       const res = await fetch(`${GEMINI_BASE()}/models/${encodeURIComponent(model)}:generateContent`, {
         method: "POST", signal: AbortSignal.timeout(c.timeoutMs ?? 50_000),
         headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY ?? "" }, body: JSON.stringify(bodyFor(model)),
@@ -315,11 +343,12 @@ export async function runGeminiJson(c: { userId: string; parts: GeminiPart[]; sy
         // Sabab serverning jurnaliga yoziladi (kalit hech qachon emas); foydalanuvchiga esa amaliy ishora ko'rsatiladi.
         const reason = ((await res.json().catch(() => null)) as { error?: { message?: string } } | null)?.error?.message?.replace(/AIza[0-9A-Za-z_-]{20,}/g, "***").slice(0, 200) ?? "";
         console.error("Gemini import xato:", res.status, model, reason);
-        // Model mavjud emas (eskirgan nom): kalit ko'ra oladigan modellardan mosini topib, bir marta qayta uriniladi.
-        if (res.status === 404 && !discoveredOnce) {
-          discoveredOnce = true;
-          const alt = await discoverModel(c.heavy ?? false);
-          if (alt && alt !== model) { console.error("Gemini import: model almashtirildi:", model, "->", alt); model = alt; continue; }
+        // Model mavjud emas (404), kvotasi tugagan (429) yoki band (503): model chetga qo'yiladi va kalit ko'ra oladigan keyingi model sinaladi.
+        const cd = geminiCooldown(res.status, reason);
+        if (cd) {
+          cooling.set(model, Date.now() + cd.ms); tried.add(model);
+          const alt = (await candidateModels(c.heavy ?? false)).find((n) => !tried.has(n) && !isCooling(n));
+          if (alt) { console.error("Gemini import: model almashtirildi:", model, "->", alt, `(${cd.reason})`); model = alt; continue; }
         }
         if (isRetryableStatus(res.status) && attempt === 0) { await sleep(retryDelayMs(attempt)); continue; }
         status = "error";
@@ -333,6 +362,7 @@ export async function runGeminiJson(c: { userId: string; parts: GeminiPart[]; sy
       const text = (cand?.content?.parts ?? []).map((p) => p.text ?? "").join("").trim();
       if (!text) { status = "empty"; throw new ApiError(502, cand?.finishReason === "SAFETY" || cand?.finishReason === "PROHIBITED_CONTENT" ? "AI bu faylni tahlil qila olmadi (xavfsizlik filtri)." : "AI bo'sh javob qaytardi."); }
       if (cand?.finishReason === "MAX_TOKENS") status = "truncated";
+      discovered[c.heavy ? "heavy" : "fast"] = model; // ishlagan model keyingi so'rovlarda birinchi o'rinda
       return { text, model };
     }
     status = "error";

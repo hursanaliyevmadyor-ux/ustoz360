@@ -3,6 +3,7 @@ import * as React from "react";
 import { CheckCircle2, CircleSlash, Plug } from "lucide-react";
 import { adminModule } from "@/lib/modules";
 import { api } from "@/lib/admin-client";
+import { healthHint } from "@/lib/ai-hints";
 import { useQuery } from "@/lib/use-query";
 import { QueryView } from "@/components/layout/query-view";
 import { PageHeader } from "@/components/layout/page";
@@ -17,7 +18,14 @@ import type { SettingsMap, SettingKey } from "@/server/settingsdef";
 import type { Integration } from "@/server/sysstatus";
 
 type Data = { settings: SettingsMap; integrations: Integration[] };
-type Health = { claude: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string }; free: { host: string; model: string; ok: boolean; ms: number; error?: string }[]; web?: { gemini: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string }; tavily: { configured: boolean } }; checkedAt: string };
+type Health = { claude: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string }; free: { host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[] }[]; web?: { gemini: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string; suggest?: string[] }; tavily: { configured: boolean } }; checkedAt: string };
+
+/** Xato kodining izohi va (bo'lsa) tavsiya qilingan model nomlari: admin nima qilishni biladi. */
+function Why({ code, suggest }: { code?: string; suggest?: string[] }) {
+  const hint = healthHint(code);
+  if (!hint && !suggest?.length) return null;
+  return <span className="block text-xs text-muted-foreground">{hint}{suggest?.length ? `${hint ? ". " : ""}Mavjud modellar: ${suggest.join(", ")}` : ""}</span>;
+}
 const MODULE_NAMES: Record<keyof SettingsMap["modules"], string> = { ai: "USTOZ AI", darsyor: "DARSYOR", toifa: "TOIFA NAVIGATOR", market: "USTOZ MARKET", sinf: "SINF ANALITIKA", bilimxona: "BILIMXONA", bepul: "BEPUL AI" };
 
 function useSave() {
@@ -217,10 +225,10 @@ function AiTab({ s, set, put, busy, integrations }: { s: SettingsMap; set: <K ex
         {h && (
           <div className="space-y-1.5 rounded-xl bg-muted p-3 text-sm" aria-live="polite">
             {!h.claude.configured && h.free.length === 0 && !h.web?.gemini.configured && !h.web?.tavily.configured && <p>Hech qaysi AI xizmati ulanmagan: sinash uchun xizmat yo'q.</p>}
-            {h.web?.gemini.configured && <p>Gemini qidiruvi{h.web.gemini.model ? ` (${h.web.gemini.model})` : ""}: <b className={h.web.gemini.ok ? "text-success" : "text-danger"}>{h.web.gemini.ok ? "ishlayapti" : `xato (${h.web.gemini.error ?? "?"})`}</b> · {h.web.gemini.ms} ms</p>}
+            {h.web?.gemini.configured && <p>Gemini qidiruvi{h.web.gemini.model ? ` (${h.web.gemini.model})` : ""}: <b className={h.web.gemini.ok ? "text-success" : "text-danger"}>{h.web.gemini.ok ? "ishlayapti" : `xato (${h.web.gemini.error ?? "?"})`}</b> · {h.web.gemini.ms} ms{!h.web.gemini.ok && <Why code={h.web.gemini.error} suggest={h.web.gemini.suggest} />}</p>}
             {h.web?.tavily.configured && <p>Tavily qidiruvi: <b className="text-success">ulangan</b> <span className="text-muted-foreground">(kredit sarflamaslik uchun sinab ko'rilmaydi)</span></p>}
-            {h.claude.configured && <p>Claude{h.claude.model ? ` (${h.claude.model})` : ""}: <b className={h.claude.ok ? "text-success" : "text-danger"}>{h.claude.ok ? "ishlayapti" : `xato (${h.claude.error ?? "?"})`}</b> · {h.claude.ms} ms</p>}
-            {h.free.map((f) => <p key={f.host}>{f.host} ({f.model}): <b className={f.ok ? "text-success" : "text-danger"}>{f.ok ? "ishlayapti" : `xato (${f.error ?? "?"})`}</b> · {f.ms} ms</p>)}
+            {h.claude.configured && <p>Claude{h.claude.model ? ` (${h.claude.model})` : ""}: <b className={h.claude.ok ? "text-success" : "text-danger"}>{h.claude.ok ? "ishlayapti" : `xato (${h.claude.error ?? "?"})`}</b> · {h.claude.ms} ms{!h.claude.ok && <Why code={h.claude.error} />}</p>}
+            {h.free.map((f, i) => <p key={`${f.host}-${f.model}-${i}`}>{f.host} ({f.model}): <b className={f.ok ? "text-success" : "text-danger"}>{f.ok ? "ishlayapti" : `xato (${f.error ?? "?"})`}</b> · {f.ms} ms{!f.ok && <Why code={f.error} suggest={f.suggest} />}</p>)}
           </div>)}
       </CardContent></Card>
       <WebCard />
