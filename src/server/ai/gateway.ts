@@ -133,12 +133,12 @@ export const lessonSchema = {
 
 // ---- Bepul AI: OpenAI-mos endpoint (masalan, o'zingiz joylagan FreeLLMAPI yoki boshqa shlyuz) ----
 /** Bir nechta bepul xizmat: FREE_LLM_*, FREE_LLM2_* ... FREE_LLM10_* (10 tagacha). Birinchisi xato bersa yoki limitga yetsa, keyingisi sinaladi. */
-type FreeProvider = { id: string; base: string; key: string; model: string };
+type FreeProvider = { id: string; env: string; base: string; key: string; model: string };
 const FREE_SLOTS = ["", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
 /** `id` jurnal uchun: "free1" (FREE_LLM_*), "free2" (FREE_LLM2_*) ... Kalit emas, faqat slot raqami. */
 const freeProviders = (): FreeProvider[] => FREE_SLOTS.flatMap((n) => {
   const base = process.env[`FREE_LLM${n}_BASE_URL`], key = process.env[`FREE_LLM${n}_API_KEY`];
-  return base && key ? [{ id: `free${n || "1"}`, base: base.replace(/\/+$/, ""), key, model: process.env[`FREE_LLM${n}_MODEL`] || "auto" }] : [];
+  return base && key ? [{ id: `free${n || "1"}`, env: `FREE_LLM${n}`, base: base.replace(/\/+$/, ""), key, model: process.env[`FREE_LLM${n}_MODEL`] || "auto" }] : [];
 });
 export const freeConfigured = () => freeProviders().length > 0;
 export const freeLimit = DEFAULT_FREE_AI_DAILY;
@@ -250,7 +250,7 @@ export async function aiHealth() {
     } catch (e) { claude.ok = false; claude.error = `${(e as { status?: number }).status ?? (e as Error).name}`; }
     claude.ms = Date.now() - t0;
   }
-  const free: { host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[] }[] = [];
+  const free: { env: string; host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[] }[] = [];
   for (const p of freeProviders()) {
     const t0 = Date.now();
     let ok = false, error: string | undefined;
@@ -261,7 +261,7 @@ export async function aiHealth() {
     const ms = Date.now() - t0;
     // Model topilmadi (404): shu xizmat ko'ra oladigan mos nomlar tavsiya qilinadi (muhitdagi nomni yangilash uchun).
     const suggest = error === "404" ? await suggestModels(p) : [];
-    free.push({ host: new URL(p.base).host, model: p.model, ok, ms, ...(error && { error }), ...(suggest.length && { suggest }) });
+    free.push({ env: p.env, host: new URL(p.base).host, model: p.model, ok, ms, ...(error && { error }), ...(suggest.length && { suggest }) });
   }
   return { claude, free, checkedAt: new Date().toISOString() };
 }
