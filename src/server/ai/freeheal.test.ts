@@ -92,6 +92,20 @@ describe("freeheal: runFreeAi modelni o'zi tuzatadi", () => {
     await expect(runFreeAi("u1", [{ role: "user", content: "salom" }])).rejects.toMatchObject({ status: 503 });
     expect(f.mock.calls.filter((c) => String(c[0]).endsWith("/chat/completions")).length).toBeLessThanOrEqual(4);
   });
+  it("ulanishni sinash: xizmatlar parallel tekshiriladi, natija tartibi slot tartibida qoladi", async () => {
+    process.env.FREE_LLM2_BASE_URL = "https://b.example.com/v1"; process.env.FREE_LLM2_API_KEY = "k2"; process.env.FREE_LLM2_MODEL = "m2";
+    let inFlight = 0, peak = 0;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, String(url).startsWith("https://openrouter.ai") ? 40 : 5));
+      inFlight--; return chat("m");
+    }));
+    const { aiHealth } = await import("./gateway");
+    const r = await aiHealth();
+    expect(r.free.map((f) => f.env)).toEqual(["FREE_LLM", "FREE_LLM2"]);
+    expect(r.free.every((f) => f.ok)).toBe(true);
+    expect(peak).toBe(2);
+  });
   it("ulanishni sinash: muhitdagi nom 404, lekin sayt boshqa modelni topsa, `healed` qaytadi", async () => {
     const f = vi.fn().mockImplementation(async (url: string, init?: { body?: string }) => {
       if (String(url).endsWith("/models")) return models(["new/model:free"]);

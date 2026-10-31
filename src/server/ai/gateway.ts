@@ -286,6 +286,7 @@ async function suggestModels(p: FreeProvider): Promise<string[]> {
  * Sog'liq tekshiruvi (admin "ulanishni sinash"): har bir ulangan xizmatga juda qisqa so'rov. Foydalanuvchi limiti sarflanmaydi.
  * Natijada kalit ham, to'liq manzil ham yo'q: faqat xost, holat va vaqt.
  */
+const HEALTH_DEADLINE_MS = 45_000;
 export async function aiHealth() {
   const claude: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string } = { configured: aiConfigured(), model: aiConfigured() ? aiModel() : null };
   if (claude.configured) {
@@ -296,8 +297,8 @@ export async function aiHealth() {
     } catch (e) { claude.ok = false; claude.error = `${(e as { status?: number }).status ?? (e as Error).name}`; }
     claude.ms = Date.now() - t0;
   }
-  const free: { env: string; host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[]; healed?: string }[] = [];
-  for (const p of freeProviders()) {
+  type FreeHealth = { env: string; host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[]; healed?: string };
+  const check = async (p: FreeProvider): Promise<FreeHealth> => {
     const t0 = Date.now();
     let ok = false, error: string | undefined;
     try {
@@ -313,8 +314,14 @@ export async function aiHealth() {
       const r = await callFreeHealing(p, (model) => ({ model, max_tokens: 5, messages: [{ role: "user", content: "ping" }] }), 20_000);
       if (r) healed = freeLearned.get(p.id) ?? r.model;
     }
-    free.push({ env: p.env, host: new URL(p.base).host, model: p.model, ok, ms, ...(error && { error }), ...(suggest.length && { suggest }), ...(healed && { healed }) });
-  }
+    return { env: p.env, host: new URL(p.base).host, model: p.model, ok, ms, ...(error && { error }), ...(suggest.length && { suggest }), ...(healed && { healed }) };
+  };
+  // Xizmatlar parallel tekshiriladi (10 tagacha, funksiya 60 soniyada tugashi shart): har biriga 45 soniyalik umumiy chegara.
+  const free = await Promise.all(freeProviders().map(async (p) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<FreeHealth>((resolve) => { timer = setTimeout(() => resolve({ env: p.env, host: new URL(p.base).host, model: p.model, ok: false, ms: HEALTH_DEADLINE_MS, error: "TimeoutError" }), HEALTH_DEADLINE_MS); });
+    try { return await Promise.race([check(p), late]); } finally { clearTimeout(timer); }
+  }));
   return { claude, free, checkedAt: new Date().toISOString() };
 }
 
