@@ -118,7 +118,7 @@ describe("AI sog'liq tekshiruvi (admin)", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("{}", { status: 401 })));
     const { aiHealth } = await import("./gateway");
     const r = await aiHealth();
-    expect(r.free[0]).toMatchObject({ host: "a.example.com", ok: false, error: "401" });
+    expect(r.free[0]).toMatchObject({ env: "FREE_LLM", host: "a.example.com", ok: false, error: "401" });
     expect(JSON.stringify(r)).not.toContain("https://");
     expect(JSON.stringify(r)).not.toContain('"k"');
   });
