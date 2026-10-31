@@ -18,7 +18,7 @@ import type { SettingsMap, SettingKey } from "@/server/settingsdef";
 import type { Integration } from "@/server/sysstatus";
 
 type Data = { settings: SettingsMap; integrations: Integration[] };
-type Health = { claude: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string }; free: { env?: string; host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[] }[]; web?: { gemini: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string; suggest?: string[] }; tavily: { configured: boolean } }; checkedAt: string };
+type Health = { claude: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string }; free: { env?: string; host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[]; healed?: string }[]; web?: { gemini: { configured: boolean; model: string | null; ok?: boolean; ms?: number; error?: string; suggest?: string[] }; tavily: { configured: boolean } }; checkedAt: string };
 
 /** Xato kodining izohi va (bo'lsa) tavsiya qilingan model nomlari: admin nima qilishni biladi. */
 function Why({ code, suggest }: { code?: string; suggest?: string[] }) {
@@ -228,7 +228,7 @@ function AiTab({ s, set, put, busy, integrations }: { s: SettingsMap; set: <K ex
             {h.web?.gemini.configured && <p>Gemini qidiruvi{h.web.gemini.model ? ` (${h.web.gemini.model})` : ""}: <b className={h.web.gemini.ok ? "text-success" : "text-danger"}>{h.web.gemini.ok ? "ishlayapti" : `xato (${h.web.gemini.error ?? "?"})`}</b> · {h.web.gemini.ms} ms{!h.web.gemini.ok && <Why code={h.web.gemini.error} suggest={h.web.gemini.suggest} />}</p>}
             {h.web?.tavily.configured && <p>Tavily qidiruvi: <b className="text-success">ulangan</b> <span className="text-muted-foreground">(kredit sarflamaslik uchun sinab ko'rilmaydi)</span></p>}
             {h.claude.configured && <p>Claude{h.claude.model ? ` (${h.claude.model})` : ""}: <b className={h.claude.ok ? "text-success" : "text-danger"}>{h.claude.ok ? "ishlayapti" : `xato (${h.claude.error ?? "?"})`}</b> · {h.claude.ms} ms{!h.claude.ok && <Why code={h.claude.error} />}</p>}
-            {h.free.map((f, i) => <p key={`${f.host}-${f.model}-${i}`}>{i + 1}. {f.env && <b>{f.env}</b>} {f.host} ({f.model}): <b className={f.ok ? "text-success" : "text-danger"}>{f.ok ? "ishlayapti" : `xato (${f.error ?? "?"})`}</b> · {f.ms} ms{!f.ok && <Why code={f.error} suggest={f.suggest} />}</p>)}
+            {h.free.map((f, i) => <p key={`${f.host}-${f.model}-${i}`}>{i + 1}. {f.env && <b>{f.env}</b>} {f.host} ({f.model}): <b className={f.ok ? "text-success" : "text-danger"}>{f.ok ? "ishlayapti" : `xato (${f.error ?? "?"})`}</b> · {f.ms} ms{!f.ok && <Why code={f.error} suggest={f.suggest} />}{f.healed && <> · sayt o'zi almashtirdi: <b className="text-success">{f.healed}</b> ishlayapti (muhitdagi nomni shunga almashtiring)</>}</p>)}
           </div>)}
       </CardContent></Card>
       <WebCard />

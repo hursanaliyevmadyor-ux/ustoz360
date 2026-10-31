@@ -9,6 +9,7 @@ import { withHubKnowledge } from "../hub/context";
 import { Breaker, orderProviders, type Role } from "../hub/routing";
 import { costMicro, isRetryableStatus, retryDelayMs } from "./gatewaylogic";
 import { geminiCooldown, rankGeminiModels, type GeminiModelInfo } from "./geminimodels";
+import { freeCooldown, healable, rankFreeModels, type ListedModel } from "./freeheal";
 
 /**
  * AI shlyuzi: barcha AI so'rovlari shu yerdan o'tadi (Claude yoki OpenAI-mos bepul xizmatlar).
@@ -159,13 +160,15 @@ export async function freeUsageToday(userId: string) {
 const sleep = (ms: number) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
 
 /** Bitta provayderga so'rov: 5xx/tarmoq xatosida eksponensial kutish bilan bir marta qayta urinadi; 429 (limit) da darhol keyingisiga o'tiladi. */
-async function callFree(p: FreeProvider, body: unknown, timeoutMs: number): Promise<{ text: string; model: string; input: number; output: number } | null> {
+type FreeResult = { text: string; model: string; input: number; output: number };
+async function callFree(p: FreeProvider, body: unknown, timeoutMs: number, fail: { status?: number; message?: string } = {}): Promise<FreeResult | null> {
   const host = new URL(p.base).host;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(`${p.base}/chat/completions`, { method: "POST", signal: AbortSignal.timeout(timeoutMs), headers: { "content-type": "application/json", authorization: `Bearer ${p.key}` }, body: JSON.stringify(body) });
       if (!res.ok) {
         console.error("Free AI provider failed", host, res.status);
+        fail.status = res.status; fail.message = (await res.text().catch(() => "")).slice(0, 300);
         if (isRetryableStatus(res.status) && attempt === 0) { await sleep(retryDelayMs(attempt)); continue; }
         return null;
       }
@@ -178,6 +181,53 @@ async function callFree(p: FreeProvider, body: unknown, timeoutMs: number): Prom
       if (attempt === 0) { await sleep(retryDelayMs(attempt)); continue; }
       return null;
     }
+  }
+  return null;
+}
+
+// ---- Modelni o'zi tuzatish: eskirgan (404) yoki kvotasi tugagan (429) model chetga qo'yiladi, xizmat ko'ra oladigan keyingi model sinaladi ----
+/** Xato bergan model (xizmat slotiga qarab) qisqa muddat chetga qo'yiladi. */
+const freeCooling = new Map<string, number>();
+const coolKey = (p: FreeProvider, m: string) => `${p.id}|${m}`;
+const isFreeCooling = (p: FreeProvider, m: string) => (freeCooling.get(coolKey(p, m)) ?? 0) > Date.now();
+/** Shu slot uchun oxirgi ishlagan (muhitdagidan farqli) model: keyingi so'rovlar undan boshlanadi. */
+const freeLearned = new Map<string, string>();
+/** Xizmat ko'ra oladigan mos modellar (eng yaxshisidan boshlab), 10 daqiqa eslab qolinadi. */
+const freeCandidateCache = new Map<string, { at: number; names: string[] }>();
+async function freeCandidates(p: FreeProvider): Promise<string[]> {
+  const c = freeCandidateCache.get(p.id);
+  if (c && Date.now() - c.at < 10 * 60_000) return c.names;
+  try {
+    const res = await fetch(`${p.base}/models`, { headers: { authorization: `Bearer ${p.key}` }, signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) return c?.names ?? [];
+    const d = (await res.json()) as { data?: ListedModel[] };
+    const names = rankFreeModels(new URL(p.base).host, d.data ?? []);
+    freeCandidateCache.set(p.id, { at: Date.now(), names });
+    return names;
+  } catch { return c?.names ?? []; }
+}
+/** So'rov qaysi modeldan boshlanadi: oxirgi ishlagan, bo'lmasa muhitdagi, u ham chetga qo'yilgan bo'lsa ro'yxatdagi birinchi mos model. */
+async function startModel(p: FreeProvider): Promise<string> {
+  const learned = freeLearned.get(p.id);
+  if (learned && !isFreeCooling(p, learned)) return learned;
+  if (!isFreeCooling(p, p.model)) return p.model;
+  return (await freeCandidates(p)).find((n) => !isFreeCooling(p, n)) ?? p.model;
+}
+/** Bitta xizmatga so'rov; 404/429 da (OpenRouter va Google) keyingi mos modelga o'tadi (eng ko'pi bilan 4 ta model). Ishlagan model eslab qolinadi. */
+async function callFreeHealing(p: FreeProvider, bodyFor: (model: string) => unknown, timeoutMs: number): Promise<FreeResult | null> {
+  const heal = healable(new URL(p.base).host);
+  let model = heal ? await startModel(p) : p.model;
+  const tried = new Set<string>();
+  for (let step = 0; step < (heal ? 4 : 1); step++) {
+    const fail: { status?: number; message?: string } = {};
+    const r = await callFree(p, bodyFor(model), timeoutMs, fail);
+    if (r) { if (heal && model !== p.model) { freeLearned.set(p.id, model); console.error("Free AI: model almashtirildi:", p.id, p.model, "->", model); } return r; }
+    const cd = heal && fail.status ? freeCooldown(fail.status, fail.message) : null;
+    if (!cd) return null;
+    freeCooling.set(coolKey(p, model), Date.now() + cd.ms); tried.add(model);
+    const next = (await freeCandidates(p)).find((n) => !tried.has(n) && !isFreeCooling(p, n));
+    if (!next) return null;
+    model = next;
   }
   return null;
 }
@@ -203,7 +253,7 @@ export async function runFreeAi(userId: string, messages: { role: "user" | "assi
     // Yagona bilim manbasi (Claude yo'li bilan bir xil): tasdiqlangan bilim «ma'lumot bloki» sifatida qo'shiladi.
     const sys = await withHubKnowledge(opts.system ?? SYSTEM, messages, opts.knowledge);
     for (const p of providers) {
-      const r = await callFree(p, { model: p.model, max_tokens: opts.maxTokens ?? 1200, messages: [{ role: "system", content: sys.system }, ...messages] }, 45_000);
+      const r = await callFreeHealing(p, (model) => ({ model, max_tokens: opts.maxTokens ?? 1200, messages: [{ role: "system", content: sys.system }, ...messages] }), 45_000);
       if (r) { breaker.ok(p.id); input = r.input; output = r.output; used = r.model; provider = p.id; return { text: r.text, model: r.model, provider: p.id }; }
       breaker.fail(p.id);
     }
@@ -228,11 +278,7 @@ async function suggestModels(p: FreeProvider): Promise<string[]> {
     const res = await fetch(`${p.base}/models`, { headers: { authorization: `Bearer ${p.key}` }, signal: AbortSignal.timeout(8_000) });
     if (!res.ok) return [];
     const d = (await res.json()) as { data?: { id?: string; context_length?: number }[] };
-    const items = (d.data ?? []).filter((m): m is { id: string; context_length?: number } => typeof m.id === "string" && m.id.length > 0);
-    const host = new URL(p.base).host;
-    if (/openrouter\.ai$/.test(host)) return items.filter((m) => /:free$/.test(m.id)).sort((a, b) => (b.context_length ?? 0) - (a.context_length ?? 0)).slice(0, 3).map((m) => m.id);
-    if (/generativelanguage\.googleapis\.com$/.test(host)) return rankGeminiModels(items.map((m) => ({ name: m.id, supportedGenerationMethods: ["generateContent"] })), false).slice(0, 3);
-    return items.slice(0, 3).map((m) => m.id);
+    return rankFreeModels(new URL(p.base).host, d.data ?? []).slice(0, 3);
   } catch { return []; }
 }
 
@@ -250,7 +296,7 @@ export async function aiHealth() {
     } catch (e) { claude.ok = false; claude.error = `${(e as { status?: number }).status ?? (e as Error).name}`; }
     claude.ms = Date.now() - t0;
   }
-  const free: { env: string; host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[] }[] = [];
+  const free: { env: string; host: string; model: string; ok: boolean; ms: number; error?: string; suggest?: string[]; healed?: string }[] = [];
   for (const p of freeProviders()) {
     const t0 = Date.now();
     let ok = false, error: string | undefined;
@@ -261,7 +307,13 @@ export async function aiHealth() {
     const ms = Date.now() - t0;
     // Model topilmadi (404): shu xizmat ko'ra oladigan mos nomlar tavsiya qilinadi (muhitdagi nomni yangilash uchun).
     const suggest = error === "404" ? await suggestModels(p) : [];
-    free.push({ env: p.env, host: new URL(p.base).host, model: p.model, ok, ms, ...(error && { error }), ...(suggest.length && { suggest }) });
+    // 404/429 da sayt o'zi ishlaydigan modelni topadimi: topsa, shu nom ko'rsatiladi (muhitdagini shunga almashtirish mumkin).
+    let healed: string | undefined;
+    if (!ok && (error === "404" || error === "429") && healable(new URL(p.base).host)) {
+      const r = await callFreeHealing(p, (model) => ({ model, max_tokens: 5, messages: [{ role: "user", content: "ping" }] }), 20_000);
+      if (r) healed = freeLearned.get(p.id) ?? r.model;
+    }
+    free.push({ env: p.env, host: new URL(p.base).host, model: p.model, ok, ms, ...(error && { error }), ...(suggest.length && { suggest }), ...(healed && { healed }) });
   }
   return { claude, free, checkedAt: new Date().toISOString() };
 }
