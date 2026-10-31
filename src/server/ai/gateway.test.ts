@@ -67,6 +67,21 @@ describe("runFreeAi zaxira (failover)", () => {
     }
   });
 
+  it("20 tagacha bepul xizmat: 11-20 o'rinlar ham ishlaydi", async () => {
+    for (const k of ["FREE_LLM_API_KEY", "FREE_LLM2_API_KEY"]) delete process.env[k];
+    process.env.FREE_LLM20_BASE_URL = "https://t.example.com/v1"; process.env.FREE_LLM20_API_KEY = "kt"; process.env.FREE_LLM20_MODEL = "mt";
+    process.env.FREE_LLM11_BASE_URL = "https://e.example.com/v1"; process.env.FREE_LLM11_API_KEY = "ke";
+    const f = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 429 })).mockResolvedValueOnce(ok("yigirmanchi"));
+    vi.stubGlobal("fetch", f);
+    try {
+      const { runFreeAi } = await import("./gateway");
+      expect((await runFreeAi("u1", [{ role: "user", content: "hi" }])).text).toBe("yigirmanchi");
+      expect(f.mock.calls.map((c) => c[0])).toEqual(["https://e.example.com/v1/chat/completions", "https://t.example.com/v1/chat/completions"]);
+    } finally {
+      for (const k of ["FREE_LLM20_BASE_URL", "FREE_LLM20_API_KEY", "FREE_LLM20_MODEL", "FREE_LLM11_BASE_URL", "FREE_LLM11_API_KEY"]) delete process.env[k];
+    }
+  });
+
   it("kalit yo'q bo'lsa sozlanmagan deb hisoblanadi", async () => {
     delete process.env.FREE_LLM_API_KEY; delete process.env.FREE_LLM2_API_KEY;
     const { freeConfigured } = await import("./gateway");

@@ -133,9 +133,9 @@ export const lessonSchema = {
 };
 
 // ---- Bepul AI: OpenAI-mos endpoint (masalan, o'zingiz joylagan FreeLLMAPI yoki boshqa shlyuz) ----
-/** Bir nechta bepul xizmat: FREE_LLM_*, FREE_LLM2_* ... FREE_LLM10_* (10 tagacha). Birinchisi xato bersa yoki limitga yetsa, keyingisi sinaladi. */
+/** Bir nechta bepul xizmat: FREE_LLM_*, FREE_LLM2_* ... FREE_LLM20_* (20 tagacha). Birinchisi xato bersa yoki limitga yetsa, keyingisi sinaladi. */
 type FreeProvider = { id: string; env: string; base: string; key: string; model: string };
-const FREE_SLOTS = ["", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+const FREE_SLOTS = ["", ...Array.from({ length: 19 }, (_, i) => String(i + 2))];
 /** `id` jurnal uchun: "free1" (FREE_LLM_*), "free2" (FREE_LLM2_*) ... Kalit emas, faqat slot raqami. */
 const freeProviders = (): FreeProvider[] => FREE_SLOTS.flatMap((n) => {
   const base = process.env[`FREE_LLM${n}_BASE_URL`], key = process.env[`FREE_LLM${n}_API_KEY`];
@@ -316,7 +316,7 @@ export async function aiHealth() {
     }
     return { env: p.env, host: new URL(p.base).host, model: p.model, ok, ms, ...(error && { error }), ...(suggest.length && { suggest }), ...(healed && { healed }) };
   };
-  // Xizmatlar parallel tekshiriladi (10 tagacha, funksiya 60 soniyada tugashi shart): har biriga 45 soniyalik umumiy chegara.
+  // Xizmatlar parallel tekshiriladi (20 tagacha, funksiya 60 soniyada tugashi shart): har biriga 45 soniyalik umumiy chegara.
   const free = await Promise.all(freeProviders().map(async (p) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<FreeHealth>((resolve) => { timer = setTimeout(() => resolve({ env: p.env, host: new URL(p.base).host, model: p.model, ok: false, ms: HEALTH_DEADLINE_MS, error: "TimeoutError" }), HEALTH_DEADLINE_MS); });

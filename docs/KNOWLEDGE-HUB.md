@@ -54,7 +54,7 @@ Alohida deploy, alohida PostgreSQL va server-to-server imzo kerak emas: hammasi 
 
 | Qism | Fayl | Nima qiladi | Qarori |
 |---|---|---|---|
-| AI shlyuzi | `src/server/ai/gateway.ts` | Claude (`runAi`) va 10 tagacha OpenAI-mos bepul xizmat (`runFreeAi`), kunlik/daqiqalik limit, tarif, timeout, qayta urinish, `AiRequest` jurnali | **Qayta yozilmaydi.** Faqat ostidagi "transport" almashtiriladi (3-bo'lim) |
+| AI shlyuzi | `src/server/ai/gateway.ts` | Claude (`runAi`) va 20 tagacha OpenAI-mos bepul xizmat (`runFreeAi`), kunlik/daqiqalik limit, tarif, timeout, qayta urinish, `AiRequest` jurnali | **Qayta yozilmaydi.** Faqat ostidagi "transport" almashtiriladi (3-bo'lim) |
 | Yagona kirish | `src/server/ai/structured.ts` | `runAnyAi`, `generateStructured` (Zod bilan tekshirish) | O'zgarmaydi |
 | Toza mantiq | `gatewaylogic.ts`, `rag.ts`, `trust.ts`, `intent.ts` | narx, qayta urinish, kalit so'zli qidiruv, manba ishonchliligi (`official > education > media > general > social`), savol turi | Xizmatga o'zgarishsiz ko'chiriladi (bazaga tegmaydi) |
 | Chatlar | `ai/chats.ts`, `AiChat`, `AiMessage` | Foydalanuvchining shaxsiy tarixi, 100 tagacha, o'zi o'chira oladi | **Shaxsiy qoladi**, markazga nusxalanmaydi |
