@@ -7,6 +7,8 @@ const line = (max: number) => z.string().max(max);
 
 export const DOC_KINDS = ["lesson_plan", "visual", "rubric", "observation", "taskset"] as const;
 export type DocKind = (typeof DOC_KINDS)[number];
+/** Admin tasdiqlab umumiy katalogga qo'ygan hujjat holati. docInput bu qiymatni qabul qilmaydi: foydalanuvchi o'zi katalogga qo'sha olmaydi. */
+export const CATALOG_STATUS = "CATALOG";
 export const DOC_LABEL: Record<DocKind, string> = { lesson_plan: "Dars ishlanmasi", visual: "Ko'rgazmali material", rubric: "Rubrika", observation: "Kuzatuv varaqasi", taskset: "Topshiriqlar to'plami" };
 
 // ---------- dars ishlanmasi ----------
