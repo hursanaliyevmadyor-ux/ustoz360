@@ -4,6 +4,7 @@ import { ArrowLeft, Download, FileDown, Printer, Save, Shapes } from "lucide-rea
 import { modules } from "@/lib/modules";
 import { downloadBlob, downloadDoc, safeName } from "@/lib/download";
 import { PageHeader } from "@/components/layout/page";
+import { Catalog } from "@/components/darsyor/catalog";
 import { DocList, loadDoc, persistDoc, useDocList } from "@/components/darsyor/store";
 import { Editor, Render, starter, TEMPLATES, toHtml, type Template, type Visual } from "@/components/darsyor/visuals";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,7 @@ export default function Page() {
       <PageHeader module={modules[1]} title="Ko'rgazmali materiallar" description="Shablonni tanlang, to'ldiring, saqlang va chop eting" />
       {!v ? (
         <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+          <div className="space-y-8 min-w-0">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {TEMPLATES.map((t) => (
               <button key={t.key} onClick={() => start(t.key)} className="group flex min-h-[150px] flex-col rounded-2xl border border-border bg-card p-5 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-pop">
@@ -61,6 +63,8 @@ export default function Page() {
                 <span className="mt-3 font-extrabold">{t.title}</span><span className="mt-1 text-sm text-muted-foreground">{t.desc}</span>
                 <span className="mt-auto pt-3 text-sm font-bold text-primary">Ochish →</span>
               </button>))}
+          </div>
+          <Catalog onCopied={(id) => { list.reload(); void open(id); }} />
           </div>
           <DocList list={list} onOpen={open} title="Mening ko'rgazmalarim" empty="Hali saqlangan material yo'q." />
         </div>

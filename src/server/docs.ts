@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { ApiError } from "./auth";
 import { db } from "./db";
-import { DOC_KINDS, type DocInput } from "./docsvalid";
+import { CATALOG_STATUS, DOC_KINDS, type DocInput } from "./docsvalid";
 
 /** O'qituvchi hujjatlari: faqat egasi ko'radi va o'zgartiradi. */
 const MAX_DOCS = 500;
@@ -13,10 +13,20 @@ const row = (d: { id: string; kind: string; title: string; subject: string | nul
 export async function listDocs(userId: string, opts: { kind?: string; limit?: number } = {}) {
   if (opts.kind && !(DOC_KINDS as readonly string[]).includes(opts.kind)) throw new ApiError(400, "Hujjat turi noto'g'ri.");
   const rows = await db.teacherDoc.findMany({
-    where: { userId, ...(opts.kind && { kind: opts.kind }) }, orderBy: { updatedAt: "desc" }, take: Math.min(opts.limit ?? 100, 200),
+    where: { userId, status: { not: CATALOG_STATUS }, ...(opts.kind && { kind: opts.kind }) }, orderBy: { updatedAt: "desc" }, take: Math.min(opts.limit ?? 100, 200),
     select: { id: true, kind: true, title: true, subject: true, grade: true, status: true, updatedAt: true },
   });
   return { docs: rows.map(row) };
+}
+
+/** Umumiy katalog: admin tasdiqlab qo'ygan tayyor hujjatlar (holati CATALOG). Hamma kirgan foydalanuvchi ko'radi; nusxa olib o'zi tahrirlaydi. */
+export async function listCatalog(opts: { kind?: string } = {}) {
+  if (opts.kind && !(DOC_KINDS as readonly string[]).includes(opts.kind)) throw new ApiError(400, "Hujjat turi noto'g'ri.");
+  const rows = await db.teacherDoc.findMany({
+    where: { status: CATALOG_STATUS, ...(opts.kind && { kind: opts.kind }) }, orderBy: [{ subject: "asc" }, { title: "asc" }], take: 200,
+    select: { id: true, kind: true, title: true, subject: true, grade: true, data: true },
+  });
+  return { docs: rows.map((d) => ({ id: d.id, kind: d.kind, title: d.title, subject: d.subject, grade: d.grade, data: d.data })) };
 }
 
 export async function getDoc(userId: string, id: string) {
