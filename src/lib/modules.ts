@@ -88,6 +88,7 @@ export const searchIndex: { label: string; href: string; group: string }[] = [
   { label: "Bosh sahifa", href: "/dashboard", group: "Umumiy" },
   { label: "Barcha xizmatlar", href: "/xizmatlar", group: "Umumiy" },
   { label: "Imtihon simulyatori", href: "/imtihon", group: "Umumiy" },
+  { label: "Dars xonasi (onlayn dars)", href: "/dars", group: "Umumiy" },
   { label: "Ustozlar reytingi", href: "/reyting", group: "Umumiy" },
   { label: "Profil", href: "/profil", group: "Hisob" },
   { label: "Obuna va to'lovlar", href: "/obuna", group: "Hisob" },

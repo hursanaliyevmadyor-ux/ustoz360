@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Brain, CalendarDays, ChevronRight, GraduationCap, Grid2x2, Home, Search, Sparkles, Trophy, User, CreditCard, LogOut, LogIn, ShieldCheck,
+  Brain, CalendarDays, ChevronRight, GraduationCap, Grid2x2, Home, Search, Sparkles, Trophy, User, CreditCard, LogOut, LogIn, ShieldCheck, Video,
 } from "lucide-react";
 import * as DM from "@radix-ui/react-dropdown-menu";
 import { allModules, dashboardItem, modules, findAny, resolveSub, searchIndex, adminModule } from "@/lib/modules";
@@ -69,6 +69,7 @@ function Sidebar() {
         <NavLink href="/imtihon" icon={GraduationCap} label="Imtihon simulyatori" active={path === "/imtihon" || path.startsWith("/imtihon/")} />
         <NavLink href="/reyting" icon={Trophy} label="Ustozlar reytingi" active={path === "/reyting" || path.startsWith("/reyting/")} />
         <NavLink href="/seminarlar" icon={CalendarDays} label="Seminarlar" active={path === "/seminarlar"} />
+        <NavLink href="/dars" icon={Video} label="Dars xonasi" active={path === "/dars"} />
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Modullar</p>
         {visible.filter((m) => m.key !== "ai").map((m) => <NavLink key={m.key} href={m.href} icon={m.icon} label={m.name} active={cur === m.key} />)}
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Hisob</p>
