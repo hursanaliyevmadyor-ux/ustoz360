@@ -7,7 +7,8 @@ import type { BankQuestionInput } from "./adminvalid";
 
 export type BankFilter = { status?: string; topicId?: string; source?: string; q?: string; verified?: string };
 
-export async function listBank(f: BankFilter) {
+/** Savollar ro'yxati va ommaviy amallar bir xil filtrdan foydalanadi. */
+export function bankWhere(f: BankFilter): Prisma.QuestionWhereInput {
   // Shaxsiy testlar (aqlli import) savollari umumiy bankda ko'rinmaydi: ular faqat egasiga tegishli (collectionId bor).
   const where: Prisma.QuestionWhereInput = { collectionId: null };
   if (f.status) where.status = f.status as QuestionStatus;
@@ -17,9 +18,15 @@ export async function listBank(f: BankFilter) {
   // «Tekshirilgan» belgisi (qo'lda tekshiruv): 1 = tekshirilgan, 0 = tekshirilmagan.
   if (f.verified === "1") where.answerStatus = "VERIFIED";
   if (f.verified === "0") where.OR = [{ answerStatus: null }, { answerStatus: { not: "VERIFIED" } }];
+  return where;
+}
+
+export async function listBank(f: BankFilter) {
+  const where = bankWhere(f);
   const inReview: Prisma.QuestionWhereInput = { collectionId: null, isDemo: false, status: { in: ["DRAFT", "REVIEW", "APPROVED"] } };
-  const [rows, counts, reports, reviewTotal, reviewVerified] = await Promise.all([
+  const [rows, matching, counts, reports, reviewTotal, reviewVerified] = await Promise.all([
     db.question.findMany({ where, orderBy: { createdAt: "desc" }, take: 200, include: { topic: { select: { name: true, subject: { select: { name: true } } } }, _count: { select: { options: true } } } }),
+    db.question.count({ where }),
     db.question.groupBy({ by: ["status"], where: { collectionId: null }, _count: { _all: true } }),
     db.questionReport.groupBy({ by: ["questionId"], _count: { _all: true } }),
     db.question.count({ where: inReview }),
@@ -28,6 +35,7 @@ export async function listBank(f: BankFilter) {
   const rep = new Map(reports.map((r) => [r.questionId, r._count._all]));
   return {
     counts: Object.fromEntries(counts.map((c) => [c.status, c._count._all])) as Record<string, number>,
+    matching,
     review: { total: reviewTotal, verified: reviewVerified, remaining: Math.max(0, reviewTotal - reviewVerified) },
     items: rows.map((q) => ({
       id: q.id, text: q.text, topicId: q.topicId, topic: q.topic.name, subject: q.topic.subject.name, difficulty: q.difficulty, status: q.status,

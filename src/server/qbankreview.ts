@@ -2,7 +2,8 @@ import type { Prisma, QuestionStatus } from "@prisma/client";
 import { ApiError } from "./auth";
 import { audit } from "./audit";
 import { db } from "./db";
-import { VERIFIED, progress, queueOrder, reletterExplanation, type ReviewAction } from "./qbankreviewlogic";
+import { bankWhere } from "./qbank";
+import { VERIFIED, progress, queueOrder, reletterExplanation, type BulkApproveInput, type ReviewAction } from "./qbankreviewlogic";
 
 /**
  * Savollar bankini admin bitalab tekshiradi: «Tekshirilgan» belgisi va tasdiqlash bir amalda.
@@ -77,4 +78,15 @@ export async function applyReview(adminId: string, id: string, action: ReviewAct
 
   await audit(adminId, "qbank.review", { questionId: id, action: action.type, from: q.status, to: status, ...(action.type === "fix" && { correct: action.correct }) });
   return { ok: true as const, status, verified: action.type === "approve" || action.type === "fix" };
+}
+
+/**
+ * Ommaviy tasdiqlash: tanlangan (yoki filtrga mos hamma) savol «Tasdiqlangan» va «Tekshirilgan» bo'ladi.
+ * Rad etilgan, arxivdagi, namunaviy (demo) va shaxsiy testlar savollari o'zgarmaydi. Amal auditga bitta yozuv bilan tushadi.
+ */
+export async function bulkApprove(adminId: string, input: BulkApproveInput) {
+  const target: Prisma.QuestionWhereInput = input.ids ? { id: { in: input.ids }, collectionId: null } : bankWhere(input.filter ?? {});
+  const r = await db.question.updateMany({ where: { AND: [target, SCOPE] }, data: { status: "APPROVED", answerStatus: VERIFIED } });
+  await audit(adminId, "qbank.bulk_approve", { updated: r.count, mode: input.ids ? "ids" : "filter", ...(input.ids ? { ids: input.ids.slice(0, 50) } : { filter: input.filter ?? {} }) });
+  return { ok: true as const, updated: r.count };
 }

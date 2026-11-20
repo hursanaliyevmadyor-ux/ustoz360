@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VERIFIED, progress, queueOrder, reletterExplanation, reviewAction } from "./qbankreviewlogic";
+import { VERIFIED, bulkApproveInput, progress, queueOrder, reletterExplanation, reviewAction } from "./qbankreviewlogic";
 
 describe("tekshiruv qarorlari", () => {
   it("to'g'ri shakllarni qabul qiladi", () => {
@@ -48,5 +48,22 @@ describe("jarayon", () => {
     expect(progress({ verified: 25, total: 100 })).toEqual({ verified: 25, total: 100, remaining: 75, percent: 25 });
     expect(progress({ verified: 0, total: 0 })).toEqual({ verified: 0, total: 0, remaining: 0, percent: 100 });
     expect(progress({ verified: 9, total: 7 }).remaining).toBe(0);
+  });
+});
+
+describe("ommaviy tasdiqlash", () => {
+  it("ro'yxat yoki «hammasi»: faqat bittasi", () => {
+    expect(bulkApproveInput.safeParse({ ids: ["a", "b"] }).success).toBe(true);
+    expect(bulkApproveInput.safeParse({ all: true }).success).toBe(true);
+    expect(bulkApproveInput.safeParse({ all: true, filter: { status: "REVIEW", verified: "0" } }).success).toBe(true);
+  });
+  it("noto'g'ri so'rovlarni rad etadi", () => {
+    expect(bulkApproveInput.safeParse({}).success).toBe(false);
+    expect(bulkApproveInput.safeParse({ ids: [] }).success).toBe(false);
+    expect(bulkApproveInput.safeParse({ all: false }).success).toBe(false);
+    expect(bulkApproveInput.safeParse({ ids: ["a"], all: true }).success).toBe(false);
+    expect(bulkApproveInput.safeParse({ ids: Array.from({ length: 1001 }, (_, i) => String(i)) }).success).toBe(false);
+    expect(bulkApproveInput.safeParse({ ids: [""] }).success).toBe(false);
+    expect(bulkApproveInput.safeParse({ all: true, filter: { status: 5 } }).success).toBe(false);
   });
 });

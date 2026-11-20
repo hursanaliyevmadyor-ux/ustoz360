@@ -36,3 +36,11 @@ export function progress(counts: { verified: number; total: number }) {
   const remaining = Math.max(0, counts.total - counts.verified);
   return { ...counts, remaining, percent: counts.total ? Math.round((counts.verified / counts.total) * 100) : 100 };
 }
+
+/** Ommaviy tasdiqlash: belgilangan savollar (ro'yxat) yoki filtrga mos hamma savol. Ikkalasi birga bo'lmaydi. */
+export const bulkApproveInput = z.object({
+  ids: z.array(z.string().min(1).max(60)).min(1, "Hech narsa belgilanmagan").max(1000, "Bir safar ko'pi bilan 1000 ta").optional(),
+  all: z.boolean().optional(),
+  filter: z.object({ status: z.string().max(20), topicId: z.string().max(60), source: z.string().max(20), q: z.string().max(100), verified: z.string().max(1) }).partial().optional(),
+}).refine((x) => (x.ids ? 1 : 0) + (x.all ? 1 : 0) === 1, { message: "Savollar belgilanmagan." });
+export type BulkApproveInput = z.infer<typeof bulkApproveInput>;
