@@ -7,10 +7,12 @@ import { Input } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import { describeMediaError } from "@/lib/dars";
 import { MAX_CHAT, sortPeople } from "@/lib/voice-msg";
+import { ClipAssembler, SEND_GAP_MS, parseChunk, splitClip, type Clip } from "@/lib/voice-clip";
+import { VoiceNotePlayer, VoiceNoteRecorder } from "./voice-note";
 import type { VEngine, VPerson, VSession, VSource, VState } from "./voice-engine";
 
 type Ctl = { code: string; mode: "s" | "e"; k: string; h?: string };
-type ChatItem = { id: number; name: string; host: boolean; text: string; ts: number; mine: boolean };
+type ChatItem = { id: number; name: string; host: boolean; text: string; ts: number; mine: boolean; clip?: { url: string; ms: number } };
 
 const hhmm = (t: number) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 const initial = (n: string) => (n.trim()[0] ?? "?").toUpperCase();
@@ -41,12 +43,26 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   const [busy, setBusy] = React.useState("");
   const [notice, setNotice] = React.useState("");
   const [canShare, setCanShare] = React.useState(false);
+  const [recording, setRecording] = React.useState(false);
   const idRef = React.useRef(0);
+  const asm = React.useMemo(() => new ClipAssembler(), []);
+  const lastClip = React.useRef(0);
+  const chatRef = React.useRef<ChatItem[]>([]);
   const tabRef = React.useRef(tab);
   const prevCanSpeak = React.useRef<boolean | null>(null);
   const listEnd = React.useRef<HTMLDivElement>(null);
   const stageRef = React.useRef<HTMLDivElement>(null);
   tabRef.current = tab;
+  chatRef.current = chat;
+
+  /** Xabar qo'shadi; 200 tadan oshsa eskilari tashlanadi (ovozli xabarning vaqtinchalik havolasi ham bo'shatiladi). */
+  const addChat = React.useCallback((item: ChatItem) => {
+    setChat((c) => {
+      const n = [...c, item];
+      n.slice(0, Math.max(0, n.length - 200)).forEach((d) => { if (d.clip) URL.revokeObjectURL(d.clip.url); });
+      return n.slice(-200);
+    });
+  }, []);
 
   const me = people.find((p) => p.me);
   const isHost = session?.host ?? false;
@@ -82,20 +98,27 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
         setHands((h) => { const n = new Set([...h].filter((id) => ids.has(id))); return n.size === h.size ? h : n; });
       } else if (e.type === "state") setState(e.state);
       else if (e.type === "audio") setAudioBlocked(e.blocked);
-      else if (e.type === "data") {
+      else if (e.type === "clip") {
+        const c = parseChunk(e.chunk);
+        const clip = c && asm.add(e.from.identity, c);
+        if (!clip) return;
+        const url = URL.createObjectURL(new Blob([clip.bytes as BlobPart], { type: clip.mime }));
+        addChat({ id: ++idRef.current, name: e.from.name, host: e.from.host, text: "", ts: Date.now(), mine: false, clip: { url, ms: clip.ms } });
+        if (tabRef.current !== "chat") setUnread((u) => u + 1);
+      } else if (e.type === "data") {
         if (e.msg.t === "hand") {
           const m = e.msg;
           setHands((h) => { const n = new Set(h); if (m.up) n.add(e.from.identity); else n.delete(e.from.identity); return n; });
         } else {
           const m = e.msg;
-          setChat((c) => [...c, { id: ++idRef.current, name: e.from.name, host: e.from.host, text: m.text, ts: Date.now(), mine: false }].slice(-200));
+          addChat({ id: ++idRef.current, name: e.from.name, host: e.from.host, text: m.text, ts: Date.now(), mine: false });
           if (tabRef.current !== "chat") setUnread((u) => u + 1);
         }
       }
     });
     engine.connect().then((s) => { if (live) setSession(s); }).catch((e: unknown) => { if (live) { setErr(e instanceof Error ? e.message : "Xonaga ulanib bo'lmadi."); setState("ended"); } });
-    return () => { live = false; off(); engine.disconnect(); };
-  }, [engine]);
+    return () => { live = false; off(); engine.disconnect(); chatRef.current.forEach((m) => { if (m.clip) URL.revokeObjectURL(m.clip.url); }); };
+  }, [engine, asm, addChat]);
 
   // Ekran o'chib qolmasin (telefonda dars paytida)
   React.useEffect(() => {
@@ -139,8 +162,26 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
     const text = draft.trim().slice(0, MAX_CHAT);
     if (!text || !session) return;
     setDraft("");
-    setChat((c) => [...c, { id: ++idRef.current, name: me?.name ?? "Men", host: isHost, text, ts: Date.now(), mine: true }].slice(-200));
+    addChat({ id: ++idRef.current, name: me?.name ?? "Men", host: isHost, text, ts: Date.now(), mine: true });
     await engine.send("chat", { t: "chat", text }).catch(() => setErr("Xabar yuborilmadi. Aloqani tekshiring."));
+  }
+  /** Qisqa ogohlantirish: bir necha soniyadan keyin o'zi yo'qoladi. */
+  function flash(msg: string) {
+    setErr(msg);
+    setTimeout(() => setErr((cur) => (cur === msg ? "" : cur)), 5000);
+  }
+  async function sendClip(clip: Clip) {
+    if (!session) return;
+    setErr("");
+    const wait = lastClip.current + SEND_GAP_MS - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait)); // ketma-ket xabarlar orasida qisqa tanaffus
+    const id = crypto.getRandomValues(new Uint32Array(1))[0] ?? 0;
+    const parts = splitClip(id, clip);
+    if (!parts) { setErr("Ovozli xabar juda uzun. Qisqaroq yozing."); return; }
+    lastClip.current = Date.now();
+    const url = URL.createObjectURL(new Blob([clip.bytes as BlobPart], { type: clip.mime }));
+    addChat({ id: ++idRef.current, name: me?.name ?? "Men", host: isHost, text: "", ts: Date.now(), mine: true, clip: { url, ms: clip.ms } });
+    try { for (const part of parts) await engine.sendClip(part); } catch { setErr("Ovozli xabar yuborilmadi. Aloqani tekshiring."); }
   }
   async function allow(p: VPerson, allowIt: boolean) {
     setBusy(p.identity); setErr("");
@@ -286,18 +327,19 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
         <Card className={cn("flex h-[26rem] flex-col p-3 lg:h-auto lg:min-h-[22rem]", tab !== "chat" && "hidden lg:flex")}>
           <h2 className="px-1 pb-2 text-sm font-extrabold">Yozishma</h2>
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-1" aria-live="polite" aria-label="Yozishmalar">
-            {chat.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Hali xabar yo&apos;q. Savolingizni shu yerga yozing.</p>}
+            {chat.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Hali xabar yo&apos;q. Savolingizni yozing yoki ovozli xabar yuboring.</p>}
             {chat.map((m) => (
               <div key={m.id} className={cn("max-w-[90%] rounded-2xl px-3 py-2 text-sm", m.mine ? "ml-auto bg-primary text-white" : m.host ? "bg-primary/10" : "bg-muted")}>
                 <p className={cn("text-[11px] font-bold", m.mine ? "text-white/80" : "text-muted-foreground")}>{m.mine ? "Siz" : m.name}{m.host && !m.mine ? " · Ustoz" : ""} · {hhmm(m.ts)}</p>
-                <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                {m.clip ? <div className="pt-1"><VoiceNotePlayer url={m.clip.url} ms={m.clip.ms} mine={m.mine} /></div> : <p className="whitespace-pre-wrap break-words">{m.text}</p>}
               </div>
             ))}
             <div ref={listEnd} />
           </div>
           <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); void sendChat(); }}>
-            <Input value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={MAX_CHAT} placeholder="Xabar yozing..." aria-label="Xabar" disabled={!live} />
-            <Button type="submit" size="icon" disabled={!live || !draft.trim()} aria-label="Yuborish"><Send className="h-4 w-4" aria-hidden /></Button>
+            {!recording && <Input value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={MAX_CHAT} placeholder="Xabar yozing..." aria-label="Xabar" disabled={!live} />}
+            <VoiceNoteRecorder disabled={!live} onClip={sendClip} onError={flash} onRecordingChange={setRecording} />
+            {!recording && <Button type="submit" size="icon" disabled={!live || !draft.trim()} aria-label="Yuborish"><Send className="h-4 w-4" aria-hidden /></Button>}
           </form>
         </Card>
       </div>
