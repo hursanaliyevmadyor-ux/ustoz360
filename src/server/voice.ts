@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
 import { ApiError } from "./auth";
 import { isFree } from "../lib/voice-mode";
-import { grantFor, guestName, livekitRoomName, speakSources, verifyRoom, type VoiceMode, type VoiceRole } from "./voicelogic";
+import { freeMetadata, grantFor, guestName, guestPermission, livekitRoomName, roomFree, verifyRoom, type VoiceMode, type VoiceRole } from "./voicelogic";
 
 /**
  * Ovozli dars xonasi (LiveKit). Kalitlar faqat serverda (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET), brauzerga faqat qisqa muddatli kirish belgisi (token) beriladi.
@@ -36,14 +36,20 @@ export function authorize(c: VoiceConfig, o: { code: string; mode: VoiceMode; k:
   return role;
 }
 
-export async function issueToken(o: { code: string; mode: VoiceMode; k: string; h?: string; name?: string }) {
+/** Ustoz "hamma gapira oladi" ni jonli yoqqanmi (xona metadatasi). LiveKit javob bermasa, rejimning o'zi ishlaydi. */
+async function liveFree(c: VoiceConfig, code: string): Promise<boolean> {
+  try { return roomFree((await roomClient(c).listRooms([livekitRoomName(code)]))[0]?.metadata); } catch { return false; }
+}
+
+export async function issueToken(o: { code: string; mode: VoiceMode; k: string; h?: string; name?: string }, isFreeNow: (c: VoiceConfig, code: string) => Promise<boolean> = liveFree) {
   const c = need();
   const role = authorize(c, o);
+  const free = role === "guest" && !isFree(o.mode) ? await isFreeNow(c, o.code) : false; // faqat ruxsat bilan rejimda o'quvchi uchun kerak
   const room = livekitRoomName(o.code);
   const identity = `${role === "host" ? "t" : "o"}-${randomBytes(6).toString("base64url")}`;
   const at = new AccessToken(c.key, c.secret, { identity, name: role === "host" ? (o.name?.trim() || "Ustoz").slice(0, 40) : guestName(o.name), ttl: "4h", metadata: JSON.stringify({ r: role }) });
-  at.addGrant(grantFor(role, o.mode, room, SRC));
-  const canSpeak = role === "host" || isFree(o.mode);
+  at.addGrant(grantFor(role, o.mode, room, SRC, free));
+  const canSpeak = role === "host" || isFree(o.mode) || free;
   return { token: await at.toJwt(), url: wsUrl(c.url), identity, role, canSpeak };
 }
 
@@ -54,10 +60,7 @@ export async function setSpeaking(o: { code: string; mode: VoiceMode; k: string;
   const c = need();
   if (authorize(c, o) !== "host") throw new ApiError(403, "Bu amal faqat ustoz uchun.", "not_host");
   const rc = roomClient(c), room = livekitRoomName(o.code);
-  const permission = o.allow
-    ? { canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: speakSources(o.mode, SRC) }
-    : { canPublish: false, canSubscribe: true, canPublishData: true, canPublishSources: [] as TrackSource[] };
-  await rc.updateParticipant(room, o.identity, { permission });
+  await rc.updateParticipant(room, o.identity, { permission: guestPermission(o.mode, o.allow, SRC) });
   return { ok: true as const };
 }
 
@@ -66,10 +69,22 @@ export async function muteAll(o: { code: string; mode: VoiceMode; k: string; h?:
   const c = need();
   if (authorize(c, o) !== "host") throw new ApiError(403, "Bu amal faqat ustoz uchun.", "not_host");
   const rc = roomClient(c), room = livekitRoomName(o.code);
+  await rc.updateRoomMetadata(room, freeMetadata(false)).catch(() => {}); // "hamma gapira oladi" ham o'chadi: keyin kirganlar ham ruxsatsiz
   const people = await rc.listParticipants(room);
   const guests = people.filter((p) => p.identity.startsWith("o-"));
-  await Promise.all(guests.map((p) => rc.updateParticipant(room, p.identity, { permission: { canPublish: false, canSubscribe: true, canPublishData: true, canPublishSources: [] as TrackSource[] } })));
+  await Promise.all(guests.map((p) => rc.updateParticipant(room, p.identity, { permission: guestPermission(o.mode, false, SRC) })));
   return { ok: true as const, count: guests.length };
+}
+
+/** Faqat ustoz: "hamma gapira oladi" ni jonli yoqish yoki o'chirish. Xona metadatasiga yoziladi (keyin kirganlar ham hisobga olinadi), hozirgi o'quvchilarning ruxsati almashadi. */
+export async function setFree(o: { code: string; mode: VoiceMode; k: string; h?: string; on: boolean }) {
+  const c = need();
+  if (authorize(c, o) !== "host") throw new ApiError(403, "Bu amal faqat ustoz uchun.", "not_host");
+  const rc = roomClient(c), room = livekitRoomName(o.code);
+  await rc.updateRoomMetadata(room, freeMetadata(o.on));
+  const guests = (await rc.listParticipants(room)).filter((p) => p.identity.startsWith("o-"));
+  await Promise.all(guests.map((p) => rc.updateParticipant(room, p.identity, { permission: guestPermission(o.mode, o.on, SRC) })));
+  return { ok: true as const, on: o.on, count: guests.length };
 }
 
 /** Faqat ustoz: xonani hamma uchun yopish. */

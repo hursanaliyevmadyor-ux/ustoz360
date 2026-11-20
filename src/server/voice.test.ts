@@ -64,6 +64,23 @@ describe("kirish belgisi (token)", () => {
     expect(vo?.canPublish).toBe(true);
     expect(vo?.canPublishSources?.length).toBe(1); // faqat mikrofon
   });
+  it("ustoz jonli \"hamma gapira oladi\" ni yoqqan bo'lsa, ruxsat bilan rejimda kirgan o'quvchi ham gapira oladi", async () => {
+    const { k, h } = signRoom(AUTH, code, "s");
+    const calls: string[] = [];
+    const on = async (_c: unknown, c: string) => { calls.push(c); return true; };
+    const off = async () => false;
+    const g = await withEnv(() => issueToken({ code, mode: "s", k, name: "Ali" }, on));
+    expect(g.canSpeak).toBe(true); expect(calls).toEqual([code]);
+    expect((await verify(g.token)).video?.canPublish).toBe(true);
+    const n = await withEnv(() => issueToken({ code, mode: "s", k }, off));
+    expect(n.canSpeak).toBe(false);
+    // ustozdan va erkin rejimdan LiveKit so'ralmaydi
+    calls.length = 0;
+    await withEnv(() => issueToken({ code, mode: "s", k, h }, on));
+    const e = signRoom(AUTH, code, "e");
+    await withEnv(() => issueToken({ code, mode: "e", k: e.k }, on));
+    expect(calls).toEqual([]);
+  });
   it("yaroqsiz imzo bilan token berilmaydi", async () => {
     const { k } = signRoom(AUTH, code, "s");
     await expect(withEnv(() => issueToken({ code, mode: "e", k }))).rejects.toMatchObject({ status: 403 });
