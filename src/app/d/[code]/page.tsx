@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { JoinRoom, type RoomInfo } from "@/components/dars/join-room";
 import { cleanTitle, isRoomCode, parseStartsAt } from "@/lib/dars";
+import { isSubject } from "@/lib/subjects";
 import { voiceConfig } from "@/server/voice";
 import { isVoiceMode, verifyRoom } from "@/server/voicelogic";
 
-type Props = { params: Promise<{ code: string }>; searchParams: Promise<{ t?: string | string[]; u?: string | string[]; s?: string | string[]; r?: string | string[]; k?: string | string[]; h?: string | string[] }> };
+type Props = { params: Promise<{ code: string }>; searchParams: Promise<{ t?: string | string[]; u?: string | string[]; s?: string | string[]; r?: string | string[]; k?: string | string[]; h?: string | string[]; f?: string | string[] }> };
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /** Xona havolasi qidiruv tizimlariga chiqmasin (faqat havola bilan kiriladi). */
@@ -42,7 +43,7 @@ export default async function Page({ params, searchParams }: Props) {
         <span className="text-lg font-black tracking-tight">USTOZ <span className="text-primary">360</span></span>
       </header>
       {room
-        ? <JoinRoom code={code} title={title} asTeacher={asTeacher && !!room.h} startsAt={startsAt} room={room} />
+        ? <JoinRoom code={code} title={title} asTeacher={asTeacher && !!room.h} startsAt={startsAt} room={room} subject={isSubject(one(sp.f)) ? one(sp.f) : null} />
         : <p role="alert" className="mx-auto max-w-xl rounded-2xl bg-danger/10 p-5 text-center font-semibold text-danger">{problem}</p>}
     </main>
   );

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, DemoBadge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { StatCard } from "@/components/layout/page";
-import { ModulesAndQuick } from "@/components/layout/dashboard-bits";
+import { LiveLessonCta, ModulesAndQuick } from "@/components/layout/dashboard-bits";
 import { LineChart } from "@/components/charts/charts";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +28,8 @@ export function DemoDashboard() {
           <Button asChild variant="outline"><Link href="/darsyor/dars-ishlanmasi"><FileText className="h-4 w-4" />Dars ishlanmasi</Link></Button>
         </div>
       </div>
+
+      <LiveLessonCta />
 
       <section aria-label="Ko'rsatkichlar" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Imtihongacha" value="28 kun" delta="Namunaviy sana" icon={Timer} tone="teal" />

@@ -1,4 +1,5 @@
 import { hasVideo, isFree, isVoiceMode, type VoiceMode } from "./voice-mode";
+import { isSubject } from "./subjects";
 /**
  * Dars xonasi: umumiy yordamchilar (kod, havola, vaqt, taklif matni). Xona saytimiz ichida LiveKit orqali ishlaydi;
  * xona kodi va imzolari serverda hosil bo'ladi (src/server/voicelogic.ts).
@@ -34,12 +35,13 @@ export const cleanName = (s: unknown) => (typeof s === "string" ? s.replace(/\s+
 export type VoiceLink = { mode: VoiceMode; k: string; h?: string };
 
 /** Ulashiladigan qisqa havola: /d/<kod>?t=<dars nomi>&s=<boshlanish vaqti>&r=<rejim>&k=<imzo> (ustozda qo'shimcha h). */
-export function joinUrl(origin: string, code: string, title?: string, asTeacher = false, startsAt?: number | null, voice?: VoiceLink | null): string {
+export function joinUrl(origin: string, code: string, title?: string, asTeacher = false, startsAt?: number | null, voice?: VoiceLink | null, subject?: string | null): string {
   const p = new URLSearchParams();
   const t = cleanTitle(title);
   if (t) p.set("t", t);
   if (startsAt) p.set("s", String(Math.round(startsAt)));
   if (voice) { p.set("r", voice.mode); p.set("k", voice.k); if (asTeacher && voice.h) p.set("h", voice.h); }
+  if (subject && isSubject(subject)) p.set("f", subject);
   if (asTeacher) p.set("u", "1");
   const qs = p.toString();
   return `${origin.replace(/\/+$/, "")}/d/${code}${qs ? `?${qs}` : ""}`;
@@ -122,6 +124,19 @@ export function telegramShareUrl(link: string, text: string): string {
 /** Telegram ichki brauzeri kamerani ko'pincha bermaydi: tashqi brauzerga o'tishni maslahat beramiz. */
 export const isTelegramBrowser = (ua: string) => /Telegram/i.test(ua);
 
+/**
+ * Havolani tashqi brauzerda ochish manzili (Telegram ichida kamera va mikrofon ishlamasligi mumkin):
+ * Android uchun Chrome "intent" havolasi (ochilmasa, oddiy havolaga qaytadi), iPhone uchun Safari havolasi. Boshqa qurilmada null.
+ */
+export function externalBrowserUrl(url: string, ua: string): string | null {
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  if (/Android/i.test(ua)) return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.slice(0, -1)};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(u.toString())};end`;
+  if (/iPhone|iPad|iPod/i.test(ua)) return `x-safari-${u.toString()}`;
+  return null;
+}
+
 /** getUserMedia xatolarini o'zbekcha va tushunarli qilib beradi. */
 export function describeMediaError(e: unknown, what: "kamera" | "mikrofon" | "kamera va mikrofon" = "kamera va mikrofon"): string {
   const name = typeof e === "object" && e && "name" in e ? String((e as { name: unknown }).name) : "";
@@ -147,7 +162,7 @@ export function describeMediaError(e: unknown, what: "kamera" | "mikrofon" | "ka
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Teacher uchun oxirgi xonalar (brauzerda saqlanadi, bazasiz). */
-export type SavedRoom = { code: string; title: string; at: number; startsAt?: number; voice: { mode: VoiceMode; k: string; h: string } };
+export type SavedRoom = { code: string; title: string; at: number; startsAt?: number; subject?: string; voice: { mode: VoiceMode; k: string; h: string } };
 export const ROOMS_KEY = "u360-dars-rooms";
 export const NAME_KEY = "u360-dars-name";
 
@@ -162,7 +177,7 @@ export function parseSavedRooms(raw: string | null): SavedRoom[] {
     // Eski (Jitsi) xonalar imzosiz saqlangan edi: ular endi ishlamaydi, ro'yxatga olinmaydi.
     return v
       .filter((r): r is SavedRoom => !!r && isRoomCode((r as SavedRoom).code) && typeof (r as SavedRoom).at === "number" && validVoice((r as SavedRoom).voice))
-      .map((r) => ({ code: r.code, title: cleanTitle(r.title), at: r.at, ...(typeof r.startsAt === "number" && { startsAt: r.startsAt }), voice: r.voice }))
+      .map((r) => ({ code: r.code, title: cleanTitle(r.title), at: r.at, ...(typeof r.startsAt === "number" && { startsAt: r.startsAt }), ...(isSubject(r.subject) && { subject: r.subject }), voice: r.voice }))
       .slice(0, 10);
   } catch {
     return [];

@@ -15,6 +15,12 @@ export const MAX_URL = 300;
 export const MAX_TIMER_SEC = 3 * 3600;
 export const MAX_DRAWERS = 4;
 export const MAX_NOTE = 160;
+export const MAX_PLAN = 7;
+export const MAX_PLAN_ITEM = 60;
+export const MAX_STAR = 99;
+export const MAX_STAR_PEOPLE = 80;
+/** Dars rejasi uchun tayyor bosqichlar. */
+export const DEFAULT_PLAN = ["Salomlashish va takrorlash", "Yangi mavzu", "Mashq", "Mustahkamlash", "Uyga vazifa"] as const;
 export const OPT_LETTERS = ["A", "B", "C", "D", "E"] as const;
 
 export type Poll = { id: number; q: string; opts: string[]; open: boolean; show: boolean; correct: number | null; counts: number[] | null };
@@ -23,6 +29,8 @@ export type ClassState = {
   lock: boolean; // chat o'quvchilar uchun to'xtatilgan
   stage: "auto" | "board"; // sahnada nima: video/ekran yoki doska
   note: string; // hamma ko'radigan muhim e'lon
+  plan: { items: string[]; at: number } | null; // dars rejasi: bosqichlar va hozirgi bosqich (at = items.length: hammasi tugadi)
+  stars: Record<string, number>; // o'quvchilarga berilgan ⭐ (identity -> soni)
   bg: Bg; // doskaning orqa foni
   draw: string[]; // ustoz doskaga chaqirgan o'quvchilar (identity)
   timer: { left: number; total: number } | null; // soniyada; `left` yuborilgan paytdagi qoldiq
@@ -31,7 +39,7 @@ export type ClassState = {
   poll: Poll | null;
   pulse: { id: number } | null; // "tushundingizmi?" so'rovi ochiq
 };
-export const emptyClass = (): ClassState => ({ lock: false, stage: "auto", note: "", bg: "plain", draw: [], timer: null, pick: null, mats: [], poll: null, pulse: null });
+export const emptyClass = (): ClassState => ({ lock: false, stage: "auto", note: "", plan: null, stars: {}, bg: "plain", draw: [], timer: null, pick: null, mats: [], poll: null, pulse: null });
 
 /** O'quvchidan ustozga keladigan javoblar. */
 export type Act = { t: "vote"; poll: number; o: number } | { t: "pulse"; id: number; v: 0 | 1 | 2 };
@@ -90,6 +98,22 @@ function parsePoll(v: unknown): Poll | null {
   return { id, q, opts, open: v.open === true, show: v.show === true, correct, counts };
 }
 
+function parsePlan(v: unknown): ClassState["plan"] {
+  if (!isObj(v) || !Array.isArray(v.items)) return null;
+  const items = v.items.map((x) => text(x, MAX_PLAN_ITEM)).filter(Boolean).slice(0, MAX_PLAN);
+  if (items.length === 0) return null;
+  return { items, at: int(v.at, 0, items.length) ?? 0 };
+}
+function parseStars(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!isObj(v)) return out;
+  for (const [k, n] of Object.entries(v).slice(0, MAX_STAR_PEOPLE)) {
+    const key = text(k, 64), c = int(n, 1, MAX_STAR);
+    if (key && c !== null && key !== "__proto__") out[key] = c;
+  }
+  return out;
+}
+
 /** Ustozdan kelgan holatni tekshiradi va tozalaydi. Buzilgan bo'lsa null (hech qachon xato tashlamaydi). */
 export function parseClass(v: unknown): ClassState | null {
   if (!isObj(v)) return null;
@@ -108,6 +132,8 @@ export function parseClass(v: unknown): ClassState | null {
     lock: v.lock === true,
     stage: v.stage === "board" ? "board" : "auto",
     note: text(v.note, MAX_NOTE),
+    plan: parsePlan(v.plan),
+    stars: parseStars(v.stars),
     bg: isBg(v.bg) ? v.bg : "plain",
     draw: Array.isArray(v.draw) ? [...new Set(v.draw.map((x) => text(x, 64)).filter(Boolean))].slice(0, MAX_DRAWERS) : [],
     timer: t && t.left !== null && t.total !== null ? { left: t.left, total: t.total } : null,
@@ -151,12 +177,12 @@ export const fmtTimer = (sec: number): string => {
 export const fmtClock = (ts: number): string => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 
 /** Davomat: kim qachon kirgan. `last` bo'sh bo'lsa, hozir xonada. */
-export type Seen = { identity: string; name: string; first: number; last: number | null };
+export type Seen = { identity: string; name: string; first: number; last: number | null; stars?: number };
 
 export function attendanceText(title: string, rows: readonly Seen[], now: number): string {
   const d = new Date(now);
   const date = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
-  const lines = rows.map((r, i) => `${i + 1}. ${r.name}: kirdi ${fmtClock(r.first)}${r.last ? `, chiqdi ${fmtClock(r.last)}` : ""}`);
+  const lines = rows.map((r, i) => `${i + 1}. ${r.name}: kirdi ${fmtClock(r.first)}${r.last ? `, chiqdi ${fmtClock(r.last)}` : ""}${r.stars ? ` ⭐${r.stars}` : ""}`);
   return [`Davomat${title ? `: ${title}` : ""}`, date, `Qatnashdi: ${rows.length}`, "", ...lines].join("\n");
 }
 
@@ -165,5 +191,5 @@ const csvCell = (s: string) => {
   return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 };
 export function attendanceCsv(rows: readonly Seen[]): string {
-  return ["№,Ism,Kirdi,Chiqdi", ...rows.map((r, i) => [String(i + 1), csvCell(r.name), fmtClock(r.first), r.last ? fmtClock(r.last) : "xonada"].join(","))].join("\n");
+  return ["№,Ism,Kirdi,Chiqdi,Yulduz", ...rows.map((r, i) => [String(i + 1), csvCell(r.name), fmtClock(r.first), r.last ? fmtClock(r.last) : "xonada", String(r.stars ?? 0)].join(","))].join("\n");
 }

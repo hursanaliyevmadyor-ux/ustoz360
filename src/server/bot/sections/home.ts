@@ -2,7 +2,7 @@
 import { clip, dayLabel, esc, fmtWhen } from "../botlogic";
 import type { Ctx } from "../ctx";
 import { digest, type Digest } from "../digest";
-import { b, webApp, type Btn, type Screen } from "../tg";
+import { b, link, webApp, type Btn, type Screen } from "../tg";
 import { APP_BUTTON, heading } from "../ui";
 
 /** Bosh sahifa: bugungi reja (bosib belgilanadi), davom ettiriladigan test, takrorlash, yaqin seminar va e'lonlar. */
@@ -25,6 +25,7 @@ export function homeScreen(name: string, d: Digest, origin = ""): Screen {
   if (d.dueErrors) row1.push(b("🔁 Xatolar", "t.e"));
   kb.push(row1);
   kb.push([b("🧭 Reja", "p"), b("📅 Seminarlar", "n"), b("👤 Profil", "u")]);
+  if (origin.startsWith("https://")) kb.push([link("🎥 Jonli dars o'tkazish", `${origin}/dars`)]);
   return { text: lines.join("\n"), kb };
 }
 
