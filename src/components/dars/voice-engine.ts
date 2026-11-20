@@ -8,11 +8,16 @@ import { decodeMsg, encodeMsg, roleOf, type VoiceMsg, type VoiceTopic } from "@/
  * sinovda soxta engine beriladi.
  */
 export type VPerson = { identity: string; name: string; host: boolean; speaking: boolean; micOn: boolean; camOn: boolean; screenOn: boolean; canSpeak: boolean; me: boolean };
+/** Dars asboblari xabarlari (class-tools.ts, board.ts): ustoz -> hamma ("class", "board"), o'quvchi -> ustoz ("act"). */
+export type ToolTopic = "class" | "act" | "board";
+export const TOOL_TOPICS: readonly string[] = ["class", "act", "board"];
 export type VState = "connecting" | "live" | "reconnecting" | "ended";
 export type VSource = "camera" | "screen";
 export type VEvent =
   | { type: "roster"; people: VPerson[] }
   | { type: "data"; topic: VoiceTopic; from: { identity: string; name: string; host: boolean }; msg: VoiceMsg }
+  | { type: "json"; topic: ToolTopic; from: { identity: string; name: string; host: boolean }; data: unknown }
+  | { type: "free"; on: boolean }
   | { type: "clip"; from: { identity: string; name: string; host: boolean }; chunk: Uint8Array }
   | { type: "state"; state: VState; reason?: string }
   | { type: "audio"; blocked: boolean };
@@ -28,6 +33,8 @@ export type VEngine = {
   /** Ishtirokchining videosini <video> elementiga ulaydi; qaytgan funksiya ajratadi. */
   attachVideo(identity: string, el: HTMLVideoElement, source: VSource): () => void;
   send(topic: VoiceTopic, msg: VoiceMsg): Promise<void>;
+  /** Dars asbobi xabari (JSON). `to` berilsa, faqat shu ishtirokchilarga boradi. */
+  sendJson(topic: ToolTopic, data: unknown, to?: string[]): Promise<void>;
   /** Ovozli xabarning bitta paketi (voice-clip.ts). Paketlar ketma-ket yuboriladi. */
   sendClip(chunk: Uint8Array): Promise<void>;
   startAudio(): Promise<void>;
@@ -35,6 +42,10 @@ export type VEngine = {
 };
 
 export class VoiceError extends Error {}
+const dec = new TextDecoder();
+const enc = new TextEncoder();
+/** Xona metadatasidan: ustoz "hamma gapira oladi" ni yoqqanmi. */
+const freeOf = (metadata: string | undefined) => { try { return (JSON.parse(metadata || "{}") as { f?: unknown }).f === 1; } catch { return false; } };
 
 const ERRORS: Record<string, string> = {
   voice_off: "Dars xonasi hozircha ishlamayapti.",
@@ -93,6 +104,7 @@ export function createLiveKitEngine(o: { code: string; mode: VoiceMode; k: strin
         .on(RoomEvent.TrackMuted, roster).on(RoomEvent.TrackUnmuted, roster)
         .on(RoomEvent.LocalTrackPublished, roster).on(RoomEvent.LocalTrackUnpublished, roster)
         .on(RoomEvent.ParticipantPermissionsChanged, roster)
+        .on(RoomEvent.RoomMetadataChanged, (m) => emit({ type: "free", on: freeOf(m) }))
         .on(RoomEvent.ActiveSpeakersChanged, roster)
         .on(RoomEvent.AudioPlaybackStatusChanged, () => emit({ type: "audio", blocked: !rm.canPlaybackAudio }))
         .on(RoomEvent.ConnectionStateChanged, (s) => {
@@ -101,6 +113,11 @@ export function createLiveKitEngine(o: { code: string; mode: VoiceMode; k: strin
         })
         .on(RoomEvent.Disconnected, () => emit({ type: "state", state: "ended" }))
         .on(RoomEvent.DataReceived, (payload, p, _kind, topic) => {
+          if (topic && TOOL_TOPICS.includes(topic)) {
+            if (!p || payload.length > 14000) return;
+            try { emit({ type: "json", topic: topic as ToolTopic, from: { identity: p.identity, name: p.name || p.identity, host: roleOf(p.metadata) === "host" }, data: JSON.parse(dec.decode(payload)) }); } catch { /* buzilgan xabar */ }
+            return;
+          }
           if (topic === "voice") {
             if (p) emit({ type: "clip", from: { identity: p.identity, name: p.name || p.identity, host: roleOf(p.metadata) === "host" }, chunk: payload });
             return;
@@ -123,6 +140,7 @@ export function createLiveKitEngine(o: { code: string; mode: VoiceMode; k: strin
       }
       emit({ type: "state", state: "live" });
       emit({ type: "audio", blocked: !rm.canPlaybackAudio });
+      emit({ type: "free", on: freeOf(rm.metadata) });
       roster();
       return { identity: rm.localParticipant.identity, host, canSpeak: !!d.canSpeak };
     },
@@ -143,6 +161,9 @@ export function createLiveKitEngine(o: { code: string; mode: VoiceMode; k: strin
       return () => { t.detach(el); };
     },
     async send(topic, msg) { await room?.localParticipant.publishData(encodeMsg(msg), { reliable: true, topic }); },
+    async sendJson(topic, data, to) {
+      await room?.localParticipant.publishData(enc.encode(JSON.stringify(data)), { reliable: true, topic, ...(to && { destinationIdentities: to }) });
+    },
     async sendClip(chunk) { await room?.localParticipant.publishData(chunk, { reliable: true, topic: "voice" }); },
     async startAudio() { await room?.startAudio(); emit({ type: "audio", blocked: !(room?.canPlaybackAudio ?? true) }); },
     on(fn) { subs.add(fn); return () => { subs.delete(fn); }; },

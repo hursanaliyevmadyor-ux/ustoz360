@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { VOICE_MODES } from "../lib/voice-mode";
-import { controlInput, grantFor, guestName, isVoiceMode, livekitRoomName, roomInput, signRoom, speakSources, tokenInput, verifyRoom } from "./voicelogic";
+import { controlInput, freeMetadata, grantFor, guestName, guestPermission, isVoiceMode, livekitRoomName, roomFree, roomInput, signRoom, speakSources, tokenInput, verifyRoom } from "./voicelogic";
 
 const S = "s".repeat(40);
 const code = "abcdefghjk";
@@ -81,6 +81,28 @@ describe("LiveKit ruxsatlari", () => {
   });
 });
 
+describe("jonli \"hamma gapira oladi\"", () => {
+  const S = { mic: 2, camera: 1, screen: 3 };
+  it("xona metadatasi yoziladi va o'qiladi, buzilgani yoqilmagan hisoblanadi", () => {
+    expect(roomFree(freeMetadata(true))).toBe(true);
+    expect(roomFree(freeMetadata(false))).toBe(false);
+    for (const bad of [undefined, "", "xato", "[]", "null", '{"f":"1"}', '{"f":true}', '{"f":2}']) expect(roomFree(bad)).toBe(false);
+  });
+  it("ruxsat bilan rejimda yoqilsa, kirgan o'quvchi gapira oladi, lekin boshqaruv huquqi bo'lmaydi", () => {
+    const g = grantFor("guest", "s", "u360-x", S, true) as { canPublish: boolean; canPublishSources: number[]; roomAdmin?: boolean };
+    expect(g.canPublish).toBe(true);
+    expect(g.canPublishSources).toEqual([2, 1]);
+    expect(g.roomAdmin).toBeUndefined();
+    expect((grantFor("guest", "q", "u360-x", S, true) as { canPublishSources: number[] }).canPublishSources).toEqual([2]);
+    expect(grantFor("guest", "s", "u360-x", S, false)).toMatchObject({ canPublish: false });
+  });
+  it("ruxsat berish yoki olish: video rejimda mikrofon va kamera, ovozli chatda faqat mikrofon, olinganda hech narsa", () => {
+    expect(guestPermission("s", true, S)).toEqual({ canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: [2, 1] });
+    expect(guestPermission("q", true, S).canPublishSources).toEqual([2]);
+    expect(guestPermission("s", false, S)).toEqual({ canPublish: false, canSubscribe: true, canPublishData: true, canPublishSources: [] });
+  });
+});
+
 describe("kichik yordamchilar", () => {
   it("xona nomi, rejim, ism", () => {
     expect(livekitRoomName(code)).toBe("u360-abcdefghjk");
@@ -99,6 +121,9 @@ describe("kichik yordamchilar", () => {
     expect(controlInput.safeParse({ action: "speak", code, mode: "s", k, h: k, identity: "o-abc", allow: true }).success).toBe(true);
     expect(controlInput.safeParse({ action: "speak", code, mode: "s", k, h: k, allow: true }).success).toBe(false);
     expect(controlInput.safeParse({ action: "close", code, mode: "s", k, h: k }).success).toBe(true);
+    expect(controlInput.safeParse({ action: "free", code, mode: "s", k, h: k, on: true }).success).toBe(true);
+    expect(controlInput.safeParse({ action: "free", code, mode: "s", k, h: k }).success).toBe(false);
+    expect(controlInput.safeParse({ action: "free", code, mode: "s", k, h: k, on: "ha" }).success).toBe(false);
     expect(controlInput.safeParse({ action: "delete", code, mode: "s", k }).success).toBe(false);
   });
 });

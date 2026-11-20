@@ -32,7 +32,13 @@ const DURING = [
   ["Qo'l ko'targanlar", "ishtirokchilar ro'yxatida sariq belgi chiqadi: «Gapirishga ruxsat» ni bosasiz, o'quvchining mikrofoni (video darsda kamerasi ham) ochiladi"],
   ["Ruxsatni olish", "gapirib bo'lgach, o'quvchi yonidagi «Ruxsatni olish» yoki «Hammaning ruxsatini olish»"],
   ["Ekranni ulashish", "faqat video darsda, kompyuterda: slayd, hujjat yoki doskani hammaga ko'rsatadi. Telefonda bu tugma yo'q"],
-  ["Yozishma (chat)", "o'quvchi savol yozadi, siz havola yoki vazifani yuborasiz"],
+  ["Kim gapira oladi", "«Ishtirokchilar» bo'limida «Ruxsat bilan» yoki «Hamma» ni xona ichida jonli almashtirasiz"],
+  ["Doska", "«Asboblar» → «Doska»: siz chizasiz (qalam, rang, o'chirg'ich, katak), o'quvchilar ko'radi"],
+  ["So'rovnoma / mini-test", "savol va variantlarni yozasiz, o'quvchilar bosadi, natijani siz ko'rasiz va xohlasangiz hammaga ko'rsatasiz"],
+  ["Tushundingizmi?", "o'quvchilarga «Tushundim / Sekinroq / Tushunmadim» tugmalari chiqadi, javobni faqat siz ko'rasiz"],
+  ["Taymer, tasodifiy o'quvchi, materiallar", "mustaqil ish vaqti, navbat bilan javob berdirish, video yoki hujjat havolasini yuborish"],
+  ["Davomat", "kim qachon kirganini ko'rasiz; dars oxirida matnni nusxalab yoki CSV qilib olasiz"],
+  ["Yozishma (chat)", "o'quvchi savol yozadi yoki ovozli xabar yuboradi; tushuntirayotganda «Chatni to'xtatish» mumkin"],
   ["Darsni yakunlash", "darsni hamma uchun tugatadi"],
 ];
 
@@ -48,8 +54,7 @@ export default function Page() {
   const [now, setNow] = React.useState(() => Date.now());
   const [voiceOn, setVoiceOn] = React.useState(false);
   const [video, setVideo] = React.useState(true);
-  const [free, setFree] = React.useState(false);
-  const mode = modeOf(video, free);
+  const mode = modeOf(video, false); // "kim gapira oladi" xona ichida jonli almashtiriladi
   const [creating, setCreating] = React.useState(false);
   const [createErr, setCreateErr] = React.useState("");
 
@@ -119,17 +124,6 @@ export default function Page() {
                   {([[true, "Video dars", "Kamera, ovoz, ekran ulashish va yozishma."], [false, "Ovozli chat", "Telegramdagi ovozli chatga o'xshash: faqat ovoz va yozishma, kamera yo'q."]] as const).map(([v, l, d]) => (
                     <label key={l} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", video === v ? "border-primary bg-primary/5" : "border-border")}>
                       <input type="radio" name="turi" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={video === v} onChange={() => setVideo(v)} />
-                      <span><b>{l}</b><br /><span className="text-muted-foreground">{d}</span></span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <fieldset>
-                <legend className="mb-1.5 text-sm font-semibold">Kim gapira oladi</legend>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {([[false, "Ruxsat bilan", "O'quvchi qo'l ko'taradi, siz gapirishga ruxsat berasiz."], [true, "Hamma", "Hamma ruxsatsiz gapira oladi (kichik guruh uchun)."]] as const).map(([f, l, d]) => (
-                    <label key={l} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", free === f ? "border-primary bg-primary/5" : "border-border")}>
-                      <input type="radio" name="rejim" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={free === f} onChange={() => setFree(f)} />
                       <span><b>{l}</b><br /><span className="text-muted-foreground">{d}</span></span>
                     </label>
                   ))}
@@ -248,7 +242,8 @@ export default function Page() {
             <ul className="mt-2 space-y-1.5 text-muted-foreground">
               <li>• Dars shu saytning o&apos;zida o&apos;tadi: video yoki ovoz, yozishma va qo&apos;l ko&apos;tarish. O&apos;quvchi boshqa saytga o&apos;tmaydi.</li>
               <li>• <b className="text-foreground">Video dars</b>: o&apos;quvchi ustozni ko&apos;radi va eshitadi. <b className="text-foreground">Ovozli chat</b>: faqat ovoz, kamera yo&apos;q (Telegramdagi ovozli chatga o&apos;xshash).</li>
-              <li>• <b className="text-foreground">Ruxsat bilan</b> rejimda o&apos;quvchi gapirish uchun qo&apos;l ko&apos;taradi, siz ruxsat berasiz. <b className="text-foreground">Hamma</b> rejimida hamma gapira oladi (kichik guruh uchun).</li>
+              <li>• <b className="text-foreground">Kim gapira oladi</b> xonaning ichida almashtiriladi: «Ruxsat bilan» (o&apos;quvchi qo&apos;l ko&apos;taradi, siz ruxsat berasiz) yoki «Hamma» (kichik guruh uchun).</li>
+              <li>• Xonadagi <b className="text-foreground">Asboblar</b>: doska, so&apos;rovnoma (mini-test), «Tushundingizmi?», taymer, tasodifiy o&apos;quvchi, materiallar, davomat va chatni to&apos;xtatish.</li>
               <li>• Havolani faqat o&apos;quvchilarga yuboring: havolasi bor har kim kira oladi.</li>
               <li>• Davomat, o&apos;z chatimiz va yozib olish keyingi bosqichda.</li>
             </ul>

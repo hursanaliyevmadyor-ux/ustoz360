@@ -34,18 +34,29 @@ export function verifyRoom(secret: string, o: { code: unknown; mode: unknown; k:
 /** LiveKit manba turlari (raqamli qiymatlar server tomonida beriladi, mantiq shu yerda toza qoladi). */
 export type Sources = { mic: number; camera: number; screen: number };
 
+/** LiveKit xona metadatasi: ustoz "hamma gapira oladi" ni jonli yoqqanmi (rejimdan qat'i nazar). */
+export const freeMetadata = (on: boolean) => JSON.stringify({ f: on ? 1 : 0 });
+export function roomFree(metadata: string | undefined): boolean {
+  try { return (JSON.parse(metadata || "{}") as { f?: unknown }).f === 1; } catch { return false; }
+}
+
 /** Gapiruvchi o'quvchi nimani yoqa oladi: video rejimda mikrofon va kamera, ovozli chatda faqat mikrofon. */
 export const speakSources = (mode: VoiceMode, S: Sources): number[] => (hasVideo(mode) ? [S.mic, S.camera] : [S.mic]);
+
+/** O'quvchining joriy ruxsati (gapirishga ruxsat berish yoki olish): `allow` bo'lsa mikrofon (video rejimda kamera ham), bo'lmasa hech narsa. */
+export const guestPermission = (mode: VoiceMode, allow: boolean, S: Sources) => ({
+  canPublish: allow, canSubscribe: true, canPublishData: true, canPublishSources: allow ? speakSources(mode, S) : ([] as number[]),
+});
 
 /**
  * LiveKit ruxsatlari. Ustoz har doim gapira oladi, xonani boshqaradi; video rejimda kamera va ekranni ham ulashadi.
  * Ruxsat bilan rejimlarda (s, q) o'quvchi tinglaydi va yozadi, gapirish ustoz bergach ochiladi;
  * erkin rejimlarda (e, o) hamma gapira oladi. Ovozli chatda (q, o) kamera va ekran umuman yopiq. O'quvchi ekranini ulasha olmaydi.
  */
-export function grantFor(role: VoiceRole, mode: VoiceMode, room: string, S: Sources) {
+export function grantFor(role: VoiceRole, mode: VoiceMode, room: string, S: Sources, free = false) {
   const base = { roomJoin: true, room, canSubscribe: true, canPublishData: true, canUpdateOwnMetadata: false } as const;
   if (role === "host") return { ...base, roomAdmin: true, canPublish: true, canPublishSources: hasVideo(mode) ? [S.mic, S.camera, S.screen] : [S.mic] };
-  return isFree(mode) ? { ...base, canPublish: true, canPublishSources: speakSources(mode, S) } : { ...base, canPublish: false };
+  return isFree(mode) || free ? { ...base, canPublish: true, canPublishSources: speakSources(mode, S) } : { ...base, canPublish: false };
 }
 
 export const guestName = (raw: unknown) => cleanName(raw) || "Mehmon";
@@ -61,5 +72,6 @@ export const roomInput = z.object({ mode: z.enum(VOICE_MODES) });
 export const controlInput = z.discriminatedUnion("action", [
   roomCtx.extend({ action: z.literal("speak"), identity: z.string().min(1).max(64), allow: z.boolean() }),
   roomCtx.extend({ action: z.literal("mute-all") }),
+  roomCtx.extend({ action: z.literal("free"), on: z.boolean() }),
   roomCtx.extend({ action: z.literal("close") }),
 ]);

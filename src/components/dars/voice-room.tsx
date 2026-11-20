@@ -1,15 +1,18 @@
 "use client";
 import * as React from "react";
-import { AlertTriangle, Hand, LogOut, Maximize2, MessageCircle, Mic, MicOff, MonitorUp, PhoneOff, Send, Users, Video, VideoOff, Volume2, VolumeX, Wifi } from "lucide-react";
+import { AlertTriangle, Hand, LayoutGrid, LogOut, Maximize2, MessageCircle, Mic, MicOff, MonitorUp, PhoneOff, Send, Users, Video, VideoOff, Volume2, VolumeX, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import { describeMediaError } from "@/lib/dars";
 import { MAX_CHAT, sortPeople } from "@/lib/voice-msg";
-import { hasVideo, type VoiceMode } from "@/lib/voice-mode";
+import { hasVideo, isFree, type VoiceMode } from "@/lib/voice-mode";
 import { ClipAssembler, SEND_GAP_MS, parseChunk, splitClip, type Clip } from "@/lib/voice-clip";
 import { VoiceNotePlayer, VoiceNoteRecorder } from "./voice-note";
+import { ClassBar, HostTools } from "./class-tools";
+import { useClassTools } from "./use-class";
+import { Whiteboard } from "./whiteboard";
 import type { VEngine, VPerson, VSession, VSource, VState } from "./voice-engine";
 
 type Ctl = { code: string; mode: VoiceMode; k: string; h?: string };
@@ -37,7 +40,8 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   const [hands, setHands] = React.useState<ReadonlySet<string>>(new Set());
   const [chat, setChat] = React.useState<ChatItem[]>([]);
   const [draft, setDraft] = React.useState("");
-  const [tab, setTab] = React.useState<"people" | "chat">("people");
+  const [tab, setTab] = React.useState<"people" | "chat" | "tools">("people");
+  const [free, setFree] = React.useState(false);
   const [unread, setUnread] = React.useState(0);
   const [audioBlocked, setAudioBlocked] = React.useState(false);
   const [mediaErr, setMediaErr] = React.useState("");
@@ -45,6 +49,9 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   const [notice, setNotice] = React.useState("");
   const [canShare, setCanShare] = React.useState(false);
   const [recording, setRecording] = React.useState(false);
+  const cx = useClassTools(engine, session, people, (p) => void allow(p, true));
+  const lockRef = React.useRef(false);
+  lockRef.current = cx.cls.lock;
   const idRef = React.useRef(0);
   const asm = React.useMemo(() => new ClipAssembler(), []);
   const lastClip = React.useRef(0);
@@ -66,8 +73,12 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   }, []);
 
   const video = hasVideo(ctl.mode);
+  const modeFree = isFree(ctl.mode); // havola "hamma gapira oladi" rejimida yaratilgan (eski xonalar)
+  const freeNow = modeFree || free;
+  const boardOn = cx.cls.stage === "board";
   const me = people.find((p) => p.me);
   const isHost = session?.host ?? false;
+  const locked = cx.cls.lock && !isHost; // chat ustoz tomonidan to'xtatilgan
   const canSpeak = me?.canSpeak ?? session?.canSpeak ?? false;
   const micOn = me?.micOn ?? false;
   const camOn = me?.camOn ?? false;
@@ -80,7 +91,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   const stage: { person: VPerson | undefined; source: VSource } | null = screenOwner ? { person: screenOwner, source: "screen" } : host?.camOn ? { person: host, source: "camera" } : null;
   const speakers = people.filter((p) => p.canSpeak).sort((x, y) => Number(y.host) - Number(x.host) || Number(y.me) - Number(x.me) || x.name.localeCompare(y.name, "uz"));
   const listeners = people.filter((p) => !p.canSpeak);
-  const tiles = people.filter((p) => p.camOn && !(stage?.source === "camera" && stage.person?.identity === p.identity));
+  const tiles = people.filter((p) => p.camOn && !(!boardOn && stage?.source === "camera" && stage.person?.identity === p.identity));
 
   const post = React.useCallback(async (body: Record<string, unknown>) => {
     const r = await fetch("/api/dars/control", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...ctl, ...body }) });
@@ -102,7 +113,9 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
         setHands((h) => { const n = new Set([...h].filter((id) => ids.has(id))); return n.size === h.size ? h : n; });
       } else if (e.type === "state") setState(e.state);
       else if (e.type === "audio") setAudioBlocked(e.blocked);
+      else if (e.type === "free") setFree(e.on);
       else if (e.type === "clip") {
+        if (lockRef.current && !e.from.host) return; // chat to'xtatilganda o'quvchidan ovozli xabar ham olinmaydi
         const c = parseChunk(e.chunk);
         const clip = c && asm.add(e.from.identity, c);
         if (!clip) return;
@@ -115,6 +128,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
           setHands((h) => { const n = new Set(h); if (m.up) n.add(e.from.identity); else n.delete(e.from.identity); return n; });
         } else {
           const m = e.msg;
+          if (lockRef.current && !e.from.host) return;
           addChat({ id: ++idRef.current, name: e.from.name, host: e.from.host, text: m.text, ts: Date.now(), mine: false });
           if (tabRef.current !== "chat") setUnread((u) => u + 1);
         }
@@ -164,7 +178,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   }
   async function sendChat() {
     const text = draft.trim().slice(0, MAX_CHAT);
-    if (!text || !session) return;
+    if (!text || !session || locked) return;
     setDraft("");
     addChat({ id: ++idRef.current, name: me?.name ?? "Men", host: isHost, text, ts: Date.now(), mine: true });
     await engine.send("chat", { t: "chat", text }).catch(() => setErr("Xabar yuborilmadi. Aloqani tekshiring."));
@@ -187,7 +201,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
     addChat({ id: ++idRef.current, name: me?.name ?? "Men", host: isHost, text: "", ts: Date.now(), mine: true, clip: { url, ms: clip.ms } });
     try { for (const part of parts) await engine.sendClip(part); } catch { setErr("Ovozli xabar yuborilmadi. Aloqani tekshiring."); }
   }
-  async function allow(p: VPerson, allowIt: boolean) {
+  async function allow(p: { identity: string }, allowIt: boolean) {
     setBusy(p.identity); setErr("");
     try {
       await post({ action: "speak", identity: p.identity, allow: allowIt });
@@ -197,7 +211,13 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   }
   async function muteAll() {
     setBusy("all"); setErr("");
-    try { await post({ action: "mute-all" }); } catch (e) { setErr(e instanceof Error ? e.message : "Amal bajarilmadi."); }
+    try { await post({ action: "mute-all" }); setFree(false); } catch (e) { setErr(e instanceof Error ? e.message : "Amal bajarilmadi."); }
+    setBusy("");
+  }
+  /** Ustoz: "hamma gapira oladi" ni jonli yoqadi yoki o'chiradi (xonada turib). */
+  async function toggleFree(on: boolean) {
+    setBusy("free"); setErr("");
+    try { await post({ action: "free", on }); setFree(on); } catch (e) { setErr(e instanceof Error ? e.message : "Amal bajarilmadi."); }
     setBusy("");
   }
   async function endForAll() {
@@ -251,7 +271,9 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
             <>
           {/* Sahna: ustoz kamerasi yoki ulashilgan ekran */}
           <div ref={stageRef} className="relative aspect-video w-full overflow-hidden rounded-2xl bg-slate-900" data-testid="stage">
-            {stage?.person ? (
+            {boardOn ? (
+              <Whiteboard store={cx.board} version={cx.boardVer} grid={cx.cls.grid} canDraw={isHost} net={cx.boardNet} onChange={cx.boardChanged} onGrid={isHost ? (g) => cx.patch({ grid: g }) : undefined} />
+            ) : stage?.person ? (
               <VideoView key={`${stage.person.identity}-${stage.source}`} engine={engine} identity={stage.person.identity} source={stage.source} mirror={stage.source === "camera" && stage.person.me} />
             ) : (
               <div className="grid h-full w-full place-items-center text-center text-white/80">
@@ -261,7 +283,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
                 </div>
               </div>
             )}
-            {stage?.person && (
+            {!boardOn && stage?.person && (
               <span className="absolute bottom-2 left-2 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-bold text-white">
                 {stage.source === "screen" ? "Ekran: " : ""}{stage.person.name}{stage.person.host ? " · Ustoz" : ""}
               </span>
@@ -285,6 +307,11 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
             </>
           ) : (
             <>
+          {boardOn && (
+            <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-white shadow-soft" data-testid="stage">
+              <Whiteboard store={cx.board} version={cx.boardVer} grid={cx.cls.grid} canDraw={isHost} net={cx.boardNet} onChange={cx.boardChanged} onGrid={isHost ? (g) => cx.patch({ grid: g }) : undefined} />
+            </div>
+          )}
           {/* Ovozli chat (kamerasiz): gapira oladiganlar katta doirada, tinglovchilar pastda */}
           <Card className="p-4" data-testid="voice-stage">
             <h2 className="text-sm font-extrabold">Gapira oladiganlar ({speakers.length})</h2>
@@ -321,8 +348,10 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
             </>
           )}
 
+          <ClassBar api={cx} meId={session?.identity ?? ""} />
+
           <div className="flex gap-2 lg:hidden" role="tablist" aria-label="Bo'limlar">
-            {([["people", "Ishtirokchilar", Users], ["chat", "Yozishma", MessageCircle]] as const).map(([k, label, Icon]) => (
+            {(isHost ? ([["people", "Ishtirokchilar", Users], ["chat", "Yozishma", MessageCircle], ["tools", "Asboblar", LayoutGrid]] as const) : ([["people", "Ishtirokchilar", Users], ["chat", "Yozishma", MessageCircle]] as const)).map(([k, label, Icon]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                 className={cn("relative flex h-11 flex-1 items-center justify-center gap-2 rounded-xl border text-sm font-bold", tab === k ? "border-primary bg-primary text-white" : "border-border bg-card")}>
                 <Icon className="h-4 w-4" aria-hidden />{label}
@@ -331,6 +360,8 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
             ))}
           </div>
 
+          {isHost && <div className={cn(tab !== "tools" && "hidden lg:block")}><HostTools api={cx} title={title} /></div>}
+
           <Card className={cn("p-3", tab !== "people" && "hidden lg:block")}>
             <div className="flex items-center justify-between gap-2 px-1 pb-2">
               <h2 className="text-sm font-extrabold">Ishtirokchilar ({people.length})</h2>
@@ -338,6 +369,22 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
                 <Button size="sm" variant="outline" loading={busy === "all"} onClick={() => void muteAll()}><MicOff className="h-4 w-4" aria-hidden />Hammaning ruxsatini olish</Button>
               )}
             </div>
+            {isHost && (
+              <div className="mb-2 rounded-xl bg-muted/60 p-2.5" role="group" aria-label="Kim gapira oladi">
+                <p className="px-0.5 pb-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">Kim gapira oladi</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([[false, "Ruxsat bilan"], [true, "Hamma"]] as const).map(([on, label]) => (
+                    <button key={label} type="button" disabled={busy === "free" || modeFree || !live} aria-pressed={freeNow === on} onClick={() => { if (freeNow !== on) void toggleFree(on); }}
+                      className={cn("h-10 rounded-lg border-2 text-sm font-bold disabled:opacity-60", freeNow === on ? "border-primary bg-primary text-white" : "border-border bg-card")}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="px-0.5 pt-1.5 text-xs text-muted-foreground">
+                  {modeFree ? "Bu xona havolasi «hamma gapira oladi» rejimida yaratilgan; o'zgartirish uchun yangi xona yarating." : freeNow ? "Hamma ruxsatsiz gapira oladi (keyin kirganlar ham). «Ruxsat bilan» ni bossangiz, hamma yana qo'l ko'tarishi kerak." : "O'quvchi qo'l ko'taradi, siz ruxsat berasiz."}
+                </p>
+              </div>
+            )}
             <ul className="divide-y divide-border">
               {sorted.map((p) => (
                 <li key={p.identity} className="flex items-center gap-3 py-2.5">
@@ -381,10 +428,11 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
             ))}
             <div ref={listEnd} />
           </div>
+          {locked && <p role="status" className="mt-2 rounded-xl bg-amber/10 p-2.5 text-center text-xs font-semibold text-amber">Ustoz chatni vaqtincha to&apos;xtatdi. Yozish uchun kuting.</p>}
           <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); void sendChat(); }}>
-            {!recording && <Input value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={MAX_CHAT} placeholder="Xabar yozing..." aria-label="Xabar" disabled={!live} />}
-            <VoiceNoteRecorder disabled={!live} onClip={sendClip} onError={flash} onRecordingChange={setRecording} />
-            {!recording && <Button type="submit" size="icon" disabled={!live || !draft.trim()} aria-label="Yuborish"><Send className="h-4 w-4" aria-hidden /></Button>}
+            {!recording && <Input value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={MAX_CHAT} placeholder={locked ? "Chat to'xtatilgan" : "Xabar yozing..."} aria-label="Xabar" disabled={!live || locked} />}
+            <VoiceNoteRecorder disabled={!live || locked} onClip={sendClip} onError={flash} onRecordingChange={setRecording} />
+            {!recording && <Button type="submit" size="icon" disabled={!live || locked || !draft.trim()} aria-label="Yuborish"><Send className="h-4 w-4" aria-hidden /></Button>}
           </form>
         </Card>
       </div>

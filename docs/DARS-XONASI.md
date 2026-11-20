@@ -6,19 +6,28 @@ Dars saytimizning ichida o'tadi (LiveKit): ovoz, kamera, ekran ulashish, ishtiro
 
 **Xavfsizlik:** xona faqat tizimga kirgan ustoz yaratadi (`POST /api/dars/room`); kod va rejim `AUTH_SECRET` bilan imzolanadi. Havolada o'quvchi imzosi `k`, ustoz havolasida qo'shimcha boshqaruv imzosi `h` bo'ladi. Kirish belgisi (`/api/dars/token`) va boshqaruv (`/api/dars/control`) imzosiz ishlamaydi. Brauzerga LiveKit kaliti hech qachon berilmaydi, faqat 4 soatlik kirish belgisi. Imzosiz (eski, Jitsi) havolalar ishlamaydi: "Bu eski havola" xabari chiqadi.
 
-**Rejimlar** (havolada va imzoda bitta harf, `src/lib/voice-mode.ts`). Ustoz `/dars` sahifasida ikki narsani tanlaydi: xona turi (video yoki ovozli chat) va kim gapira oladi (ruxsat bilan yoki hamma):
-- `s` = video dars, ruxsat bilan: o'quvchi ko'radi va eshitadi, qo'l ko'taradi; ustoz ruxsat bergach mikrofon va kamerasini yoqadi.
-- `e` = video dars, hamma gapira oladi (mikrofon va kamera).
-- `q` = **ovozli chat** (Telegramdagi ovozli chatga o'xshash, kamerasiz), ruxsat bilan: o'quvchi tinglaydi, qo'l ko'taradi, ustoz ruxsat bergach mikrofonini yoqadi.
-- `o` = **ovozli chat**, hamma gapira oladi.
+**Rejimlar** (havolada va imzoda bitta harf, `src/lib/voice-mode.ts`). Ustoz `/dars` sahifasida faqat xona turini tanlaydi: video dars (`s`) yoki ovozli chat (`q`). **Kim gapira oladi** xona ichida, ustoz tomonidan jonli almashtiriladi (pastga qarang). Eski havolalarda `e` (video) va `o` (ovozli chat) "hamma gapira oladi" rejimlari ham ishlaydi.
+- `s` = video dars: o'quvchi ko'radi va eshitadi, qo'l ko'taradi; ustoz ruxsat bergach mikrofon va kamerasini yoqadi.
+- `q` = **ovozli chat** (Telegramdagi ovozli chatga o'xshash, kamerasiz): o'quvchi tinglaydi, qo'l ko'taradi, ustoz ruxsat bergach mikrofonini yoqadi.
+- `e`, `o` = xuddi shular, lekin hamma ruxsatsiz gapira oladi (qat'iy; xona ichida o'zgarmaydi).
 Ekran ulashish faqat video darsda va faqat ustozda. Ovozli chatda kamera va ekran serverda ham yopiq (LiveKit ruxsati faqat mikrofon), ya'ni brauzerni o'zgartirib ham yoqib bo'lmaydi. Ovozli chat ekrani: tepada gapira oladiganlar doiralarda (gapirayotgani yashil halqa, mikrofon belgisi), ostida tinglovchilar; pastda mikrofon tugmasi, ishtirokchilar ro'yxati va yozishma.
 
 **Ekran:** katta oynada ustozning ekrani (ulashilsa) yoki kamerasi; ostida kamera plitkalari, ishtirokchilar ro'yxati, yozishma. Ekran ulashish tugmasi faqat ustozda va faqat kompyuterda ko'rinadi (telefon brauzerlari qo'llamaydi). Kamera sifati ustozda 720p, boshqalarda 360p; `adaptiveStream` va `dynacast` internetni tejaydi.
 
 **Ovozli xabar (chatda):** hamma (o'quvchi ham, ustoz ham) chatdagi mikrofon tugmasi bilan 60 soniyagacha ovozli xabar yozib yuboradi (Telegramdagidek: yozish → yuborish yoki bekor qilish). Brauzerda yoziladi (mp4, bo'lmasa webm/ogg, ~24 kbit/s), 12 KB li bo'laklarga bo'linib LiveKit ma'lumot kanalida (`voice` topic) yuboriladi va qabul qiluvchida qayta yig'iladi (`src/lib/voice-clip.ts`). Hech qayerga saqlanmaydi: faqat xabar paytida xonada bo'lganlar eshitadi, xonadan chiqilsa yo'qoladi. Himoya: bo'lak soni va hajmi cheklangan, buzilgan paketlar tashlanadi, bir yuboruvchidan tez-tez kelgan xabarlar tashlanadi. Mikrofon ruxsati LiveKit'dagi mikrofondan alohida so'raladi (ruxsat bilan rejimlarda o'quvchi gapirishga ruxsatsiz ham ovozli xabar yubora oladi).
 
-**Tuzilma:** `src/server/voicelogic.ts` (imzo, ruxsat), `voice.ts` (LiveKit server tomoni), `src/components/dars/voice-engine.ts` (brauzer tomonidagi LiveKit qatlami; sinovda soxta engine beriladi), `voice-room.tsx` (ekran), `voice-note.tsx` (ovozli xabarni yozish va eshitish), `join-room.tsx` (kirish: ism, kamera/mikrofon tekshiruvi). LiveKit kodi faqat xonaga kirilganda yuklanadi. Chat va qo'l ko'tarish LiveKit ma'lumot kanalida, bazaga yozilmaydi.
+**Kim gapira oladi (jonli):** ustoz xonada «Ishtirokchilar» bo'limida «Ruxsat bilan» yoki «Hamma» ni bosadi (`POST /api/dars/control`, `action: "free"`). Server LiveKit xona metadatasiga `{"f":1}` yozadi va hozirgi o'quvchilarning ruxsatini almashtiradi; keyin kirganlar uchun token berilganda metadata o'qiladi (`liveFree`). «Hammaning ruxsatini olish» bu belgini ham o'chiradi. Xona bo'shab yopilsa, belgi yo'qoladi.
+
+**Dars asboblari** (ustozda «Asboblar» paneli; hammasi bazasiz, LiveKit ma'lumot kanalida):
+- Ustozning brauzeri holat manbai: u o'zgartiradi va hammaga `class` topic'ida yuboradi (`src/components/dars/use-class.ts`, tekshirish va hisob-kitob `src/lib/class-tools.ts`). Faqat ustozdan (token metadatasi `host`) kelgan holat va doska qabul qilinadi; o'quvchi javoblari (`act`) faqat ustozga boradi. Yangi kirganga ustoz hozirgi holatni va doskani qayta yuboradi.
+- **Doska** (`whiteboard.tsx`, `src/lib/board.ts`): ustoz qalam (6 rang, 3 qalinlik), o'chirg'ich, bekor qilish, tozalash, katak bilan chizadi; o'quvchi ko'radi. Chiziqlar 50 ms da bo'lak-bo'lak yuboriladi; doska hajmi cheklangan (400 chiziq, ~30 ming nuqta).
+- **So'rovnoma / mini-test**: savol, 2-5 variant, ixtiyoriy to'g'ri javob; o'quvchi bosadi (yopilguncha o'zgartira oladi), natijani ustoz ko'radi va xohlasa hammaga ko'rsatadi (o'quvchi o'zining to'g'ri-noto'g'riligini ko'radi).
+- **Tushundingizmi?**: «Tushundim / Sekinroq / Tushunmadim»; natijani faqat ustoz ko'radi.
+- **Taymer** (hammada, tugaganda signal), **tasodifiy o'quvchi** (takrorlanmaydi, xohlasa gapirishga ruxsat ham beradi), **materiallar** (faqat https/http havola; `javascript:` va boshqalar rad etiladi), **davomat** (kim qachon kirdi; matn nusxasi va CSV), **chatni to'xtatish**.
+- Ustoz sahifani yangilasa, asboblar holati (so'rovnoma, doska, materiallar) tozalanadi: bazaga saqlanmaydi.
+
+**Tuzilma:** `src/server/voicelogic.ts` (imzo, ruxsat), `voice.ts` (LiveKit server tomoni), `src/components/dars/voice-engine.ts` (brauzer tomonidagi LiveKit qatlami; sinovda soxta engine beriladi), `voice-room.tsx` (ekran), `voice-note.tsx` (ovozli xabarni yozish va eshitish), `class-tools.tsx`, `use-class.ts`, `whiteboard.tsx` (dars asboblari), `join-room.tsx` (kirish: ism, kamera/mikrofon tekshiruvi). LiveKit kodi faqat xonaga kirilganda yuklanadi. Chat va qo'l ko'tarish LiveKit ma'lumot kanalida, bazaga yozilmaydi.
 
 **Tekshirib bo'lmagan joy:** haqiqiy LiveKit ulanishi sandbox'dan sinalmagan (tarmoq yopiq); mantiq soxta engine bilan, ulanish esa deploydan keyin 2 qurilmada tekshiriladi.
 
-**Hali yo'q:** doska, ko'rgazma (material), vazifa topshirish, jonli mini-test, AI yordamchi, davomat (keyingi bosqichlar).
+**Hali yo'q:** vazifa topshirish (baza va fayl saqlash kerak), savollar bankidan mini-test, AI yordamchi, guruhlarga bo'lish, yozib olish (keyingi bosqichlar).
