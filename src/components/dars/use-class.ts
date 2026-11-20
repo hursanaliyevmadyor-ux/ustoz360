@@ -1,7 +1,9 @@
 "use client";
 import * as React from "react";
 import { BoardStore, type BoardMsg, parseBoard } from "@/lib/board";
-import { MAX_MATS, MAX_TIMER_SEC, type ClassState, type Material, type Seen, cleanUrl, emptyClass, makePoll, parseAct, parseClass, pickRandom, pollCounts } from "@/lib/class-tools";
+import { BlobAssembler, parseBlobChunk, splitBlob } from "@/lib/blob-chunks";
+import { shrinkImage } from "@/lib/image-shrink";
+import { MAX_DRAWERS, MAX_MATS, MAX_TIMER_SEC, type ClassState, type Material, type Seen, cleanUrl, emptyClass, makePoll, parseAct, parseClass, pickRandom, pollCounts } from "@/lib/class-tools";
 import type { VEngine, VEvent, VPerson, VSession } from "./voice-engine";
 
 const rid = () => Math.floor(Math.random() * 2 ** 31);
@@ -20,6 +22,11 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   const [myVote, setMyVote] = React.useState<{ poll: number; o: number } | null>(null);
   const [myPulse, setMyPulse] = React.useState<{ id: number; v: number } | null>(null);
   const board = React.useMemo(() => new BoardStore(), []);
+  const [images, setImages] = React.useState<ReadonlyMap<number, string>>(new Map());
+  const imgBytes = React.useRef(new Map<number, Uint8Array>()); // ustozda: yangi kirganga qayta yuborish uchun
+  const imgAsm = React.useMemo(() => new BlobAssembler(), []);
+  const imgRef = React.useRef(images);
+  imgRef.current = images;
   const clsRef = React.useRef(cls);
   const hostRef = React.useRef(isHost);
   const endRef = React.useRef<number | null>(null);
@@ -53,6 +60,15 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
 
   // Qabul qilish
   React.useEffect(() => engine.on((e: VEvent) => {
+    if (e.type === "bin") {
+      if (!e.from.host || hostRef.current) return; // rasm faqat ustozdan qabul qilinadi
+      const c = parseBlobChunk(e.chunk);
+      const done = c && imgAsm.add(c);
+      if (!done) return;
+      const url = URL.createObjectURL(new Blob([done.bytes as BlobPart], { type: "image/jpeg" }));
+      setImages((m) => new Map(m).set(done.id, url));
+      return;
+    }
     if (e.type !== "json") return;
     if (e.topic === "act") {
       if (!hostRef.current || e.from.host) return;
@@ -63,7 +79,17 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
       else if (a.t === "pulse" && c.pulse?.id === a.id) { pulses.current.set(e.from.identity, a.v); setTick((t) => t + 1); }
       return;
     }
-    if (hostRef.current || !e.from.host) return; // doska va holat faqat ustozdan qabul qilinadi
+    if (e.topic === "board") {
+      const m = parseBoard(e.data);
+      if (!m) return;
+      if (!e.from.host) {
+        // ustoz doskaga chaqirgan o'quvchi faqat chizishi va lazer ko'rsatishi mumkin
+        if (!clsRef.current.draw.includes(e.from.identity) || (m.t !== "b" && m.t !== "l")) return;
+      } else if (hostRef.current) return;
+      if (board.apply(m)) setBoardVer((v) => v + 1);
+      return;
+    }
+    if (hostRef.current || !e.from.host) return; // holat faqat ustozdan qabul qilinadi
     if (e.topic === "class") {
       const c = parseClass(e.data);
       if (!c) return;
@@ -71,11 +97,11 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
       setCls(c);
       const t = c.timer;
       setTimerEnd(t ? Date.now() + t.left * 1000 : null);
-    } else if (e.topic === "board") {
-      const m = parseBoard(e.data);
-      if (m && board.apply(m)) setBoardVer((v) => v + 1);
     }
-  }), [engine, board]);
+  }), [engine, board, imgAsm]);
+
+  // Chiqishda rasmlarning vaqtinchalik havolalari bo'shatiladi
+  React.useEffect(() => () => { imgRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
 
   // Ustoz: yangi kirgan ishtirokchiga hozirgi holat va doskani yuboradi (qayta kirganga ham)
   React.useEffect(() => {
@@ -87,9 +113,21 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
     fresh.forEach((id) => known.current.add(id));
     void (async () => {
       await engine.sendJson("class", wire(clsRef.current), fresh).catch(() => {});
+      for (const id of new Set(board.pages.map((p) => p.img).filter(Boolean))) {
+        const b = imgBytes.current.get(id);
+        for (const part of (b && splitBlob(id, b)) || []) await engine.sendBin(part, fresh).catch(() => {});
+      }
       for (const m of board.snapshot()) await engine.sendJson("board", m, fresh).catch(() => {});
     })();
   }, [isHost, people, engine, board, wire]);
+
+  // Doskaga chaqirilgan o'quvchi xonadan chiqsa, ro'yxatdan olib tashlanadi
+  React.useEffect(() => {
+    if (!isHost) return;
+    const ids = new Set(people.map((p) => p.identity));
+    const keep = clsRef.current.draw.filter((id) => ids.has(id));
+    if (keep.length !== clsRef.current.draw.length) publish({ ...clsRef.current, draw: keep });
+  }, [isHost, people, publish]);
 
   // Davomat (ustozda): kim qachon kirgan
   React.useEffect(() => {
@@ -142,6 +180,10 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
     if (allowSpeak && !r.pick.canSpeak) onPick?.({ identity: r.pick.identity, name: r.pick.name });
     return r.pick;
   }, [publish, onPick]);
+  const setDrawer = React.useCallback((identity: string, on: boolean) => {
+    const cur = clsRef.current.draw.filter((id) => id !== identity);
+    publish({ ...clsRef.current, draw: on ? [...cur, identity].slice(-MAX_DRAWERS) : cur });
+  }, [publish]);
   const clearPick = React.useCallback(() => publish({ ...clsRef.current, pick: null }), [publish]);
   const addMat = React.useCallback((title: string, url: string): string | null => {
     const u = cleanUrl(url);
@@ -156,6 +198,25 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   /** Doskaga ustoz chizgan xabar: ustozda hozir qo'llanadi (chizish komponenti o'zi qiladi), hammaga yuboriladi. */
   const boardNet = React.useCallback((m: BoardMsg) => { void engine.sendJson("board", m).catch(() => {}); }, [engine]);
   const boardChanged = React.useCallback(() => setBoardVer((v) => v + 1), []);
+
+  /** Ustoz: rasm (varaq, kitob sahifasi) ni joriy sahifaga qo'yadi. Xato bo'lsa, xabar matnini qaytaradi. */
+  const placeImage = React.useCallback(async (file: File): Promise<string | null> => {
+    const bytes = await shrinkImage(file);
+    if (!bytes) return "Rasm ochilmadi yoki juda katta. PNG, JPG yoki WebP rasm tanlang.";
+    const id = rid();
+    const parts = splitBlob(id, bytes);
+    if (!parts) return "Rasm juda katta. Kichikroq rasm tanlang.";
+    imgBytes.current.set(id, bytes);
+    setImages((m) => new Map(m).set(id, URL.createObjectURL(new Blob([bytes as BlobPart], { type: "image/jpeg" }))));
+    try { for (const part of parts) await engine.sendBin(part); } catch { return "Rasm yuborilmadi. Aloqani tekshiring."; }
+    const m: BoardMsg = { t: "im", id };
+    if (board.apply(m)) { void engine.sendJson("board", m).catch(() => {}); setBoardVer((v) => v + 1); }
+    return null;
+  }, [engine, board]);
+  const clearImage = React.useCallback(() => {
+    const m: BoardMsg = { t: "im", id: 0 };
+    if (board.apply(m)) { void engine.sendJson("board", m).catch(() => {}); setBoardVer((v) => v + 1); }
+  }, [engine, board]);
 
   // ---- O'quvchi amallari
   const vote = React.useCallback((o: number) => {
@@ -181,8 +242,9 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   void tick;
 
   return {
-    cls, isHost, timerEnd, board, boardVer, boardChanged, boardNet, patch,
-    host: { startPoll, closePoll, showPoll, clearPoll, startPulse, stopPulse, startTimer, stopTimer, pickStudent, clearPick, addMat, removeMat },
+    imageUrl: images.get(board.image) ?? null, placeImage, clearImage,
+    cls, isHost, canDraw: isHost || (!!session && cls.draw.includes(session.identity)), timerEnd, board, boardVer, boardChanged, boardNet, patch,
+    host: { setDrawer, startPoll, closePoll, showPoll, clearPoll, startPulse, stopPulse, startTimer, stopTimer, pickStudent, clearPick, addMat, removeMat },
     counts, voters: poll ? [...votes.current.keys()].filter((id) => present.has(id)).length : 0, pulseCounts, pulseVoters: pulseCounts[0] + pulseCounts[1] + pulseCounts[2],
     attendance: [...seen.current.values()].sort((a, b) => a.first - b.first),
     guest: { vote, sendPulse, myVote: poll && myVote?.poll === poll.id ? myVote.o : null, myPulse: cls.pulse && myPulse?.id === cls.pulse.id ? myPulse.v : null },

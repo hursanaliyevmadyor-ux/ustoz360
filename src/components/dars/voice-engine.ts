@@ -17,6 +17,7 @@ export type VEvent =
   | { type: "roster"; people: VPerson[] }
   | { type: "data"; topic: VoiceTopic; from: { identity: string; name: string; host: boolean }; msg: VoiceMsg }
   | { type: "json"; topic: ToolTopic; from: { identity: string; name: string; host: boolean }; data: unknown }
+  | { type: "bin"; topic: "bimg"; from: { identity: string; name: string; host: boolean }; chunk: Uint8Array }
   | { type: "free"; on: boolean }
   | { type: "clip"; from: { identity: string; name: string; host: boolean }; chunk: Uint8Array }
   | { type: "state"; state: VState; reason?: string }
@@ -35,6 +36,8 @@ export type VEngine = {
   send(topic: VoiceTopic, msg: VoiceMsg): Promise<void>;
   /** Dars asbobi xabari (JSON). `to` berilsa, faqat shu ishtirokchilarga boradi. */
   sendJson(topic: ToolTopic, data: unknown, to?: string[]): Promise<void>;
+  /** Doskadagi rasmning bitta bo'lagi (blob-chunks.ts). `to` berilsa, faqat shu ishtirokchilarga. */
+  sendBin(chunk: Uint8Array, to?: string[]): Promise<void>;
   /** Ovozli xabarning bitta paketi (voice-clip.ts). Paketlar ketma-ket yuboriladi. */
   sendClip(chunk: Uint8Array): Promise<void>;
   startAudio(): Promise<void>;
@@ -118,6 +121,10 @@ export function createLiveKitEngine(o: { code: string; mode: VoiceMode; k: strin
             try { emit({ type: "json", topic: topic as ToolTopic, from: { identity: p.identity, name: p.name || p.identity, host: roleOf(p.metadata) === "host" }, data: JSON.parse(dec.decode(payload)) }); } catch { /* buzilgan xabar */ }
             return;
           }
+          if (topic === "bimg") {
+            if (p && payload.length <= 12100) emit({ type: "bin", topic: "bimg", from: { identity: p.identity, name: p.name || p.identity, host: roleOf(p.metadata) === "host" }, chunk: payload });
+            return;
+          }
           if (topic === "voice") {
             if (p) emit({ type: "clip", from: { identity: p.identity, name: p.name || p.identity, host: roleOf(p.metadata) === "host" }, chunk: payload });
             return;
@@ -163,6 +170,9 @@ export function createLiveKitEngine(o: { code: string; mode: VoiceMode; k: strin
     async send(topic, msg) { await room?.localParticipant.publishData(encodeMsg(msg), { reliable: true, topic }); },
     async sendJson(topic, data, to) {
       await room?.localParticipant.publishData(enc.encode(JSON.stringify(data)), { reliable: true, topic, ...(to && { destinationIdentities: to }) });
+    },
+    async sendBin(chunk, to) {
+      await room?.localParticipant.publishData(chunk, { reliable: true, topic: "bimg", ...(to && { destinationIdentities: to }) });
     },
     async sendClip(chunk) { await room?.localParticipant.publishData(chunk, { reliable: true, topic: "voice" }); },
     async startAudio() { await room?.startAudio(); emit({ type: "audio", blocked: !(room?.canPlaybackAudio ?? true) }); },
