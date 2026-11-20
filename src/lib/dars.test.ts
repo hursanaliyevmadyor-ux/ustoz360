@@ -165,3 +165,29 @@ describe("oxirgi xonalar: dars vaqti saqlanadi", () => {
     expect(parseSavedRooms(JSON.stringify([{ ...r, startsAt: "x" }]))).toEqual([{ code: "abcdefghjk", title: "A", at: 1 }]);
   });
 });
+
+describe("ovozli xona havolalari", () => {
+  const voice = { mode: "s" as const, k: "K".repeat(22), h: "H".repeat(22) };
+  it("o'quvchi havolasida ustoz imzosi bo'lmaydi", () => {
+    const u = new URL(joinUrl("https://x.uz", "abcdefghjk", "A", false, null, voice));
+    expect(u.searchParams.get("r")).toBe("s"); expect(u.searchParams.get("k")).toBe(voice.k); expect(u.searchParams.has("h")).toBe(false); expect(u.searchParams.has("u")).toBe(false);
+  });
+  it("ustoz havolasida boshqaruv imzosi bor", () => {
+    const u = new URL(joinUrl("https://x.uz", "abcdefghjk", "A", true, null, voice));
+    expect(u.searchParams.get("h")).toBe(voice.h); expect(u.searchParams.get("u")).toBe("1");
+  });
+  it("oddiy (Jitsi) havolada rejim va imzo yo'q", () => {
+    expect(joinUrl("https://x.uz", "abcdefghjk", "A")).not.toMatch(/[?&](r|k|h)=/);
+  });
+  it("taklif matni rejimga mos", () => {
+    expect(inviteText({ link: "https://x.uz/d/a", voice: "s" })).toContain("Qo'l ko'tarish");
+    expect(inviteText({ link: "https://x.uz/d/a", voice: "e" })).toContain("Hamma gapira oladi");
+    expect(inviteText({ link: "https://x.uz/d/a", voice: "s" })).toContain("Ovozli dars");
+    expect(inviteText({ link: "https://x.uz/d/a" })).toContain("Onlayn dars");
+  });
+  it("saqlangan ovozli xona qayta o'qiladi, buzilgani tashlanadi", () => {
+    const r = { code: "abcdefghjk", title: "A", at: 1, voice };
+    expect(parseSavedRooms(JSON.stringify([r]))).toEqual([r]);
+    expect(parseSavedRooms(JSON.stringify([{ ...r, voice: { mode: "x", k: "a", h: "b" } }]))).toEqual([{ code: "abcdefghjk", title: "A", at: 1 }]);
+  });
+});

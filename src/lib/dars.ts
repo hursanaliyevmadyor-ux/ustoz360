@@ -61,12 +61,16 @@ export function jitsiUrl(o: { code: string; name?: string; title?: string; host?
   return `https://${host}/${jitsiRoomName(o.code)}#${params.join("&")}`;
 }
 
-/** Ulashiladigan qisqa havola: /d/<kod>?t=<dars nomi>&s=<boshlanish vaqti>. */
-export function joinUrl(origin: string, code: string, title?: string, asTeacher = false, startsAt?: number | null): string {
+/** Ovozli xona (saytimiz ichida): rejim (s = sinf, e = erkin suhbat) va imzolar. `h` faqat ustoz havolasida. */
+export type VoiceLink = { mode: "s" | "e"; k: string; h?: string };
+
+/** Ulashiladigan qisqa havola: /d/<kod>?t=<dars nomi>&s=<boshlanish vaqti>[&r=<rejim>&k=<imzo>]. */
+export function joinUrl(origin: string, code: string, title?: string, asTeacher = false, startsAt?: number | null, voice?: VoiceLink | null): string {
   const p = new URLSearchParams();
   const t = cleanTitle(title);
   if (t) p.set("t", t);
   if (startsAt) p.set("s", String(Math.round(startsAt)));
+  if (voice) { p.set("r", voice.mode); p.set("k", voice.k); if (asTeacher && voice.h) p.set("h", voice.h); }
   if (asTeacher) p.set("u", "1");
   const qs = p.toString();
   return `${origin.replace(/\/+$/, "")}/d/${code}${qs ? `?${qs}` : ""}`;
@@ -103,17 +107,21 @@ export function lessonCountdown(startsAt: number, now = Date.now()): { state: "f
 }
 
 /** Telegram va boshqa joylarga yuboriladigan tayyor taklif matni. */
-export function inviteText(o: { title?: string; startsAt?: number | null; link: string }): string {
+export function inviteText(o: { title?: string; startsAt?: number | null; link: string; voice?: "s" | "e" | null }): string {
   const t = cleanTitle(o.title);
+  const how = o.voice
+    ? ["Qanday kiriladi: havolani bosing, ismingizni yozing va «Darsga kirish» ni bosing. Quloqchin taqsangiz yaxshi.",
+       o.voice === "s" ? "Gapirmoqchi bo'lsangiz, «Qo'l ko'tarish» tugmasini bosing: ustoz ruxsat berganda mikrofoningiz yoqiladi." : "Hamma gapira oladi: gapirmasangiz mikrofonni o'chirib turing."]
+    : ["Qanday kiriladi: havolani bosing, «Kamera va mikrofonga ruxsat berish» tugmasini bosing, ismingizni yozib «Darsga kirish» ni bosing.",
+       "Telegram ichida kamera ishlamasa, havolani Chrome yoki Safari'da oching."];
   return [
-    `Onlayn dars${t ? `: ${t}` : ""}`,
+    `${o.voice ? "Ovozli dars" : "Onlayn dars"}${t ? `: ${t}` : ""}`,
     ...(o.startsAt ? [`Boshlanishi: ${lessonTimeLabel(o.startsAt)}`] : []),
     "",
     "Darsga kirish uchun havolani bosing:",
     o.link,
     "",
-    "Qanday kiriladi: havolani bosing, «Kamera va mikrofonga ruxsat berish» tugmasini bosing, ismingizni yozib «Darsga kirish» ni bosing.",
-    "Telegram ichida kamera ishlamasa, havolani Chrome yoki Safari'da oching.",
+    ...how,
   ].join("\n");
 }
 
@@ -163,9 +171,12 @@ export function describeMediaError(e: unknown, what: "kamera" | "mikrofon" | "ka
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Teacher uchun oxirgi xonalar (brauzerda saqlanadi, bazasiz). */
-export type SavedRoom = { code: string; title: string; at: number; startsAt?: number };
+export type SavedRoom = { code: string; title: string; at: number; startsAt?: number; voice?: { mode: "s" | "e"; k: string; h: string } };
 export const ROOMS_KEY = "u360-dars-rooms";
 export const NAME_KEY = "u360-dars-name";
+
+const validVoice = (v: unknown): v is NonNullable<SavedRoom["voice"]> =>
+  !!v && typeof v === "object" && ((v as { mode?: unknown }).mode === "s" || (v as { mode?: unknown }).mode === "e") && typeof (v as { k?: unknown }).k === "string" && typeof (v as { h?: unknown }).h === "string";
 
 export function parseSavedRooms(raw: string | null): SavedRoom[] {
   if (!raw) return [];
@@ -174,7 +185,7 @@ export function parseSavedRooms(raw: string | null): SavedRoom[] {
     if (!Array.isArray(v)) return [];
     return v
       .filter((r): r is SavedRoom => !!r && isRoomCode((r as SavedRoom).code) && typeof (r as SavedRoom).at === "number")
-      .map((r) => ({ code: r.code, title: cleanTitle(r.title), at: r.at, ...(typeof r.startsAt === "number" && { startsAt: r.startsAt }) }))
+      .map((r) => ({ code: r.code, title: cleanTitle(r.title), at: r.at, ...(typeof r.startsAt === "number" && { startsAt: r.startsAt }), ...(validVoice(r.voice) && { voice: r.voice }) }))
       .slice(0, 10);
   } catch {
     return [];
