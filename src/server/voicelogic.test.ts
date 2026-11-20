@@ -37,23 +37,24 @@ describe("xona imzolari", () => {
 });
 
 describe("LiveKit ruxsatlari", () => {
-  const MIC = 2;
-  it("ustoz: boshqaradi va gapiradi", () => {
-    const g = grantFor("host", "s", "u360-x", MIC);
-    expect(g).toMatchObject({ roomJoin: true, room: "u360-x", roomAdmin: true, canPublish: true, canSubscribe: true, canPublishSources: [MIC] });
+  const S = { mic: 2, camera: 1, screen: 3 };
+  it("ustoz: boshqaradi, gapiradi, kamera va ekranni ulaydi", () => {
+    const g = grantFor("host", "s", "u360-x", S);
+    expect(g).toMatchObject({ roomJoin: true, room: "u360-x", roomAdmin: true, canPublish: true, canSubscribe: true, canPublishSources: [2, 1, 3] });
   });
   it("sinf rejimida o'quvchi eshitadi, gapira olmaydi, boshqara olmaydi", () => {
-    const g = grantFor("guest", "s", "u360-x", MIC);
+    const g = grantFor("guest", "s", "u360-x", S);
     expect(g).toMatchObject({ canPublish: false, canSubscribe: true, canPublishData: true });
     expect((g as { roomAdmin?: boolean }).roomAdmin).toBeUndefined();
   });
-  it("erkin suhbatda o'quvchi faqat mikrofonni yoqa oladi", () => {
-    const g = grantFor("guest", "e", "u360-x", MIC);
-    expect(g).toMatchObject({ canPublish: true, canPublishSources: [MIC] });
+  it("erkin suhbatda o'quvchi mikrofon va kamerani yoqa oladi, ekranni ulay olmaydi", () => {
+    const g = grantFor("guest", "e", "u360-x", S);
+    expect(g).toMatchObject({ canPublish: true, canPublishSources: [2, 1] });
+    expect((g as { canPublishSources: number[] }).canPublishSources).not.toContain(3);
     expect((g as { roomAdmin?: boolean }).roomAdmin).toBeUndefined();
   });
   it("hech kim o'z ma'lumotini o'zgartira olmaydi", () => {
-    for (const r of ["host", "guest"] as const) expect(grantFor(r, "s", "u360-x", MIC).canUpdateOwnMetadata).toBe(false);
+    for (const r of ["host", "guest"] as const) expect(grantFor(r, "s", "u360-x", S).canUpdateOwnMetadata).toBe(false);
   });
 });
 

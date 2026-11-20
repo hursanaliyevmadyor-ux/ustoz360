@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ROOM_ALPHABET, ROOM_CODE_LEN, addSavedRoom, cleanName, cleanTitle, connectionQuality, describeMediaError, fromLocalInput, inviteText, isRoomCode, isTelegramBrowser,
-  jitsiHost, jitsiRoomName, jitsiUrl, joinUrl, lessonCountdown, lessonTimeLabel, newRoomCode, parseSavedRooms, parseStartsAt, telegramShareUrl, toLocalInput,
+  joinUrl, lessonCountdown, lessonTimeLabel, newRoomCode, parseSavedRooms, parseStartsAt, telegramShareUrl, toLocalInput,
 } from "./dars";
 
 describe("dars xonasi kodi", () => {
@@ -25,33 +25,6 @@ describe("dars xonasi kodi", () => {
   });
   it("noto'g'ri kodlar rad etiladi", () => {
     for (const bad of ["", "abc", "ABCDEFGHJK", "abcdefghj0", "abcdefghjkm", "../../etc", undefined, 5, null]) expect(isRoomCode(bad)).toBe(false);
-  });
-});
-
-describe("Jitsi manzili", () => {
-  const code = "abcdefghjk";
-  it("xona nomi prefiksli", () => expect(jitsiRoomName(code)).toBe("ustoz360-abcdefghjk"));
-  it("ism va mavzu manzilda to'g'ri kodlanadi", () => {
-    const u = jitsiUrl({ code, name: 'Ali "Valiyev"', title: "5-sinf: kasrlar", host: "meet.jit.si" });
-    expect(u.startsWith("https://meet.jit.si/ustoz360-abcdefghjk#")).toBe(true);
-    const hash = new URLSearchParams(u.split("#")[1]);
-    expect(JSON.parse(hash.get("userInfo.displayName")!)).toBe('Ali "Valiyev"');
-    expect(JSON.parse(hash.get("config.subject")!)).toBe("5-sinf: kasrlar");
-  });
-  it("ismsiz ham ishlaydi; telefonda ilovaga o'tkazmaydi", () => expect(jitsiUrl({ code, host: "meet.jit.si" })).toBe("https://meet.jit.si/ustoz360-abcdefghjk#config.disableDeepLinking=true"));
-  it("mikrofon va kamera o'chiq holda kirish", () => {
-    const h = new URLSearchParams(jitsiUrl({ code, host: "meet.jit.si", audioMuted: true, videoMuted: true }).split("#")[1]);
-    expect(h.get("config.startWithAudioMuted")).toBe("true");
-    expect(h.get("config.startWithVideoMuted")).toBe("true");
-    const h2 = new URLSearchParams(jitsiUrl({ code, host: "meet.jit.si" }).split("#")[1]);
-    expect(h2.has("config.startWithAudioMuted")).toBe(false);
-  });
-  it("xavfli server nomi rad etiladi", () => {
-    expect(jitsiHost("evil.com/path")).toBe("meet.jit.si");
-    expect(jitsiHost("javascript:alert(1)")).toBe("meet.jit.si");
-    expect(jitsiHost("localhost")).toBe("meet.jit.si");
-    expect(jitsiHost("")).toBe("meet.jit.si");
-    expect(jitsiHost("Jitsi.Maktab.UZ")).toBe("jitsi.maktab.uz");
   });
 });
 
@@ -94,19 +67,23 @@ describe("brauzer va xatolar", () => {
 });
 
 describe("oxirgi xonalar (brauzerda)", () => {
-  const a = { code: "abcdefghjk", title: "A", at: 1 };
-  const b = { code: "mnpqrstuvw", title: "B", at: 2 };
+  const voice = { mode: "s" as const, k: "K".repeat(22), h: "H".repeat(22) };
+  const a = { code: "abcdefghjk", title: "A", at: 1, voice };
+  const b = { code: "mnpqrstuvw", title: "B", at: 2, voice };
   it("yangisi tepada, takrori yo'q, 10 tadan oshmaydi", () => {
     expect(addSavedRoom([a], b).map((r) => r.code)).toEqual(["mnpqrstuvw", "abcdefghjk"]);
     expect(addSavedRoom([a, b], { ...a, at: 3 }).map((r) => r.code)).toEqual(["abcdefghjk", "mnpqrstuvw"]);
-    const many = Array.from({ length: 10 }, () => ({ code: newRoomCode(), title: "", at: 0 }));
+    const many = Array.from({ length: 10 }, () => ({ code: newRoomCode(), title: "", at: 0, voice }));
     expect(addSavedRoom(many, a)).toHaveLength(10);
   });
   it("buzilgan yoki begona ma'lumot e'tiborga olinmaydi", () => {
     expect(parseSavedRooms(null)).toEqual([]);
     expect(parseSavedRooms("{")).toEqual([]);
     expect(parseSavedRooms('{"a":1}')).toEqual([]);
-    expect(parseSavedRooms(JSON.stringify([a, { code: "../x", title: "", at: 1 }, { code: b.code }]))).toEqual([a]);
+    expect(parseSavedRooms(JSON.stringify([a, { code: "../x", title: "", at: 1, voice }, { code: b.code }]))).toEqual([a]);
+  });
+  it("eski (imzosiz, Jitsi) xonalar ro'yxatga olinmaydi", () => {
+    expect(parseSavedRooms(JSON.stringify([{ code: "abcdefghjk", title: "Eski", at: 1 }]))).toEqual([]);
   });
 });
 
@@ -138,6 +115,8 @@ describe("dars vaqti", () => {
     expect(t).toContain("Boshlanishi: 22-noyabr, 15:30");
     expect(t).toContain("https://x.uz/d/abc");
     expect(inviteText({ link: "https://x.uz/d/abc" })).not.toContain("Boshlanishi");
+    expect(inviteText({ link: "https://x.uz/d/abc", mode: "s" })).toContain("Qo'l ko'tarish");
+    expect(inviteText({ link: "https://x.uz/d/abc", mode: "e" })).toContain("Hamma gapira oladi");
   });
   it("datetime-local qiymati ikki tomonga aylanadi", () => {
     const ts = at(15, 30, 22);
@@ -160,9 +139,10 @@ describe("internet sifati", () => {
 
 describe("oxirgi xonalar: dars vaqti saqlanadi", () => {
   it("startsAt qayta o'qiladi", () => {
-    const r = { code: "abcdefghjk", title: "A", at: 1, startsAt: 5 };
+    const voice = { mode: "s" as const, k: "K".repeat(22), h: "H".repeat(22) };
+    const r = { code: "abcdefghjk", title: "A", at: 1, startsAt: 5, voice };
     expect(parseSavedRooms(JSON.stringify([r]))).toEqual([r]);
-    expect(parseSavedRooms(JSON.stringify([{ ...r, startsAt: "x" }]))).toEqual([{ code: "abcdefghjk", title: "A", at: 1 }]);
+    expect(parseSavedRooms(JSON.stringify([{ ...r, startsAt: "x" }]))).toEqual([{ code: "abcdefghjk", title: "A", at: 1, voice }]);
   });
 });
 
@@ -176,18 +156,12 @@ describe("ovozli xona havolalari", () => {
     const u = new URL(joinUrl("https://x.uz", "abcdefghjk", "A", true, null, voice));
     expect(u.searchParams.get("h")).toBe(voice.h); expect(u.searchParams.get("u")).toBe("1");
   });
-  it("oddiy (Jitsi) havolada rejim va imzo yo'q", () => {
+  it("imzosiz havolada rejim va imzo yo'q", () => {
     expect(joinUrl("https://x.uz", "abcdefghjk", "A")).not.toMatch(/[?&](r|k|h)=/);
   });
-  it("taklif matni rejimga mos", () => {
-    expect(inviteText({ link: "https://x.uz/d/a", voice: "s" })).toContain("Qo'l ko'tarish");
-    expect(inviteText({ link: "https://x.uz/d/a", voice: "e" })).toContain("Hamma gapira oladi");
-    expect(inviteText({ link: "https://x.uz/d/a", voice: "s" })).toContain("Ovozli dars");
-    expect(inviteText({ link: "https://x.uz/d/a" })).toContain("Onlayn dars");
-  });
-  it("saqlangan ovozli xona qayta o'qiladi, buzilgani tashlanadi", () => {
+  it("saqlangan xona qayta o'qiladi, imzosi buzilgani tashlanadi", () => {
     const r = { code: "abcdefghjk", title: "A", at: 1, voice };
     expect(parseSavedRooms(JSON.stringify([r]))).toEqual([r]);
-    expect(parseSavedRooms(JSON.stringify([{ ...r, voice: { mode: "x", k: "a", h: "b" } }]))).toEqual([{ code: "abcdefghjk", title: "A", at: 1 }]);
+    expect(parseSavedRooms(JSON.stringify([{ ...r, voice: { mode: "x", k: "a", h: "b" } }]))).toEqual([]);
   });
 });

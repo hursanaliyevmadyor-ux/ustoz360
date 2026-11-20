@@ -32,15 +32,18 @@ export function verifyRoom(secret: string, o: { code: unknown; mode: unknown; k:
   return typeof o.h === "string" && same(o.h, want.h) ? "host" : "guest";
 }
 
+/** LiveKit manba turlari (raqamli qiymatlar server tomonida beriladi, mantiq shu yerda toza qoladi). */
+export type Sources = { mic: number; camera: number; screen: number };
+
 /**
- * LiveKit ruxsatlari. Ustoz har doim gapira oladi va xonani boshqaradi.
- * Sinf rejimida o'quvchi eshitadi va yozadi, gapirish ruxsati ustoz bergach ochiladi; erkin suhbatda hamma gapira oladi.
- * Faqat mikrofon (video va ekran ulashish hozircha yopiq).
+ * LiveKit ruxsatlari. Ustoz har doim gapira oladi, kamera va ekranni ulashadi, xonani boshqaradi.
+ * Sinf rejimida o'quvchi tomosha qiladi va yozadi, gapirish va kamera ruxsati ustoz bergach ochiladi;
+ * erkin suhbatda hamma mikrofon va kamerani yoqa oladi. O'quvchi ekranini ulasha olmaydi.
  */
-export function grantFor(role: VoiceRole, mode: VoiceMode, room: string, MICROPHONE: number) {
+export function grantFor(role: VoiceRole, mode: VoiceMode, room: string, S: Sources) {
   const base = { roomJoin: true, room, canSubscribe: true, canPublishData: true, canUpdateOwnMetadata: false } as const;
-  if (role === "host") return { ...base, roomAdmin: true, canPublish: true, canPublishSources: [MICROPHONE] };
-  return mode === "e" ? { ...base, canPublish: true, canPublishSources: [MICROPHONE] } : { ...base, canPublish: false };
+  if (role === "host") return { ...base, roomAdmin: true, canPublish: true, canPublishSources: [S.mic, S.camera, S.screen] };
+  return mode === "e" ? { ...base, canPublish: true, canPublishSources: [S.mic, S.camera] } : { ...base, canPublish: false };
 }
 
 export const guestName = (raw: unknown) => cleanName(raw) || "Mehmon";
