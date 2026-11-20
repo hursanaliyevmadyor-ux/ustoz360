@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { ClipboardCheck, Flag, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, CheckSquare, ClipboardCheck, Flag, Pencil, Plus, Trash2, X } from "lucide-react";
 import { adminModule } from "@/lib/modules";
 import { api } from "@/lib/admin-client";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ import { Table, Td, Th } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 
 type Row = { id: string; text: string; topicId: string; topic: string; subject: string; difficulty: string; status: string; source: string; sample: boolean; kind: string; skill: string | null; options: number; reports: number; verified: boolean };
-type List = { counts: Record<string, number>; review: { total: number; verified: number; remaining: number }; items: Row[] };
+type List = { counts: Record<string, number>; matching: number; review: { total: number; verified: number; remaining: number }; items: Row[] };
 type Subject = { id: string; name: string; topics: { id: string; name: string }[] };
 type Draft = { id?: string; topicId: string; text: string; options: string[]; correct: number; explanation: string; superKey: string; difficulty: string; status: string; sourceRef: string; kind: string; skill: string; reports?: { id: string; reason: string }[]; source?: string };
 
@@ -36,6 +36,9 @@ export default function Page() {
   const [topicId, setTopicId] = React.useState("");
   const [q, setQ] = React.useState("");
   const [verified, setVerified] = React.useState("");
+  const [sel, setSel] = React.useState<Set<string>>(new Set());
+  const [allMode, setAllMode] = React.useState(false);
+  const [bulkBusy, setBulkBusy] = React.useState(false);
   const [draft, setDraft] = React.useState<Draft | null>(null);
   const [formErr, setFormErr] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -47,6 +50,27 @@ export default function Page() {
   }, [status, source, topicId, q, verified]);
   React.useEffect(() => { const t = setTimeout(() => void load(), q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
   React.useEffect(() => { void api<{ subjects: Subject[] }>("/api/admin/subjects").then((r) => { if (r.ok) setSubjects(r.data.subjects); }); }, []);
+
+  // Filtr o'zgarsa, belgilash tozalanadi: aks holda ko'rinmayotgan savollar tasdiqlanib ketishi mumkin.
+  React.useEffect(() => { setSel(new Set()); setAllMode(false); }, [status, source, topicId, q, verified]);
+  const items = list?.items ?? [];
+  const allVisible = items.length > 0 && items.every((r) => allMode || sel.has(r.id));
+  const count = allMode ? (list?.matching ?? 0) : sel.size;
+  const toggleRow = (id: string) => {
+    if (allMode) { setAllMode(false); setSel(new Set(items.filter((r) => r.id !== id).map((r) => r.id))); return; }
+    setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
+  const toggleAll = () => { if (allVisible) { setSel(new Set()); setAllMode(false); } else setSel(new Set(items.map((r) => r.id))); };
+  const clearSel = () => { setSel(new Set()); setAllMode(false); };
+  const bulkApprove = async () => {
+    if (!list || count === 0) return;
+    if (!window.confirm(`${count} ta savol «Tasdiqlangan» va «Tekshirilgan» deb belgilansinmi?\n\nTasdiqlangan savollar o'quvchilarga mashqda ko'rinadi. Faqat ularni tekshirib chiqqan bo'lsangiz davom eting.`)) return;
+    setBulkBusy(true);
+    const filter = Object.fromEntries(Object.entries({ status, source, topicId, q, verified }).filter(([, v]) => v));
+    const r = await api<{ updated: number }>("/api/admin/qbank/bulk", "POST", allMode ? { all: true, filter } : { ids: [...sel] });
+    setBulkBusy(false);
+    if (r.ok) { toast("success", `${r.data.updated} ta savol tasdiqlandi.`); clearSel(); void load(); } else toast("error", r.error);
+  };
 
   const firstTopic = subjects.flatMap((s) => s.topics)[0]?.id ?? "";
   const total = list ? Object.values(list.counts).reduce((a, b) => a + b, 0) : 0;
@@ -109,11 +133,32 @@ export default function Page() {
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Savol matnidan qidirish..." aria-label="Qidirish" maxLength={100} />
       </div>
 
+      {list && items.length > 0 && (
+        count > 0 ? (
+          <div className="sticky top-16 z-10 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/40 bg-card p-3 shadow-soft" role="region" aria-label="Belgilangan savollar">
+            <p className="text-sm">
+              <b className="text-base">{count}</b> ta savol belgilandi{allMode && " (filtrga mos hammasi)"}
+              {!allMode && allVisible && list.matching > items.length && <> · <button type="button" onClick={() => setAllMode(true)} className="font-semibold text-primary underline-offset-2 hover:underline">Filtrga mos hamma {list.matching} tasini belgilash</button></>}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="ghost" onClick={clearSel} disabled={bulkBusy}>Belgini olib tashlash</Button>
+              <Button variant="success" loading={bulkBusy} onClick={() => void bulkApprove()}><CheckCircle2 className="h-4 w-4" aria-hidden />Belgilanganlarni tasdiqlash</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">Bir nechta savolni birdan tasdiqlash uchun ularni belgilang.</p>
+            <Button variant="outline" onClick={() => setAllMode(true)}><CheckSquare className="h-4 w-4" aria-hidden />Hammasini belgilash ({list.matching})</Button>
+          </div>
+        )
+      )}
+
       <Card>
         {!list ? <p className="p-6 text-sm text-muted-foreground">Yuklanmoqda...</p> : list.items.length === 0 ? <div className="p-4"><EmptyState title="Savollar yo'q" text="Bu filtrga mos savol topilmadi. Yangi savol qo'shing." /></div> : (
-          <Table className="min-w-[860px]"><thead><tr><Th>Savol</Th><Th>Mavzu</Th><Th>Qiyinlik</Th><Th>Manba</Th><Th>Holat</Th><Th><span className="sr-only">Amallar</span></Th></tr></thead><tbody>
+          <Table className="min-w-[900px]"><thead><tr><Th className="w-10"><input type="checkbox" checked={allVisible} onChange={toggleAll} className="h-5 w-5 accent-[hsl(var(--primary))]" aria-label="Ko'ringan hamma savollarni belgilash" /></Th><Th>Savol</Th><Th>Mavzu</Th><Th>Qiyinlik</Th><Th>Manba</Th><Th>Holat</Th><Th><span className="sr-only">Amallar</span></Th></tr></thead><tbody>
             {list.items.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} className={cn((allMode || sel.has(r.id)) && "bg-primary/5")}>
+                <Td className="w-10"><input type="checkbox" checked={allMode || sel.has(r.id)} onChange={() => toggleRow(r.id)} className="h-5 w-5 accent-[hsl(var(--primary))]" aria-label={`Belgilash: ${r.text.slice(0, 40)}`} /></Td>
                 <Td className="max-w-[320px]"><p className="line-clamp-2 font-semibold">{r.text}</p>{r.kind === "SITUATIONAL" && <Badge variant="blue" className="mr-1 mt-1">Vaziyatli</Badge>}{r.skill && <span className="mt-1 mr-1 inline-block text-xs text-muted-foreground">{r.skill}</span>}{r.verified ? <Badge variant="success" className="mr-1 mt-1">Tekshirilgan</Badge> : !r.sample && <Badge variant="neutral" className="mr-1 mt-1">Tekshirilmagan</Badge>}{r.reports > 0 && <Badge variant="danger" className="mt-1"><Flag className="h-3 w-3" aria-hidden />{r.reports} ta xato xabari</Badge>}</Td>
                 <Td><p>{r.topic}</p><p className="text-xs text-muted-foreground">{r.subject}</p></Td>
                 <Td>{DIFF[r.difficulty]}</Td>
