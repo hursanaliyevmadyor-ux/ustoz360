@@ -5,7 +5,7 @@ import { grantFor, guestName, livekitRoomName, verifyRoom, type VoiceMode, type 
 
 /**
  * Ovozli dars xonasi (LiveKit). Kalitlar faqat serverda (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET), brauzerga faqat qisqa muddatli kirish belgisi (token) beriladi.
- * Sozlanmagan bo'lsa, ovozli xona o'chiq turadi, video (Jitsi) xonalar o'zgarmaydi.
+ * Sozlanmagan bo'lsa, dars xonasi o'chiq turadi (ustoz xona yarata olmaydi).
  */
 export type VoiceConfig = { url: string; key: string; secret: string; authSecret: string };
 
@@ -15,6 +15,8 @@ export function voiceConfig(env: NodeJS.ProcessEnv = process.env): VoiceConfig |
   return { url, key, secret, authSecret };
 }
 export const isVoiceConfigured = () => voiceConfig() !== null;
+
+const SRC = { mic: TrackSource.MICROPHONE, camera: TrackSource.CAMERA, screen: TrackSource.SCREEN_SHARE };
 
 /** Brauzer uchun wss://, server API uchun https:// manzili (qaysi shaklda kiritilgan bo'lsa ham). */
 export const wsUrl = (u: string) => u.replace(/^https?:\/\//i, "wss://").replace(/\/+$/, "");
@@ -39,20 +41,20 @@ export async function issueToken(o: { code: string; mode: VoiceMode; k: string; 
   const room = livekitRoomName(o.code);
   const identity = `${role === "host" ? "t" : "o"}-${randomBytes(6).toString("base64url")}`;
   const at = new AccessToken(c.key, c.secret, { identity, name: role === "host" ? (o.name?.trim() || "Ustoz").slice(0, 40) : guestName(o.name), ttl: "4h", metadata: JSON.stringify({ r: role }) });
-  at.addGrant(grantFor(role, o.mode, room, TrackSource.MICROPHONE));
+  at.addGrant(grantFor(role, o.mode, room, SRC));
   const canSpeak = role === "host" || o.mode === "e";
   return { token: await at.toJwt(), url: wsUrl(c.url), identity, role, canSpeak };
 }
 
 const roomClient = (c: VoiceConfig) => new RoomServiceClient(httpUrl(c.url), c.key, c.secret);
 
-/** Faqat ustoz: o'quvchiga gapirishga ruxsat berish yoki olish. */
+/** Faqat ustoz: o'quvchiga gapirish va kamera ruxsatini berish yoki olish. */
 export async function setSpeaking(o: { code: string; mode: VoiceMode; k: string; h?: string; identity: string; allow: boolean }) {
   const c = need();
   if (authorize(c, o) !== "host") throw new ApiError(403, "Bu amal faqat ustoz uchun.", "not_host");
   const rc = roomClient(c), room = livekitRoomName(o.code);
   const permission = o.allow
-    ? { canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: [TrackSource.MICROPHONE] }
+    ? { canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: [SRC.mic, SRC.camera] }
     : { canPublish: false, canSubscribe: true, canPublishData: true, canPublishSources: [] as TrackSource[] };
   await rc.updateParticipant(room, o.identity, { permission });
   return { ok: true as const };

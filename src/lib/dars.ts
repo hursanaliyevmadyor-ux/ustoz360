@@ -1,21 +1,11 @@
 /**
- * Dars xonasi (1-versiya, oddiy): bazasiz va kalitsiz.
- * Xona kodi manzilda (`/d/<kod>`), video va ovoz Jitsi'da (chat ham Jitsi ichida).
- * Keyinroq o'z videosi yoki chatiga o'tilsa, faqat shu fayl va `components/dars` o'zgaradi.
+ * Dars xonasi: umumiy yordamchilar (kod, havola, vaqt, taklif matni). Xona saytimiz ichida LiveKit orqali ishlaydi;
+ * xona kodi va imzolari serverda hosil bo'ladi (src/server/voicelogic.ts).
  */
 
 /** O'xshash belgilarsiz (i, l, o, 0, 1): og'zaki aytganda adashmaslik uchun. */
 export const ROOM_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 export const ROOM_CODE_LEN = 10;
-
-const SAFE_HOST = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/i;
-const DEFAULT_HOST = "meet.jit.si";
-
-/** Jitsi serveri sozlanadigan (o'z serveringiz bo'lsa): noto'g'ri nom bo'lsa standart serverga qaytadi. */
-export function jitsiHost(raw: string | undefined | null = process.env.NEXT_PUBLIC_JITSI_HOST): string {
-  const h = (raw ?? "").trim().toLowerCase();
-  return SAFE_HOST.test(h) && h.includes(".") ? h : DEFAULT_HOST;
-}
 
 type RandomBytes = (n: number) => Uint8Array;
 const webRandom: RandomBytes = (n) => globalThis.crypto.getRandomValues(new Uint8Array(n));
@@ -36,35 +26,13 @@ export function newRoomCode(random: RandomBytes = webRandom): string {
 export const isRoomCode = (s: unknown): s is string =>
   typeof s === "string" && s.length === ROOM_CODE_LEN && [...s].every((c) => ROOM_ALPHABET.includes(c));
 
-/** Jitsi xona nomi: kod bilan birga prefiks, boshqa xonalar bilan to'qnashmasligi uchun. */
-export const jitsiRoomName = (code: string) => `ustoz360-${code}`;
-
 export const cleanTitle = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 export const cleanName = (s: unknown) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, 40) : "");
 
-const q = (v: string) => encodeURIComponent(JSON.stringify(v));
-
-/**
- * O'quvchi/ustoz Jitsi xonasiga kiradigan manzil: ism, mavzu va boshlang'ich holat (mikrofon/kamera o'chiq) tayyor qo'yiladi.
- * `disableDeepLinking`: telefonda «ilovani o'rnating» sahifasiga o'tkazmaydi, brauzerning o'zida ochadi.
- */
-export function jitsiUrl(o: { code: string; name?: string; title?: string; host?: string; audioMuted?: boolean; videoMuted?: boolean }): string {
-  const host = o.host ?? jitsiHost();
-  const params: string[] = [];
-  const name = cleanName(o.name);
-  const title = cleanTitle(o.title);
-  if (name) params.push(`userInfo.displayName=${q(name)}`);
-  if (title) params.push(`config.subject=${q(title)}`);
-  if (o.audioMuted) params.push("config.startWithAudioMuted=true");
-  if (o.videoMuted) params.push("config.startWithVideoMuted=true");
-  params.push("config.disableDeepLinking=true");
-  return `https://${host}/${jitsiRoomName(o.code)}#${params.join("&")}`;
-}
-
-/** Ovozli xona (saytimiz ichida): rejim (s = sinf, e = erkin suhbat) va imzolar. `h` faqat ustoz havolasida. */
+/** Xona havolasidagi rejim (s = sinf, e = erkin suhbat) va imzolar. `h` faqat ustoz havolasida. */
 export type VoiceLink = { mode: "s" | "e"; k: string; h?: string };
 
-/** Ulashiladigan qisqa havola: /d/<kod>?t=<dars nomi>&s=<boshlanish vaqti>[&r=<rejim>&k=<imzo>]. */
+/** Ulashiladigan qisqa havola: /d/<kod>?t=<dars nomi>&s=<boshlanish vaqti>&r=<rejim>&k=<imzo> (ustozda qo'shimcha h). */
 export function joinUrl(origin: string, code: string, title?: string, asTeacher = false, startsAt?: number | null, voice?: VoiceLink | null): string {
   const p = new URLSearchParams();
   const t = cleanTitle(title);
@@ -107,21 +75,18 @@ export function lessonCountdown(startsAt: number, now = Date.now()): { state: "f
 }
 
 /** Telegram va boshqa joylarga yuboriladigan tayyor taklif matni. */
-export function inviteText(o: { title?: string; startsAt?: number | null; link: string; voice?: "s" | "e" | null }): string {
+export function inviteText(o: { title?: string; startsAt?: number | null; link: string; mode?: "s" | "e" | null }): string {
   const t = cleanTitle(o.title);
-  const how = o.voice
-    ? ["Qanday kiriladi: havolani bosing, ismingizni yozing va «Darsga kirish» ni bosing. Quloqchin taqsangiz yaxshi.",
-       o.voice === "s" ? "Gapirmoqchi bo'lsangiz, «Qo'l ko'tarish» tugmasini bosing: ustoz ruxsat berganda mikrofoningiz yoqiladi." : "Hamma gapira oladi: gapirmasangiz mikrofonni o'chirib turing."]
-    : ["Qanday kiriladi: havolani bosing, «Kamera va mikrofonga ruxsat berish» tugmasini bosing, ismingizni yozib «Darsga kirish» ni bosing.",
-       "Telegram ichida kamera ishlamasa, havolani Chrome yoki Safari'da oching."];
   return [
-    `${o.voice ? "Ovozli dars" : "Onlayn dars"}${t ? `: ${t}` : ""}`,
+    `Onlayn dars${t ? `: ${t}` : ""}`,
     ...(o.startsAt ? [`Boshlanishi: ${lessonTimeLabel(o.startsAt)}`] : []),
     "",
     "Darsga kirish uchun havolani bosing:",
     o.link,
     "",
-    ...how,
+    "Qanday kiriladi: havolani bosing, ismingizni yozing va «Darsga kirish» ni bosing. Quloqchin taqsangiz yaxshi.",
+    o.mode === "e" ? "Hamma gapira oladi: gapirmasangiz mikrofonni o'chirib turing." : "Ustozni ko'rasiz va eshitasiz. Gapirmoqchi bo'lsangiz, «Qo'l ko'tarish» tugmasini bosing: ustoz ruxsat bergach mikrofon va kamerangiz yoqiladi.",
+    "Telegram ichida ochilmasa, havolani Chrome yoki Safari'da oching.",
   ].join("\n");
 }
 
@@ -171,7 +136,7 @@ export function describeMediaError(e: unknown, what: "kamera" | "mikrofon" | "ka
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Teacher uchun oxirgi xonalar (brauzerda saqlanadi, bazasiz). */
-export type SavedRoom = { code: string; title: string; at: number; startsAt?: number; voice?: { mode: "s" | "e"; k: string; h: string } };
+export type SavedRoom = { code: string; title: string; at: number; startsAt?: number; voice: { mode: "s" | "e"; k: string; h: string } };
 export const ROOMS_KEY = "u360-dars-rooms";
 export const NAME_KEY = "u360-dars-name";
 
@@ -183,9 +148,10 @@ export function parseSavedRooms(raw: string | null): SavedRoom[] {
   try {
     const v: unknown = JSON.parse(raw);
     if (!Array.isArray(v)) return [];
+    // Eski (Jitsi) xonalar imzosiz saqlangan edi: ular endi ishlamaydi, ro'yxatga olinmaydi.
     return v
-      .filter((r): r is SavedRoom => !!r && isRoomCode((r as SavedRoom).code) && typeof (r as SavedRoom).at === "number")
-      .map((r) => ({ code: r.code, title: cleanTitle(r.title), at: r.at, ...(typeof r.startsAt === "number" && { startsAt: r.startsAt }), ...(validVoice(r.voice) && { voice: r.voice }) }))
+      .filter((r): r is SavedRoom => !!r && isRoomCode((r as SavedRoom).code) && typeof (r as SavedRoom).at === "number" && validVoice((r as SavedRoom).voice))
+      .map((r) => ({ code: r.code, title: cleanTitle(r.title), at: r.at, ...(typeof r.startsAt === "number" && { startsAt: r.startsAt }), voice: r.voice }))
       .slice(0, 10);
   } catch {
     return [];

@@ -41,7 +41,9 @@ describe("kirish belgisi (token)", () => {
     const { k, h } = signRoom(AUTH, code, "s");
     const r = await withEnv(() => issueToken({ code, mode: "s", k, h, name: "Dilnoza" }));
     expect(r.role).toBe("host"); expect(r.canSpeak).toBe(true); expect(r.identity.startsWith("t-")).toBe(true);
-    expect((await verify(r.token)).video).toMatchObject({ roomAdmin: true, canPublish: true });
+    const v = (await verify(r.token)).video;
+    expect(v).toMatchObject({ roomAdmin: true, canPublish: true });
+    expect(v?.canPublishSources?.length).toBe(3); // mikrofon, kamera, ekran
   });
   it("erkin suhbatda o'quvchi gapira oladi", async () => {
     const { k } = signRoom(AUTH, code, "e");

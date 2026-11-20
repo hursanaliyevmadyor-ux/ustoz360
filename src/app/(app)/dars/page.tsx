@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { CalendarClock, CheckCircle2, Copy, ExternalLink, Eye, Info, Link2, Mic, Play, Send, Share2, Trash2, Video } from "lucide-react";
+import { CalendarClock, CheckCircle2, Copy, ExternalLink, Eye, Info, Link2, Play, Send, Share2, Trash2, Video } from "lucide-react";
 import { PageHeader } from "@/components/layout/page";
 import { QrCode } from "@/components/dars/qr-code";
 import { Button } from "@/components/ui/button";
@@ -27,12 +27,12 @@ const CHECK = [
 ];
 
 const DURING = [
-  ["Mikrofon / Kamera", "pastdagi panelda: o'zingizni yoqish yoki o'chirish"],
-  ["Chat", "yozishma oynasi: o'quvchilar savolini yozadi, havola yoki vazifani siz yuborasiz"],
-  ["Qo'l ko'tarish", "o'quvchi navbat so'raydi, siz ismini ko'rasiz"],
-  ["Ekranni ulashish", "slayd, hujjat yoki doskani hammaga ko'rsatadi"],
-  ["Hamma ko'rinishi", "«Tile view» tugmasi: barcha o'quvchi bir ekranda"],
-  ["Mikrofonni o'chirish", "ishtirokchi ustiga bosib, shovqinli o'quvchini o'chirasiz"],
+  ["Mikrofon / Kamera", "pastdagi tugmalar: o'zingizni yoqish yoki o'chirish. Siz kirganda ular yoqiq bo'ladi"],
+  ["Qo'l ko'targanlar", "ishtirokchilar ro'yxatida sariq belgi chiqadi: «Gapirishga ruxsat» ni bosasiz, o'quvchining mikrofoni va kamerasi ochiladi"],
+  ["Ruxsatni olish", "gapirib bo'lgach, o'quvchi yonidagi «Ruxsatni olish» yoki «Hammaning ruxsatini olish»"],
+  ["Ekranni ulashish", "kompyuterda: slayd, hujjat yoki doskani hammaga ko'rsatadi. Telefonda bu tugma yo'q"],
+  ["Yozishma (chat)", "o'quvchi savol yozadi, siz havola yoki vazifani yuborasiz"],
+  ["Darsni yakunlash", "darsni hamma uchun tugatadi"],
 ];
 
 export default function Page() {
@@ -46,7 +46,6 @@ export default function Page() {
   const [canShare, setCanShare] = React.useState(false);
   const [now, setNow] = React.useState(() => Date.now());
   const [voiceOn, setVoiceOn] = React.useState(false);
-  const [kind, setKind] = React.useState<"video" | "voice">("video");
   const [mode, setMode] = React.useState<"s" | "e">("s");
   const [creating, setCreating] = React.useState(false);
   const [createErr, setCreateErr] = React.useState("");
@@ -64,24 +63,19 @@ export default function Page() {
 
   async function create() {
     setCreateErr("");
-    let room: SavedRoom = { code: newRoomCode(), title: cleanTitle(title), at: Date.now(), ...(startsAt && { startsAt }) };
-    if (kind === "voice") {
-      // Ovozli xona kodi va imzolari serverda hosil bo'ladi (faqat tizimga kirgan ustoz yarata oladi).
-      setCreating(true);
-      try {
-        const r = await fetch("/api/dars/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }) });
-        const d = (await r.json().catch(() => ({}))) as { code?: string; mode?: "s" | "e"; k?: string; h?: string; error?: string };
-        if (!r.ok || !d.code || !d.k || !d.h || !d.mode) throw new Error(d.error ?? "Xona yaratib bo'lmadi.");
-        room = { ...room, code: d.code, voice: { mode: d.mode, k: d.k, h: d.h } };
-      } catch (e) {
-        setCreateErr(e instanceof Error ? e.message : "Xona yaratib bo'lmadi.");
-        setCreating(false);
-        return;
-      }
-      setCreating(false);
+    setCreating(true);
+    try {
+      // Xona kodi va imzolari serverda hosil bo'ladi (faqat tizimga kirgan ustoz yarata oladi).
+      const r = await fetch("/api/dars/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }) });
+      const d = (await r.json().catch(() => ({}))) as { code?: string; mode?: "s" | "e"; k?: string; h?: string; error?: string };
+      if (!r.ok || !d.code || !d.k || !d.h || !d.mode) throw new Error(d.error ?? "Xona yaratib bo'lmadi.");
+      const room: SavedRoom = { code: d.code, title: cleanTitle(title), at: Date.now(), ...(startsAt && { startsAt }), voice: { mode: d.mode, k: d.k, h: d.h } };
+      const next = addSavedRoom(rooms, room);
+      setRooms(next); write(ROOMS_KEY, JSON.stringify(next)); setCurrent(room); setTitle(""); setWhen("");
+    } catch (e) {
+      setCreateErr(e instanceof Error ? e.message : "Xona yaratib bo'lmadi.");
     }
-    const next = addSavedRoom(rooms, room);
-    setRooms(next); write(ROOMS_KEY, JSON.stringify(next)); setCurrent(room); setTitle(""); setWhen("");
+    setCreating(false);
   }
   function remove(code: string) {
     const next = rooms.filter((r) => r.code !== code);
@@ -98,8 +92,8 @@ export default function Page() {
 
   const linkOf = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, false, r.startsAt, r.voice) : "");
   const startUrl = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, true, r.startsAt, r.voice) : "#");
-  const textOf = (r: SavedRoom) => inviteText({ title: r.title, startsAt: r.startsAt, link: linkOf(r), voice: r.voice?.mode });
-  const kindLabel = (r: SavedRoom) => (r.voice ? (r.voice.mode === "s" ? "Ovozli xona: sinf rejimi" : "Ovozli xona: erkin suhbat") : "Video xona (Jitsi)");
+  const textOf = (r: SavedRoom) => inviteText({ title: r.title, startsAt: r.startsAt, link: linkOf(r), mode: r.voice.mode });
+  const kindLabel = (r: SavedRoom) => (r.voice.mode === "s" ? "Sinf rejimi" : "Erkin suhbat");
 
   return (
     <>
@@ -116,23 +110,9 @@ export default function Page() {
               <li><b className="text-foreground">4.</b> Dars vaqtida «Darsni boshlash» ni bosing. Birinchi bo&apos;lib siz kiring: xonani siz ochasiz.</li>
             </ol>
             <form className="mt-4 space-y-3" onSubmit={(e) => { e.preventDefault(); void create(); }}>
-              <fieldset>
-                <legend className="mb-1.5 text-sm font-semibold">Xona turi</legend>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <label className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", kind === "video" ? "border-primary bg-primary/5" : "border-border")}>
-                    <input type="radio" name="turi" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={kind === "video"} onChange={() => setKind("video")} />
-                    <span><b className="flex items-center gap-1.5"><Video className="h-4 w-4" aria-hidden />Video xona (Jitsi)</b><span className="text-muted-foreground">Kamera va ovoz, dars Jitsi oynasida o&apos;tadi.</span></span>
-                  </label>
-                  <label className={cn("flex items-start gap-2.5 rounded-xl border p-3 text-sm", voiceOn ? "cursor-pointer" : "cursor-not-allowed opacity-60", kind === "voice" ? "border-primary bg-primary/5" : "border-border")}>
-                    <input type="radio" name="turi" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={kind === "voice"} disabled={!voiceOn} onChange={() => setKind("voice")} />
-                    <span><b className="flex items-center gap-1.5"><Mic className="h-4 w-4" aria-hidden />Ovozli xona (saytimiz ichida)</b>
-                      <span className="text-muted-foreground">{voiceOn ? "Ovoz va yozishma shu saytning o'zida, qo'l ko'tarish bilan." : "Hozircha o'chiq: LiveKit kalitlari qo'yilmagan."}</span></span>
-                  </label>
-                </div>
-              </fieldset>
-              {kind === "voice" && (
+              {(
                 <fieldset>
-                  <legend className="mb-1.5 text-sm font-semibold">Rejim</legend>
+                  <legend className="mb-1.5 text-sm font-semibold">Dars rejimi</legend>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {([["s", "Sinf", "O'quvchi qo'l ko'taradi, siz gapirishga ruxsat berasiz."], ["e", "Erkin suhbat", "Hamma gapira oladi (kichik guruh uchun)."]] as const).map(([k, l, d]) => (
                       <label key={k} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", mode === k ? "border-primary bg-primary/5" : "border-border")}>
@@ -150,8 +130,9 @@ export default function Page() {
               <Field label="Dars vaqti (ixtiyoriy)">
                 <Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
               </Field>
-              <Button type="submit" size="lg" loading={creating}><Video className="h-5 w-5" aria-hidden />Xona yaratish</Button>
+              <Button type="submit" size="lg" loading={creating} disabled={!voiceOn}><Video className="h-5 w-5" aria-hidden />Xona yaratish</Button>
               </div>
+              {!voiceOn && <p role="status" className="rounded-xl bg-amber/10 p-3 text-sm text-amber">Dars xonasi hozircha o'chiq: LiveKit kalitlari qo'yilmagan yoki sayt hali yangilanmagan.</p>}
               {createErr && <p role="alert" className="rounded-xl bg-danger/10 p-3 text-sm text-danger">{createErr}</p>}
             </form>
           </Card>
@@ -253,9 +234,8 @@ export default function Page() {
           <Card className="p-5 text-sm">
             <p className="flex items-center gap-2 font-extrabold"><Info className="h-4 w-4 text-primary" aria-hidden />Bilib qo&apos;ying</p>
             <ul className="mt-2 space-y-1.5 text-muted-foreground">
-              <li>• Video, ovoz va yozishma (chat) <b className="text-foreground">Jitsi</b> orqali ishlaydi.</li>
-              <li>• O&apos;quvchilar darsga mikrofonsiz kiradi (xohlasa o&apos;zi yoqadi), shunda shovqin bo&apos;lmaydi.</li>
-              <li>• Jitsi umumiy serverida xonani ochgan kishidan (ustozdan) ba&apos;zan Google yoki boshqa hisob bilan kirish so&apos;raladi. O&apos;quvchilardan so&apos;ralmaydi.</li>
+              <li>• Dars shu saytning o&apos;zida o&apos;tadi: video, ovoz, yozishma va qo&apos;l ko&apos;tarish. O&apos;quvchi boshqa saytga o&apos;tmaydi.</li>
+              <li>• <b className="text-foreground">Sinf rejimida</b> o&apos;quvchi ustozni ko&apos;radi va eshitadi; gapirish uchun qo&apos;l ko&apos;taradi, siz ruxsat berasiz. <b className="text-foreground">Erkin suhbatda</b> hamma gapira oladi (kichik guruh uchun).</li>
               <li>• Havolani faqat o&apos;quvchilarga yuboring: havolasi bor har kim kira oladi.</li>
               <li>• Davomat, o&apos;z chatimiz va yozib olish keyingi bosqichda.</li>
             </ul>

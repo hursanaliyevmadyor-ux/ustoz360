@@ -21,17 +21,18 @@ export default async function Page({ params, searchParams }: Props) {
   const asTeacher = one(sp.u) === "1";
   const startsAt = parseStartsAt(one(sp.s));
 
-  // Ovozli xona (saytimiz ichida): havola imzosi serverda tekshiriladi; ustoz imzosi faqat to'g'ri bo'lsa o'tadi.
+  // Havola imzosi serverda tekshiriladi; ustoz imzosi (h) faqat to'g'ri bo'lsagina o'tadi. Imzosiz (eski Jitsi) havolalar ishlamaydi.
   const r = one(sp.r), k = one(sp.k), h = one(sp.h);
-  let voice: { mode: "s" | "e"; k: string; h?: string } | null = null;
-  let voiceProblem = "";
-  if (r !== undefined) {
+  let room: { mode: "s" | "e"; k: string; h?: string } | null = null;
+  let problem = "";
+  if (r === undefined || !k) problem = "Bu eski havola. Ustozdan yangi dars havolasini so'rang.";
+  else {
     const cfg = voiceConfig();
-    if (!cfg) voiceProblem = "Ovozli xona hozircha ishlamayapti. Ustoz bilan bog'laning.";
+    if (!cfg) problem = "Dars xonasi hozircha ishlamayapti. Ustoz bilan bog'laning.";
     else {
       const role = isVoiceMode(r) ? verifyRoom(cfg.authSecret, { code, mode: r, k, h }) : null;
-      if (!role || !isVoiceMode(r) || !k) voiceProblem = "Havola noto'g'ri yoki eskirgan. Ustozdan yangi havola so'rang.";
-      else voice = { mode: r, k, ...(role === "host" && h && { h }) };
+      if (!role || !isVoiceMode(r)) problem = "Havola noto'g'ri yoki eskirgan. Ustozdan yangi havola so'rang.";
+      else room = { mode: r, k, ...(role === "host" && h && { h }) };
     }
   }
   return (
@@ -40,9 +41,9 @@ export default async function Page({ params, searchParams }: Props) {
         <BrandMark className="h-9 w-9" />
         <span className="text-lg font-black tracking-tight">USTOZ <span className="text-primary">360</span></span>
       </header>
-      {voiceProblem
-        ? <p role="alert" className="mx-auto max-w-xl rounded-2xl bg-danger/10 p-5 text-center font-semibold text-danger">{voiceProblem}</p>
-        : <JoinRoom code={code} title={title} asTeacher={asTeacher && (!voice || !!voice.h)} startsAt={startsAt} voice={voice} />}
+      {room
+        ? <JoinRoom code={code} title={title} asTeacher={asTeacher && !!room.h} startsAt={startsAt} room={room} />
+        : <p role="alert" className="mx-auto max-w-xl rounded-2xl bg-danger/10 p-5 text-center font-semibold text-danger">{problem}</p>}
     </main>
   );
 }
