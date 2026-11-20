@@ -1,3 +1,4 @@
+import { hasVideo, isFree, isVoiceMode, type VoiceMode } from "./voice-mode";
 /**
  * Dars xonasi: umumiy yordamchilar (kod, havola, vaqt, taklif matni). Xona saytimiz ichida LiveKit orqali ishlaydi;
  * xona kodi va imzolari serverda hosil bo'ladi (src/server/voicelogic.ts).
@@ -29,8 +30,8 @@ export const isRoomCode = (s: unknown): s is string =>
 export const cleanTitle = (s: unknown, max = 80) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "");
 export const cleanName = (s: unknown) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, 40) : "");
 
-/** Xona havolasidagi rejim (s = sinf, e = erkin suhbat) va imzolar. `h` faqat ustoz havolasida. */
-export type VoiceLink = { mode: "s" | "e"; k: string; h?: string };
+/** Xona havolasidagi rejim (s, e = video; q, o = ovozli chat; voice-mode.ts) va imzolar. `h` faqat ustoz havolasida. */
+export type VoiceLink = { mode: VoiceMode; k: string; h?: string };
 
 /** Ulashiladigan qisqa havola: /d/<kod>?t=<dars nomi>&s=<boshlanish vaqti>&r=<rejim>&k=<imzo> (ustozda qo'shimcha h). */
 export function joinUrl(origin: string, code: string, title?: string, asTeacher = false, startsAt?: number | null, voice?: VoiceLink | null): string {
@@ -75,17 +76,27 @@ export function lessonCountdown(startsAt: number, now = Date.now()): { state: "f
 }
 
 /** Telegram va boshqa joylarga yuboriladigan tayyor taklif matni. */
-export function inviteText(o: { title?: string; startsAt?: number | null; link: string; mode?: "s" | "e" | null }): string {
+export function inviteText(o: { title?: string; startsAt?: number | null; link: string; mode?: VoiceMode | null }): string {
   const t = cleanTitle(o.title);
+  const audio = !!o.mode && !hasVideo(o.mode);
+  const how = !o.mode
+    ? ""
+    : audio
+      ? isFree(o.mode)
+        ? "Faqat ovoz, kamera kerak emas. Hamma gapira oladi: gapirmasangiz mikrofonni o'chirib turing."
+        : "Faqat ovoz, kamera kerak emas. Gapirmoqchi bo'lsangiz, «Qo'l ko'tarish» tugmasini bosing: ustoz ruxsat bergach mikrofoningiz yoqiladi."
+      : isFree(o.mode)
+        ? "Hamma gapira oladi: gapirmasangiz mikrofonni o'chirib turing."
+        : "Ustozni ko'rasiz va eshitasiz. Gapirmoqchi bo'lsangiz, «Qo'l ko'tarish» tugmasini bosing: ustoz ruxsat bergach mikrofon va kamerangiz yoqiladi.";
   return [
-    `Onlayn dars${t ? `: ${t}` : ""}`,
+    `${audio ? "Ovozli chat" : "Onlayn dars"}${t ? `: ${t}` : ""}`,
     ...(o.startsAt ? [`Boshlanishi: ${lessonTimeLabel(o.startsAt)}`] : []),
     "",
     "Darsga kirish uchun havolani bosing:",
     o.link,
     "",
     "Qanday kiriladi: havolani bosing, ismingizni yozing va «Darsga kirish» ni bosing. Quloqchin taqsangiz yaxshi.",
-    o.mode === "e" ? "Hamma gapira oladi: gapirmasangiz mikrofonni o'chirib turing." : "Ustozni ko'rasiz va eshitasiz. Gapirmoqchi bo'lsangiz, «Qo'l ko'tarish» tugmasini bosing: ustoz ruxsat bergach mikrofon va kamerangiz yoqiladi.",
+    ...(how ? [how] : []),
     "Telegram ichida ochilmasa, havolani Chrome yoki Safari'da oching.",
   ].join("\n");
 }
@@ -136,12 +147,12 @@ export function describeMediaError(e: unknown, what: "kamera" | "mikrofon" | "ka
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Teacher uchun oxirgi xonalar (brauzerda saqlanadi, bazasiz). */
-export type SavedRoom = { code: string; title: string; at: number; startsAt?: number; voice: { mode: "s" | "e"; k: string; h: string } };
+export type SavedRoom = { code: string; title: string; at: number; startsAt?: number; voice: { mode: VoiceMode; k: string; h: string } };
 export const ROOMS_KEY = "u360-dars-rooms";
 export const NAME_KEY = "u360-dars-name";
 
 const validVoice = (v: unknown): v is NonNullable<SavedRoom["voice"]> =>
-  !!v && typeof v === "object" && ((v as { mode?: unknown }).mode === "s" || (v as { mode?: unknown }).mode === "e") && typeof (v as { k?: unknown }).k === "string" && typeof (v as { h?: unknown }).h === "string";
+  !!v && typeof v === "object" && isVoiceMode((v as { mode?: unknown }).mode) && typeof (v as { k?: unknown }).k === "string" && typeof (v as { h?: unknown }).h === "string";
 
 export function parseSavedRooms(raw: string | null): SavedRoom[] {
   if (!raw) return [];

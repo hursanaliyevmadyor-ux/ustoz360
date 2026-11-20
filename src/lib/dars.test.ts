@@ -118,6 +118,16 @@ describe("dars vaqti", () => {
     expect(inviteText({ link: "https://x.uz/d/abc", mode: "s" })).toContain("Qo'l ko'tarish");
     expect(inviteText({ link: "https://x.uz/d/abc", mode: "e" })).toContain("Hamma gapira oladi");
   });
+  it("ovozli chat taklifi: kamera kerak emasligi aytiladi", () => {
+    const q = inviteText({ title: "Suhbat", link: "https://x.uz/d/abc", mode: "q" });
+    expect(q).toContain("Ovozli chat: Suhbat");
+    expect(q).toContain("kamera kerak emas");
+    expect(q).toContain("Qo'l ko'tarish");
+    expect(q).not.toContain("kamerangiz");
+    const o = inviteText({ link: "https://x.uz/d/abc", mode: "o" });
+    expect(o).toContain("Hamma gapira oladi");
+    expect(o).toContain("kamera kerak emas");
+  });
   it("datetime-local qiymati ikki tomonga aylanadi", () => {
     const ts = at(15, 30, 22);
     expect(toLocalInput(ts)).toBe("2026-11-22T15:30");

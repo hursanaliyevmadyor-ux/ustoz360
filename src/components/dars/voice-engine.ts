@@ -1,4 +1,5 @@
 import { ConnectionState, Room, RoomEvent, Track, VideoPresets, type Participant } from "livekit-client";
+import type { VoiceMode } from "@/lib/voice-mode";
 import { decodeMsg, encodeMsg, roleOf, type VoiceMsg, type VoiceTopic } from "@/lib/voice-msg";
 
 /**
@@ -40,7 +41,7 @@ const ERRORS: Record<string, string> = {
   bad_link: "Havola noto'g'ri yoki eskirgan. Ustozdan yangi havola so'rang.",
 };
 
-export function createLiveKitEngine(o: { code: string; mode: "s" | "e"; k: string; h?: string; name: string; prefs?: VPrefs }): VEngine {
+export function createLiveKitEngine(o: { code: string; mode: VoiceMode; k: string; h?: string; name: string; prefs?: VPrefs }): VEngine {
   let room: Room | null = null;
   let holder: HTMLDivElement | null = null;
   const subs = new Set<(e: VEvent) => void>();

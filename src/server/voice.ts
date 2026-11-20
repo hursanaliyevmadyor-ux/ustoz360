@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
 import { ApiError } from "./auth";
-import { grantFor, guestName, livekitRoomName, verifyRoom, type VoiceMode, type VoiceRole } from "./voicelogic";
+import { isFree } from "../lib/voice-mode";
+import { grantFor, guestName, livekitRoomName, speakSources, verifyRoom, type VoiceMode, type VoiceRole } from "./voicelogic";
 
 /**
  * Ovozli dars xonasi (LiveKit). Kalitlar faqat serverda (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET), brauzerga faqat qisqa muddatli kirish belgisi (token) beriladi.
@@ -42,7 +43,7 @@ export async function issueToken(o: { code: string; mode: VoiceMode; k: string; 
   const identity = `${role === "host" ? "t" : "o"}-${randomBytes(6).toString("base64url")}`;
   const at = new AccessToken(c.key, c.secret, { identity, name: role === "host" ? (o.name?.trim() || "Ustoz").slice(0, 40) : guestName(o.name), ttl: "4h", metadata: JSON.stringify({ r: role }) });
   at.addGrant(grantFor(role, o.mode, room, SRC));
-  const canSpeak = role === "host" || o.mode === "e";
+  const canSpeak = role === "host" || isFree(o.mode);
   return { token: await at.toJwt(), url: wsUrl(c.url), identity, role, canSpeak };
 }
 
@@ -54,7 +55,7 @@ export async function setSpeaking(o: { code: string; mode: VoiceMode; k: string;
   if (authorize(c, o) !== "host") throw new ApiError(403, "Bu amal faqat ustoz uchun.", "not_host");
   const rc = roomClient(c), room = livekitRoomName(o.code);
   const permission = o.allow
-    ? { canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: [SRC.mic, SRC.camera] }
+    ? { canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: speakSources(o.mode, SRC) }
     : { canPublish: false, canSubscribe: true, canPublishData: true, canPublishSources: [] as TrackSource[] };
   await rc.updateParticipant(room, o.identity, { permission });
   return { ok: true as const };

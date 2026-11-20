@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import { NAME_KEY, cleanName, connectionQuality, describeMediaError, isTelegramBrowser, lessonCountdown, lessonTimeLabel } from "@/lib/dars";
+import { hasVideo, isFree, type VoiceMode } from "@/lib/voice-mode";
 import type { VEngine } from "./voice-engine";
 
 // Dars xonasi (LiveKit) faqat kerak bo'lganda yuklanadi: kirish sahifasi yengil qoladi.
@@ -38,14 +39,16 @@ async function measureRtt(): Promise<number | null> {
   } catch { return null; }
 }
 
-/** Xona haqida: rejim (s = sinf, e = erkin suhbat) va imzolar. `h` faqat ustoz havolasida bo'ladi. */
-export type RoomInfo = { mode: "s" | "e"; k: string; h?: string };
+/** Xona haqida: rejim (voice-mode.ts) va imzolar. `h` faqat ustoz havolasida bo'ladi. */
+export type RoomInfo = { mode: VoiceMode; k: string; h?: string };
 
 /** Ochiq (kirishsiz) kirish sahifasi: 1) kamera va mikrofon ruxsati, 2) ism, 3) darsga kirish. */
 export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: string; title: string; asTeacher: boolean; startsAt: number | null; room: RoomInfo }) {
   const isHost = !!room.h;
-  // O'quvchi sinf rejimida faqat tomosha qiladi: kamera va mikrofon tekshiruvi ixtiyoriy. Ustoz va erkin suhbatda esa kerak.
-  const needsDevices = isHost || room.mode === "e";
+  // Ovozli chatda (q, o) kamera yo'q: faqat mikrofon tekshiriladi.
+  const video = hasVideo(room.mode);
+  // O'quvchi ruxsat bilan rejimda faqat tinglaydi: tekshiruv ixtiyoriy. Ustoz va erkin rejimlarda esa kerak.
+  const needsDevices = isHost || isFree(room.mode);
   const [state, setState] = React.useState<"idle" | "busy" | "done">("idle");
   const [cam, setCam] = React.useState<boolean | null>(null);
   const [mic, setMic] = React.useState<boolean | null>(null);
@@ -138,9 +141,13 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
     const vc: MediaTrackConstraints | boolean = pick?.cam ? { deviceId: { exact: pick.cam } } : true;
     const ac: MediaTrackConstraints | boolean = pick?.mic ? { deviceId: { exact: pick.mic } } : true;
     // Avval ikkalasini birga so'raymiz (brauzer bitta oyna ko'rsatadi); bo'lmasa har birini alohida tekshiramiz.
-    const both = await probe({ video: vc, audio: ac });
-    let stream = both.stream;
-    if (stream) { setCam(true); setMic(true); }
+    let stream: MediaStream | null;
+    if (!video) {
+      const a = await probe({ audio: ac });
+      stream = a.stream;
+      setCam(false); setMic(!!stream);
+      setMicErr(stream ? "" : describeMediaError(a.error, "mikrofon"));
+    } else if ((stream = (await probe({ video: vc, audio: ac })).stream)) { setCam(true); setMic(true); }
     else {
       const a = await probe({ audio: ac });
       const v = await probe({ video: vc });
@@ -177,7 +184,7 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
     const { createLiveKitEngine } = await import("./voice-engine");
     setEngine(createLiveKitEngine({
       code, mode: room.mode, k: room.k, h: room.h, name: n,
-      prefs: { audio: !(audioOff || mic === false), video: !(videoOff || cam === false), camId: camId || undefined, micId: micId || undefined },
+      prefs: { audio: !(audioOff || mic === false), video: video && !(videoOff || cam === false), camId: camId || undefined, micId: micId || undefined },
     }));
   }
 
@@ -193,7 +200,7 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
     <div className="mx-auto w-full max-w-xl space-y-4">
       <div className="rounded-2xl bg-primary p-5 text-white">
         <p className="text-xs font-bold uppercase tracking-wider text-white/70">Dars xonasi</p>
-        <h1 className="mt-1 text-2xl font-extrabold leading-tight">{title || "Onlayn dars"}</h1>
+        <h1 className="mt-1 text-2xl font-extrabold leading-tight">{title || (video ? "Onlayn dars" : "Ovozli chat")}</h1>
         {startsAt && cd && (
           <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold" aria-live="polite">
             <CalendarClock className="h-4 w-4" aria-hidden />{lessonTimeLabel(startsAt)}
@@ -202,7 +209,9 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
         )}
         <p className="mt-2 text-sm text-white/80">
           {isHost || asTeacher ? "Siz o'qituvchi sifatida kiryapsiz." : "Siz o'quvchi sifatida kiryapsiz. Hisob ochish yoki parol kerak emas."}
-          {!isHost && (room.mode === "s" ? " Ustozni ko'rasiz va eshitasiz; gapirish uchun «Qo'l ko'tarish» tugmasini bosasiz." : " Hamma gapira oladi.")}
+          {!isHost && (isFree(room.mode)
+            ? (video ? " Hamma gapira oladi." : " Faqat ovoz, kamera kerak emas. Hamma gapira oladi.")
+            : video ? " Ustozni ko'rasiz va eshitasiz; gapirish uchun «Qo'l ko'tarish» tugmasini bosasiz." : " Faqat ovoz, kamera kerak emas. Gapirish uchun «Qo'l ko'tarish» tugmasini bosasiz.")}
         </p>
       </div>
 
@@ -213,11 +222,11 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
         </div>
       )}
 
-      <Step n={1} title={needsDevices ? "Kamera va mikrofonni tekshiring" : "Kamera va mikrofonni tekshiring (ixtiyoriy)"} done={state === "done" && ok}>
+      <Step n={1} title={`${video ? "Kamera va mikrofonni" : "Mikrofonni"} tekshiring${needsDevices ? "" : " (ixtiyoriy)"}`} done={state === "done" && ok}>
         <p className="text-sm text-muted-foreground">
           {needsDevices
             ? <>Tugmani bosganingizda brauzer ruxsat so&apos;raydi. Oynada <b>«Ruxsat berish»</b> (yoki <b>Allow</b>) tugmasini bosing. Hech narsa yozib olinmaydi, bu faqat tekshiruv.</>
-            : <>Faqat tomosha qilsangiz, bu qadamni o&apos;tkazib yuborishingiz mumkin. Ustoz gapirishga ruxsat bersa, mikrofon va kamera kerak bo&apos;ladi: tugmani bosing va brauzer so&apos;raganda <b>«Ruxsat berish»</b> (<b>Allow</b>) ni tanlang. Quloqchin taqsangiz yaxshi.</>}
+            : <>Faqat {video ? "tomosha qilsangiz" : "tinglasangiz"}, bu qadamni o&apos;tkazib yuborishingiz mumkin. Ustoz gapirishga ruxsat bersa, {video ? "mikrofon va kamera" : "mikrofon"} kerak bo&apos;ladi: tugmani bosing va brauzer so&apos;raganda <b>«Ruxsat berish»</b> (<b>Allow</b>) ni tanlang. Quloqchin taqsangiz yaxshi.</>}
         </p>
         {net && (
           <p className={cn("mt-2 flex items-center gap-2 text-sm font-semibold", net.level === "good" ? "text-success" : net.level === "ok" ? "text-amber" : "text-danger")} aria-live="polite">
@@ -226,13 +235,13 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
         )}
         {state !== "done" && (
           <Button size="lg" className="mt-3 w-full" onClick={() => void check()} disabled={state === "busy"} loading={state === "busy"}>
-            <Camera className="h-5 w-5" aria-hidden />Kamera va mikrofonga ruxsat berish
+            {video ? <Camera className="h-5 w-5" aria-hidden /> : <Mic className="h-5 w-5" aria-hidden />}{video ? "Kamera va mikrofonga ruxsat berish" : "Mikrofonga ruxsat berish"}
           </Button>
         )}
         {state === "done" && (
           <div className="mt-3 space-y-3" aria-live="polite">
-            <div className="grid grid-cols-2 gap-2">
-              <Status ok={cam} on={<Video className="h-4 w-4" aria-hidden />} off={<VideoOff className="h-4 w-4" aria-hidden />} label="Kamera" okText="ishlayapti" noText="ishlamayapti" />
+            <div className={cn("grid gap-2", video ? "grid-cols-2" : "grid-cols-1")}>
+              {video && <Status ok={cam} on={<Video className="h-4 w-4" aria-hidden />} off={<VideoOff className="h-4 w-4" aria-hidden />} label="Kamera" okText="ishlayapti" noText="ishlamayapti" />}
               <Status ok={mic} on={<Mic className="h-4 w-4" aria-hidden />} off={<MicOff className="h-4 w-4" aria-hidden />} label="Mikrofon" okText="ishlayapti" noText="ishlamayapti" />
             </div>
             {cam && (
@@ -248,9 +257,9 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
                 <p className="mt-1 text-xs text-muted-foreground">Biror narsa deng: yashil chiziq harakatlansa, ovozingiz eshitiladi.</p>
               </div>
             )}
-            {(cams.length > 1 || mics.length > 1) && (
+            {((video && cams.length > 1) || mics.length > 1) && (
               <div className="grid gap-2 sm:grid-cols-2">
-                {cams.length > 1 && cam && (
+                {video && cams.length > 1 && cam && (
                   <label className="block text-sm font-semibold">Kamera
                     <Select className="mt-1" value={camId} onChange={(e) => { setCamId(e.target.value); void check({ cam: e.target.value, mic: micId || undefined }); }}>
                       {cams.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
@@ -268,7 +277,7 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
             )}
             {camErr && <Problem text={camErr} />}
             {micErr && <Problem text={micErr} />}
-            {!(cam && mic) && (
+            {!(mic && (cam || !video)) && (
               <Button variant="outline" className="w-full" onClick={() => void check()}>Qayta tekshirish</Button>
             )}
           </div>
@@ -287,14 +296,14 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
               <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[hsl(var(--primary))]" checked={audioOff || mic === false} disabled={mic === false} onChange={(e) => setAudioOff(e.target.checked)} />
               <span><b>Mikrofon o&apos;chiq holda kirish</b>{!isHost && <span className="text-muted-foreground"> (tavsiya etiladi: ovoz aralashmasligi uchun; kerak bo&apos;lsa, darsda o&apos;zingiz yoqasiz)</span>}</span>
             </label>
-            <label className="flex cursor-pointer items-start gap-2.5">
+            {video && <label className="flex cursor-pointer items-start gap-2.5">
               <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[hsl(var(--primary))]" checked={videoOff || cam === false} disabled={cam === false} onChange={(e) => setVideoOff(e.target.checked)} />
               <span><b>Kamera o&apos;chiq holda kirish</b><span className="text-muted-foreground"> (internet zaif bo&apos;lsa foydali)</span></span>
-            </label>
+            </label>}
           </div>
         )}
         <Button size="lg" className="w-full" disabled={!canEnter || going} loading={going} onClick={() => void enter()}>
-          <Video className="h-5 w-5" aria-hidden />Darsga kirish
+          {video ? <Video className="h-5 w-5" aria-hidden /> : <Mic className="h-5 w-5" aria-hidden />}{video ? "Darsga kirish" : "Ovozli chatga kirish"}
         </Button>
         {!canEnter && (
           <p className="mt-2 text-sm text-muted-foreground" aria-live="polite">
@@ -307,7 +316,7 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
           </button>
         )}
         <ul className="mt-4 space-y-1.5 text-sm text-muted-foreground">
-          <li>• Dars shu sahifaning o&apos;zida o&apos;tadi: ustoz videosi, ishtirokchilar, yozishma va tugmalar. Boshqa saytga o&apos;tmaysiz.</li>
+          <li>• {video ? "Dars shu sahifaning o'zida o'tadi: ustoz videosi, ishtirokchilar, yozishma va tugmalar. Boshqa saytga o'tmaysiz." : "Suhbat shu sahifaning o'zida o'tadi: ishtirokchilar, mikrofon, yozishma va tugmalar. Boshqa saytga o'tmaysiz."}</li>
           <li>• Darsda ko&apos;rinishingiz uchun «Ismingiz» yozilgan bo&apos;ladi. Aloqa uzilsa, shu havolani qayta oching.</li>
         </ul>
       </Step>
