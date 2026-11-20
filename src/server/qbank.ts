@@ -5,7 +5,7 @@ import type { BankQuestionInput } from "./adminvalid";
 
 /** Admin uchun savollar banki: mashqda faqat APPROVED savollar ko'rinadi. AI yaratgan savollar DRAFT bo'lib keladi va faqat admin tasdiqlaydi. */
 
-export type BankFilter = { status?: string; topicId?: string; source?: string; q?: string };
+export type BankFilter = { status?: string; topicId?: string; source?: string; q?: string; verified?: string };
 
 export async function listBank(f: BankFilter) {
   // Shaxsiy testlar (aqlli import) savollari umumiy bankda ko'rinmaydi: ular faqat egasiga tegishli (collectionId bor).
@@ -14,17 +14,24 @@ export async function listBank(f: BankFilter) {
   if (f.topicId) where.topicId = f.topicId;
   if (f.source) where.source = f.source;
   if (f.q) where.text = { contains: f.q, mode: "insensitive" };
-  const [rows, counts, reports] = await Promise.all([
+  // «Tekshirilgan» belgisi (qo'lda tekshiruv): 1 = tekshirilgan, 0 = tekshirilmagan.
+  if (f.verified === "1") where.answerStatus = "VERIFIED";
+  if (f.verified === "0") where.OR = [{ answerStatus: null }, { answerStatus: { not: "VERIFIED" } }];
+  const inReview: Prisma.QuestionWhereInput = { collectionId: null, isDemo: false, status: { in: ["DRAFT", "REVIEW", "APPROVED"] } };
+  const [rows, counts, reports, reviewTotal, reviewVerified] = await Promise.all([
     db.question.findMany({ where, orderBy: { createdAt: "desc" }, take: 200, include: { topic: { select: { name: true, subject: { select: { name: true } } } }, _count: { select: { options: true } } } }),
     db.question.groupBy({ by: ["status"], where: { collectionId: null }, _count: { _all: true } }),
     db.questionReport.groupBy({ by: ["questionId"], _count: { _all: true } }),
+    db.question.count({ where: inReview }),
+    db.question.count({ where: { ...inReview, answerStatus: "VERIFIED" } }),
   ]);
   const rep = new Map(reports.map((r) => [r.questionId, r._count._all]));
   return {
     counts: Object.fromEntries(counts.map((c) => [c.status, c._count._all])) as Record<string, number>,
+    review: { total: reviewTotal, verified: reviewVerified, remaining: Math.max(0, reviewTotal - reviewVerified) },
     items: rows.map((q) => ({
       id: q.id, text: q.text, topicId: q.topicId, topic: q.topic.name, subject: q.topic.subject.name, difficulty: q.difficulty, status: q.status,
-      source: q.source, sample: q.isDemo, kind: q.kind, skill: q.skill, options: q._count.options, reports: rep.get(q.id) ?? 0, createdAt: q.createdAt,
+      source: q.source, sample: q.isDemo, kind: q.kind, skill: q.skill, options: q._count.options, reports: rep.get(q.id) ?? 0, verified: q.answerStatus === "VERIFIED", createdAt: q.createdAt,
     })),
   };
 }
@@ -64,7 +71,9 @@ export async function updateBankQuestion(id: string, i: BankQuestionInput) {
   await db.$transaction(async (tx) => {
     await tx.question.update({
       where: { id },
-      data: { topicId: i.topicId, text: i.text, explanation: i.explanation, superKey: i.superKey ?? null, difficulty: i.difficulty, status: i.status, sourceRef: i.sourceRef ?? null, skill: i.skill ?? null, kind: i.kind },
+      data: { topicId: i.topicId, text: i.text, explanation: i.explanation, superKey: i.superKey ?? null, difficulty: i.difficulty, status: i.status, sourceRef: i.sourceRef ?? null, skill: i.skill ?? null, kind: i.kind,
+        // Tahrirlangan savol qayta tekshirilishi kerak: «Tekshirilgan» belgisi olib tashlanadi.
+        answerStatus: null },
     });
     for (let k = 0; k < i.options.length; k++) {
       const o = cur.options[k];

@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
-import { Flag, Pencil, Plus, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { ClipboardCheck, Flag, Pencil, Plus, Trash2, X } from "lucide-react";
 import { adminModule } from "@/lib/modules";
 import { api } from "@/lib/admin-client";
 import { cn } from "@/lib/utils";
@@ -14,8 +15,8 @@ import { EmptyState } from "@/components/ui/states";
 import { Table, Td, Th } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 
-type Row = { id: string; text: string; topicId: string; topic: string; subject: string; difficulty: string; status: string; source: string; sample: boolean; kind: string; skill: string | null; options: number; reports: number };
-type List = { counts: Record<string, number>; items: Row[] };
+type Row = { id: string; text: string; topicId: string; topic: string; subject: string; difficulty: string; status: string; source: string; sample: boolean; kind: string; skill: string | null; options: number; reports: number; verified: boolean };
+type List = { counts: Record<string, number>; review: { total: number; verified: number; remaining: number }; items: Row[] };
 type Subject = { id: string; name: string; topics: { id: string; name: string }[] };
 type Draft = { id?: string; topicId: string; text: string; options: string[]; correct: number; explanation: string; superKey: string; difficulty: string; status: string; sourceRef: string; kind: string; skill: string; reports?: { id: string; reason: string }[]; source?: string };
 
@@ -34,15 +35,16 @@ export default function Page() {
   const [source, setSource] = React.useState("");
   const [topicId, setTopicId] = React.useState("");
   const [q, setQ] = React.useState("");
+  const [verified, setVerified] = React.useState("");
   const [draft, setDraft] = React.useState<Draft | null>(null);
   const [formErr, setFormErr] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
   const load = React.useCallback(async () => {
-    const qs = new URLSearchParams(Object.entries({ status, source, topicId, q }).filter(([, v]) => v));
+    const qs = new URLSearchParams(Object.entries({ status, source, topicId, q, verified }).filter(([, v]) => v));
     const r = await api<List>(`/api/admin/qbank?${qs}`);
     if (r.ok) { setList(r.data); setErr(""); } else setErr(r.error);
-  }, [status, source, topicId, q]);
+  }, [status, source, topicId, q, verified]);
   React.useEffect(() => { const t = setTimeout(() => void load(), q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
   React.useEffect(() => { void api<{ subjects: Subject[] }>("/api/admin/subjects").then((r) => { if (r.ok) setSubjects(r.data.subjects); }); }, []);
 
@@ -84,13 +86,24 @@ export default function Page() {
       {err && <p role="alert" className="mb-4 rounded-xl bg-danger/10 p-3 text-sm text-danger">{err}</p>}
       <p className="mb-4 rounded-xl bg-primary/5 p-3 text-sm text-muted-foreground">AI yaratgan savollar «Qoralama» holatida keladi va hech qachon o'z-o'zidan tasdiqlanmaydi. Tekshirib, ma'qul bo'lsa «Tasdiqlangan» qiling. Namunaviy savollar ekspert tekshirmagan.</p>
 
+      {list && (
+        <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 border-primary/30 p-4">
+          <div className="min-w-0">
+            <p className="font-extrabold">Savollarni bitalab tekshirish</p>
+            <p className="text-sm text-muted-foreground"><b className="text-foreground">{list.review.verified}</b> / {list.review.total} savol tekshirilgan, <b className="text-foreground">{list.review.remaining}</b> tasi qoldi. Har birini o'qib, tasdiqlaysiz, tuzatasiz yoki rad etasiz.</p>
+          </div>
+          <Button asChild disabled={list.review.remaining === 0}><Link href="/admin/savollar/tekshiruv"><ClipboardCheck className="h-4 w-4" aria-hidden />{list.review.remaining === 0 ? "Hammasi tekshirilgan" : "Tekshirishni boshlash"}</Link></Button>
+        </Card>
+      )}
+
       <div className="mb-3 flex flex-wrap gap-2" role="tablist" aria-label="Holat bo'yicha">
         {[["", `Hammasi`, total], ...Object.entries(STATUS).map(([k, v]) => [k, v, list?.counts[k] ?? 0] as const)].map(([k, label, n]) => (
           <button key={String(k)} type="button" role="tab" aria-selected={status === k} onClick={() => setStatus(String(k))}
             className={cn("h-10 rounded-full border px-4 text-sm font-semibold transition-colors", status === k ? "border-primary bg-primary text-white" : "border-border bg-card hover:bg-muted")}>{label} <span className="opacity-70">{n}</span></button>
         ))}
       </div>
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Select value={verified} onChange={(e) => setVerified(e.target.value)} aria-label="Tekshiruv"><option value="">Tekshiruv: hammasi</option><option value="0">Tekshirilmagan</option><option value="1">Tekshirilgan</option></Select>
         <Select value={source} onChange={(e) => setSource(e.target.value)} aria-label="Manba"><option value="">Barcha manbalar</option>{Object.entries(SOURCE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select>
         <Select value={topicId} onChange={(e) => setTopicId(e.target.value)} aria-label="Mavzu"><option value="">Barcha mavzular</option>{subjects.map((s) => <optgroup key={s.id} label={s.name}>{s.topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>)}</Select>
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Savol matnidan qidirish..." aria-label="Qidirish" maxLength={100} />
@@ -101,7 +114,7 @@ export default function Page() {
           <Table className="min-w-[860px]"><thead><tr><Th>Savol</Th><Th>Mavzu</Th><Th>Qiyinlik</Th><Th>Manba</Th><Th>Holat</Th><Th><span className="sr-only">Amallar</span></Th></tr></thead><tbody>
             {list.items.map((r) => (
               <tr key={r.id}>
-                <Td className="max-w-[320px]"><p className="line-clamp-2 font-semibold">{r.text}</p>{r.kind === "SITUATIONAL" && <Badge variant="blue" className="mr-1 mt-1">Vaziyatli</Badge>}{r.skill && <span className="mt-1 mr-1 inline-block text-xs text-muted-foreground">{r.skill}</span>}{r.reports > 0 && <Badge variant="danger" className="mt-1"><Flag className="h-3 w-3" aria-hidden />{r.reports} ta xato xabari</Badge>}</Td>
+                <Td className="max-w-[320px]"><p className="line-clamp-2 font-semibold">{r.text}</p>{r.kind === "SITUATIONAL" && <Badge variant="blue" className="mr-1 mt-1">Vaziyatli</Badge>}{r.skill && <span className="mt-1 mr-1 inline-block text-xs text-muted-foreground">{r.skill}</span>}{r.verified ? <Badge variant="success" className="mr-1 mt-1">Tekshirilgan</Badge> : !r.sample && <Badge variant="neutral" className="mr-1 mt-1">Tekshirilmagan</Badge>}{r.reports > 0 && <Badge variant="danger" className="mt-1"><Flag className="h-3 w-3" aria-hidden />{r.reports} ta xato xabari</Badge>}</Td>
                 <Td><p>{r.topic}</p><p className="text-xs text-muted-foreground">{r.subject}</p></Td>
                 <Td>{DIFF[r.difficulty]}</Td>
                 <Td><Badge variant={r.source === "AI" ? "blue" : "neutral"}>{SOURCE[r.source] ?? r.source}</Badge></Td>
