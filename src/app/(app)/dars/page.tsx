@@ -1,11 +1,12 @@
 "use client";
 import * as React from "react";
-import { CalendarClock, CheckCircle2, Copy, ExternalLink, Eye, Info, Link2, Play, Send, Share2, Trash2, Video } from "lucide-react";
+import { CalendarClock, CheckCircle2, Copy, ExternalLink, Eye, Info, Link2, Mic, Play, Send, Share2, Trash2, Video } from "lucide-react";
 import { PageHeader } from "@/components/layout/page";
 import { QrCode } from "@/components/dars/qr-code";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/form";
+import { cn } from "@/lib/utils";
 import {
   ROOMS_KEY, addSavedRoom, cleanTitle, fromLocalInput, inviteText, joinUrl, lessonCountdown, lessonTimeLabel, newRoomCode, parseSavedRooms, telegramShareUrl, type SavedRoom,
 } from "@/lib/dars";
@@ -44,10 +45,16 @@ export default function Page() {
   const [ticks, setTicks] = React.useState<boolean[]>(() => CHECK.map(() => false));
   const [canShare, setCanShare] = React.useState(false);
   const [now, setNow] = React.useState(() => Date.now());
+  const [voiceOn, setVoiceOn] = React.useState(false);
+  const [kind, setKind] = React.useState<"video" | "voice">("video");
+  const [mode, setMode] = React.useState<"s" | "e">("s");
+  const [creating, setCreating] = React.useState(false);
+  const [createErr, setCreateErr] = React.useState("");
 
   React.useEffect(() => {
     setOrigin(window.location.origin); setRooms(parseSavedRooms(read(ROOMS_KEY)));
     setCanShare(typeof navigator.share === "function");
+    void fetch("/api/dars/status").then((r) => r.json()).then((d: { voice?: boolean }) => { setVoiceOn(!!d.voice); }).catch(() => {});
     try { const v: unknown = JSON.parse(read(CHECK_KEY) ?? "[]"); if (Array.isArray(v)) setTicks(CHECK.map((_, i) => v[i] === true)); } catch { /* buzilgan ma'lumot */ }
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
@@ -55,8 +62,24 @@ export default function Page() {
 
   const startsAt = fromLocalInput(when);
 
-  function create() {
-    const room: SavedRoom = { code: newRoomCode(), title: cleanTitle(title), at: Date.now(), ...(startsAt && { startsAt }) };
+  async function create() {
+    setCreateErr("");
+    let room: SavedRoom = { code: newRoomCode(), title: cleanTitle(title), at: Date.now(), ...(startsAt && { startsAt }) };
+    if (kind === "voice") {
+      // Ovozli xona kodi va imzolari serverda hosil bo'ladi (faqat tizimga kirgan ustoz yarata oladi).
+      setCreating(true);
+      try {
+        const r = await fetch("/api/dars/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }) });
+        const d = (await r.json().catch(() => ({}))) as { code?: string; mode?: "s" | "e"; k?: string; h?: string; error?: string };
+        if (!r.ok || !d.code || !d.k || !d.h || !d.mode) throw new Error(d.error ?? "Xona yaratib bo'lmadi.");
+        room = { ...room, code: d.code, voice: { mode: d.mode, k: d.k, h: d.h } };
+      } catch (e) {
+        setCreateErr(e instanceof Error ? e.message : "Xona yaratib bo'lmadi.");
+        setCreating(false);
+        return;
+      }
+      setCreating(false);
+    }
     const next = addSavedRoom(rooms, room);
     setRooms(next); write(ROOMS_KEY, JSON.stringify(next)); setCurrent(room); setTitle(""); setWhen("");
   }
@@ -73,9 +96,10 @@ export default function Page() {
     setCopied(key); setTimeout(() => setCopied((c) => (c === key ? "" : c)), 2500);
   }
 
-  const linkOf = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, false, r.startsAt) : "");
-  const startUrl = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, true, r.startsAt) : "#");
-  const textOf = (r: SavedRoom) => inviteText({ title: r.title, startsAt: r.startsAt, link: linkOf(r) });
+  const linkOf = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, false, r.startsAt, r.voice) : "");
+  const startUrl = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, true, r.startsAt, r.voice) : "#");
+  const textOf = (r: SavedRoom) => inviteText({ title: r.title, startsAt: r.startsAt, link: linkOf(r), voice: r.voice?.mode });
+  const kindLabel = (r: SavedRoom) => (r.voice ? (r.voice.mode === "s" ? "Ovozli xona: sinf rejimi" : "Ovozli xona: erkin suhbat") : "Video xona (Jitsi)");
 
   return (
     <>
@@ -91,20 +115,51 @@ export default function Page() {
               <li><b className="text-foreground">3.</b> Taklif matnini Telegramda o&apos;quvchilarga yuboring.</li>
               <li><b className="text-foreground">4.</b> Dars vaqtida «Darsni boshlash» ni bosing. Birinchi bo&apos;lib siz kiring: xonani siz ochasiz.</li>
             </ol>
-            <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_13rem_auto] sm:items-end" onSubmit={(e) => { e.preventDefault(); create(); }}>
+            <form className="mt-4 space-y-3" onSubmit={(e) => { e.preventDefault(); void create(); }}>
+              <fieldset>
+                <legend className="mb-1.5 text-sm font-semibold">Xona turi</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", kind === "video" ? "border-primary bg-primary/5" : "border-border")}>
+                    <input type="radio" name="turi" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={kind === "video"} onChange={() => setKind("video")} />
+                    <span><b className="flex items-center gap-1.5"><Video className="h-4 w-4" aria-hidden />Video xona (Jitsi)</b><span className="text-muted-foreground">Kamera va ovoz, dars Jitsi oynasida o&apos;tadi.</span></span>
+                  </label>
+                  <label className={cn("flex items-start gap-2.5 rounded-xl border p-3 text-sm", voiceOn ? "cursor-pointer" : "cursor-not-allowed opacity-60", kind === "voice" ? "border-primary bg-primary/5" : "border-border")}>
+                    <input type="radio" name="turi" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={kind === "voice"} disabled={!voiceOn} onChange={() => setKind("voice")} />
+                    <span><b className="flex items-center gap-1.5"><Mic className="h-4 w-4" aria-hidden />Ovozli xona (saytimiz ichida)</b>
+                      <span className="text-muted-foreground">{voiceOn ? "Ovoz va yozishma shu saytning o'zida, qo'l ko'tarish bilan." : "Hozircha o'chiq: LiveKit kalitlari qo'yilmagan."}</span></span>
+                  </label>
+                </div>
+              </fieldset>
+              {kind === "voice" && (
+                <fieldset>
+                  <legend className="mb-1.5 text-sm font-semibold">Rejim</legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {([["s", "Sinf", "O'quvchi qo'l ko'taradi, siz gapirishga ruxsat berasiz."], ["e", "Erkin suhbat", "Hamma gapira oladi (kichik guruh uchun)."]] as const).map(([k, l, d]) => (
+                      <label key={k} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", mode === k ? "border-primary bg-primary/5" : "border-border")}>
+                        <input type="radio" name="rejim" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={mode === k} onChange={() => setMode(k)} />
+                        <span><b>{l}</b><br /><span className="text-muted-foreground">{d}</span></span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              <div className="grid gap-3 sm:grid-cols-[1fr_13rem_auto] sm:items-end">
               <Field label="Dars nomi (ixtiyoriy)">
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} placeholder="Masalan: 5-sinf matematika, kasr sonlar" />
               </Field>
               <Field label="Dars vaqti (ixtiyoriy)">
                 <Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
               </Field>
-              <Button type="submit" size="lg"><Video className="h-5 w-5" aria-hidden />Xona yaratish</Button>
+              <Button type="submit" size="lg" loading={creating}><Video className="h-5 w-5" aria-hidden />Xona yaratish</Button>
+              </div>
+              {createErr && <p role="alert" className="rounded-xl bg-danger/10 p-3 text-sm text-danger">{createErr}</p>}
             </form>
           </Card>
 
           {current && (
             <Card className="border-success/40 p-5" aria-live="polite">
               <p className="flex items-center gap-2 font-extrabold text-success"><CheckCircle2 className="h-5 w-5" aria-hidden />Xona tayyor{current.title ? `: ${current.title}` : ""}</p>
+              <p className="mt-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">{kindLabel(current)}</p>
               {current.startsAt && (
                 <p className="mt-1 flex items-center gap-2 text-sm font-semibold"><CalendarClock className="h-4 w-4" aria-hidden />{lessonTimeLabel(current.startsAt)}
                   <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs">{lessonCountdown(current.startsAt, now).text}</span></p>
@@ -154,7 +209,7 @@ export default function Page() {
                     <div className="min-w-0">
                       <p className="truncate font-bold">{r.title || "Nomsiz dars"}</p>
                       <p className="text-xs text-muted-foreground">
-                        {r.startsAt ? <>Dars: {lessonTimeLabel(r.startsAt)} · </> : null}yaratilgan: {fmt(r.at)}
+                        {kindLabel(r)} · {r.startsAt ? <>dars: {lessonTimeLabel(r.startsAt)} · </> : null}yaratilgan: {fmt(r.at)}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
