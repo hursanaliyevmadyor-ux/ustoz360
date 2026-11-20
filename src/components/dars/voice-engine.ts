@@ -12,6 +12,7 @@ export type VSource = "camera" | "screen";
 export type VEvent =
   | { type: "roster"; people: VPerson[] }
   | { type: "data"; topic: VoiceTopic; from: { identity: string; name: string; host: boolean }; msg: VoiceMsg }
+  | { type: "clip"; from: { identity: string; name: string; host: boolean }; chunk: Uint8Array }
   | { type: "state"; state: VState; reason?: string }
   | { type: "audio"; blocked: boolean };
 export type VSession = { identity: string; host: boolean; canSpeak: boolean };
@@ -26,6 +27,8 @@ export type VEngine = {
   /** Ishtirokchining videosini <video> elementiga ulaydi; qaytgan funksiya ajratadi. */
   attachVideo(identity: string, el: HTMLVideoElement, source: VSource): () => void;
   send(topic: VoiceTopic, msg: VoiceMsg): Promise<void>;
+  /** Ovozli xabarning bitta paketi (voice-clip.ts). Paketlar ketma-ket yuboriladi. */
+  sendClip(chunk: Uint8Array): Promise<void>;
   startAudio(): Promise<void>;
   on(fn: (e: VEvent) => void): () => void;
 };
@@ -97,6 +100,10 @@ export function createLiveKitEngine(o: { code: string; mode: "s" | "e"; k: strin
         })
         .on(RoomEvent.Disconnected, () => emit({ type: "state", state: "ended" }))
         .on(RoomEvent.DataReceived, (payload, p, _kind, topic) => {
+          if (topic === "voice") {
+            if (p) emit({ type: "clip", from: { identity: p.identity, name: p.name || p.identity, host: roleOf(p.metadata) === "host" }, chunk: payload });
+            return;
+          }
           const msg = decodeMsg(payload, topic);
           if (!msg || !p || (topic !== "chat" && topic !== "hand")) return;
           emit({ type: "data", topic, from: { identity: p.identity, name: p.name || p.identity, host: roleOf(p.metadata) === "host" }, msg });
@@ -135,6 +142,7 @@ export function createLiveKitEngine(o: { code: string; mode: "s" | "e"; k: strin
       return () => { t.detach(el); };
     },
     async send(topic, msg) { await room?.localParticipant.publishData(encodeMsg(msg), { reliable: true, topic }); },
+    async sendClip(chunk) { await room?.localParticipant.publishData(chunk, { reliable: true, topic: "voice" }); },
     async startAudio() { await room?.startAudio(); emit({ type: "audio", blocked: !(room?.canPlaybackAudio ?? true) }); },
     on(fn) { subs.add(fn); return () => { subs.delete(fn); }; },
   };
