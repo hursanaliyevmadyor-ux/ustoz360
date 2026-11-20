@@ -7,11 +7,12 @@ import { Input } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import { describeMediaError } from "@/lib/dars";
 import { MAX_CHAT, sortPeople } from "@/lib/voice-msg";
+import { hasVideo, type VoiceMode } from "@/lib/voice-mode";
 import { ClipAssembler, SEND_GAP_MS, parseChunk, splitClip, type Clip } from "@/lib/voice-clip";
 import { VoiceNotePlayer, VoiceNoteRecorder } from "./voice-note";
 import type { VEngine, VPerson, VSession, VSource, VState } from "./voice-engine";
 
-type Ctl = { code: string; mode: "s" | "e"; k: string; h?: string };
+type Ctl = { code: string; mode: VoiceMode; k: string; h?: string };
 type ChatItem = { id: number; name: string; host: boolean; text: string; ts: number; mine: boolean; clip?: { url: string; ms: number } };
 
 const hhmm = (t: number) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
@@ -64,6 +65,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
     });
   }, []);
 
+  const video = hasVideo(ctl.mode);
   const me = people.find((p) => p.me);
   const isHost = session?.host ?? false;
   const canSpeak = me?.canSpeak ?? session?.canSpeak ?? false;
@@ -76,6 +78,8 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   const screenOwner = people.find((p) => p.screenOn);
   const host = people.find((p) => p.host);
   const stage: { person: VPerson | undefined; source: VSource } | null = screenOwner ? { person: screenOwner, source: "screen" } : host?.camOn ? { person: host, source: "camera" } : null;
+  const speakers = people.filter((p) => p.canSpeak).sort((x, y) => Number(y.host) - Number(x.host) || Number(y.me) - Number(x.me) || x.name.localeCompare(y.name, "uz"));
+  const listeners = people.filter((p) => !p.canSpeak);
   const tiles = people.filter((p) => p.camOn && !(stage?.source === "camera" && stage.person?.identity === p.identity));
 
   const post = React.useCallback(async (body: Record<string, unknown>) => {
@@ -133,11 +137,11 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   React.useEffect(() => {
     if (!me || isHost) return;
     if (prevCanSpeak.current === false && me.canSpeak) {
-      setNotice("Sizga gapirish va kamerani yoqishga ruxsat berildi.");
+      setNotice(video ? "Sizga gapirish va kamerani yoqishga ruxsat berildi." : "Sizga gapirishga ruxsat berildi: mikrofonni yoqing.");
       void engine.send("hand", { t: "hand", up: false }).catch(() => {});
       setHands((h) => { const n = new Set(h); n.delete(me.identity); return n; });
     }
-    if (prevCanSpeak.current === true && !me.canSpeak) setNotice("Ustoz ruxsatingizni oldi: mikrofon va kamera o'chdi.");
+    if (prevCanSpeak.current === true && !me.canSpeak) setNotice(video ? "Ustoz ruxsatingizni oldi: mikrofon va kamera o'chdi." : "Ustoz ruxsatingizni oldi: mikrofon o'chdi.");
     prevCanSpeak.current = me.canSpeak;
   }, [me, isHost, engine]);
 
@@ -221,7 +225,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
     <div className="mx-auto w-full max-w-6xl space-y-3 pb-28 lg:pb-4">
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Onlayn dars</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{video ? "Onlayn dars" : "Ovozli chat"}</p>
           <h1 className="truncate text-xl font-extrabold">{title || "Dars"}</h1>
         </div>
         <div className="flex items-center gap-2">
@@ -243,6 +247,8 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
 
       <div className="grid gap-3 lg:grid-cols-[1fr_20rem]">
         <div className="min-w-0 space-y-3">
+          {video ? (
+            <>
           {/* Sahna: ustoz kamerasi yoki ulashilgan ekran */}
           <div ref={stageRef} className="relative aspect-video w-full overflow-hidden rounded-2xl bg-slate-900" data-testid="stage">
             {stage?.person ? (
@@ -276,6 +282,45 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
             </div>
           )}
 
+            </>
+          ) : (
+            <>
+          {/* Ovozli chat (kamerasiz): gapira oladiganlar katta doirada, tinglovchilar pastda */}
+          <Card className="p-4" data-testid="voice-stage">
+            <h2 className="text-sm font-extrabold">Gapira oladiganlar ({speakers.length})</h2>
+            <ul className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4">
+              {speakers.map((p) => (
+                <li key={p.identity} className="flex min-w-0 flex-col items-center text-center">
+                  <span className={cn("relative grid h-16 w-16 place-items-center rounded-full bg-primary/10 text-xl font-extrabold text-primary transition-shadow", p.speaking && "ring-4 ring-success/70")}>
+                    {initial(p.name)}
+                    <span className={cn("absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-card shadow", p.micOn ? "text-success" : "text-muted-foreground")} aria-label={p.micOn ? "Mikrofon yoqiq" : "Mikrofon o'chiq"}>
+                      {p.micOn ? <Mic className="h-3.5 w-3.5" aria-hidden /> : <MicOff className="h-3.5 w-3.5" aria-hidden />}
+                    </span>
+                  </span>
+                  <span className="mt-1.5 w-full truncate text-xs font-bold">{p.me ? "Siz" : p.name}</span>
+                  {p.host && <span className="text-[10px] font-bold text-primary">Ustoz</span>}
+                </li>
+              ))}
+              {speakers.length === 0 && <li className="col-span-full py-4 text-center text-sm text-muted-foreground">Hozircha hech kim gapira olmaydi. Ustoz kirishini kuting.</li>}
+            </ul>
+            {listeners.length > 0 && (
+              <>
+                <p className="mt-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Tinglovchilar ({listeners.length})</p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {listeners.map((p) => (
+                    <li key={p.identity} className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs font-semibold">
+                      {hands.has(p.identity) && <Hand className="h-3.5 w-3.5 text-amber" aria-label="qo'l ko'tardi" />}
+                      {p.me ? "Siz" : p.name}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </Card>
+
+            </>
+          )}
+
           <div className="flex gap-2 lg:hidden" role="tablist" aria-label="Bo'limlar">
             {([["people", "Ishtirokchilar", Users], ["chat", "Yozishma", MessageCircle]] as const).map(([k, label, Icon]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
@@ -306,9 +351,9 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
                       {hands.has(p.identity) && <span className="inline-flex items-center gap-1 font-semibold text-amber"><Hand className="h-3.5 w-3.5" aria-hidden />qo&apos;l ko&apos;tardi</span>}
                     </p>
                   </div>
-                  <span className={cn("shrink-0", p.camOn ? "text-success" : "text-muted-foreground")} aria-label={p.camOn ? "Kamera yoqiq" : "Kamera o'chiq"}>
+                  {video && <span className={cn("shrink-0", p.camOn ? "text-success" : "text-muted-foreground")} aria-label={p.camOn ? "Kamera yoqiq" : "Kamera o'chiq"}>
                     {p.camOn ? <Video className="h-5 w-5" aria-hidden /> : <VideoOff className="h-5 w-5" aria-hidden />}
-                  </span>
+                  </span>}
                   <span className={cn("shrink-0", p.micOn ? "text-success" : "text-muted-foreground")} aria-label={p.micOn ? "Mikrofon yoqiq" : "Mikrofon o'chiq"}>
                     {p.micOn ? <Mic className="h-5 w-5" aria-hidden /> : <MicOff className="h-5 w-5" aria-hidden />}
                   </span>
@@ -351,16 +396,16 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
               <Button size="lg" variant={micOn ? "success" : "primary"} loading={busy === "mic"} disabled={!live} aria-pressed={micOn} onClick={() => void media("mic")} className={cn(!micOn && notice && "animate-pulse")}>
                 {micOn ? <><Mic className="h-5 w-5" aria-hidden />Mikrofon yoqiq</> : <><MicOff className="h-5 w-5" aria-hidden />Mikrofonni yoqish</>}
               </Button>
-              <Button size="lg" variant={camOn ? "success" : "outline"} loading={busy === "cam"} disabled={!live} aria-pressed={camOn} onClick={() => void media("cam")}>
+              {video && <Button size="lg" variant={camOn ? "success" : "outline"} loading={busy === "cam"} disabled={!live} aria-pressed={camOn} onClick={() => void media("cam")}>
                 {camOn ? <><Video className="h-5 w-5" aria-hidden />Kamera yoqiq</> : <><VideoOff className="h-5 w-5" aria-hidden />Kamerani yoqish</>}
-              </Button>
+              </Button>}
             </>
           ) : (
             <Button size="lg" variant={raised ? "outline" : "primary"} disabled={!live} onClick={() => void toggleHand()} className="min-w-52">
               {raised ? <><VolumeX className="h-5 w-5" aria-hidden />Qo&apos;lni tushirish</> : <><Hand className="h-5 w-5" aria-hidden />Qo&apos;l ko&apos;tarish (gapirish uchun)</>}
             </Button>
           )}
-          {isHost && canShare && (
+          {video && isHost && canShare && (
             <Button size="lg" variant={sharing ? "success" : "outline"} loading={busy === "screen"} disabled={!live} aria-pressed={sharing} onClick={() => void media("screen")}>
               <MonitorUp className="h-5 w-5" aria-hidden />{sharing ? "Ulashishni to'xtatish" : "Ekranni ulashish"}
             </Button>

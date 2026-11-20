@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
-import { JoinRoom } from "@/components/dars/join-room";
+import { JoinRoom, type RoomInfo } from "@/components/dars/join-room";
 import { cleanTitle, isRoomCode, parseStartsAt } from "@/lib/dars";
 import { voiceConfig } from "@/server/voice";
 import { isVoiceMode, verifyRoom } from "@/server/voicelogic";
@@ -23,7 +23,7 @@ export default async function Page({ params, searchParams }: Props) {
 
   // Havola imzosi serverda tekshiriladi; ustoz imzosi (h) faqat to'g'ri bo'lsagina o'tadi. Imzosiz (eski Jitsi) havolalar ishlamaydi.
   const r = one(sp.r), k = one(sp.k), h = one(sp.h);
-  let room: { mode: "s" | "e"; k: string; h?: string } | null = null;
+  let room: RoomInfo | null = null;
   let problem = "";
   if (r === undefined || !k) problem = "Bu eski havola. Ustozdan yangi dars havolasini so'rang.";
   else {

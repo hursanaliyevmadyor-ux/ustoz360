@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { controlInput, grantFor, guestName, isVoiceMode, livekitRoomName, roomInput, signRoom, tokenInput, verifyRoom } from "./voicelogic";
+import { VOICE_MODES } from "../lib/voice-mode";
+import { controlInput, grantFor, guestName, isVoiceMode, livekitRoomName, roomInput, signRoom, speakSources, tokenInput, verifyRoom } from "./voicelogic";
 
 const S = "s".repeat(40);
 const code = "abcdefghjk";
@@ -33,6 +34,7 @@ describe("xona imzolari", () => {
   it("imzolar barqaror va urinishlar orasida takrorlanadi", () => {
     expect(signRoom(S, code, "s")).toEqual(signRoom(S, code, "s"));
     expect(signRoom(S, code, "s").k).not.toBe(signRoom(S, code, "e").k);
+    expect(new Set(VOICE_MODES.map((m) => signRoom(S, code, m).k)).size).toBe(4);
   });
 });
 
@@ -53,15 +55,36 @@ describe("LiveKit ruxsatlari", () => {
     expect((g as { canPublishSources: number[] }).canPublishSources).not.toContain(3);
     expect((g as { roomAdmin?: boolean }).roomAdmin).toBeUndefined();
   });
+  it("ovozli chatda (kamerasiz) ustoz ham faqat mikrofonni ulaydi: kamera va ekran yopiq", () => {
+    for (const m of ["q", "o"] as const) {
+      const g = grantFor("host", m, "u360-x", S);
+      expect(g).toMatchObject({ roomAdmin: true, canPublish: true, canPublishSources: [2] });
+    }
+  });
+  it("ovozli chat, ruxsat bilan (q): o'quvchi tinglaydi, gapira olmaydi", () => {
+    expect(grantFor("guest", "q", "u360-x", S)).toMatchObject({ canPublish: false, canSubscribe: true, canPublishData: true });
+  });
+  it("ovozli chat, erkin (o): o'quvchi faqat mikrofonni yoqa oladi", () => {
+    const g = grantFor("guest", "o", "u360-x", S) as { canPublish: boolean; canPublishSources: number[]; roomAdmin?: boolean };
+    expect(g.canPublish).toBe(true);
+    expect(g.canPublishSources).toEqual([2]);
+    expect(g.roomAdmin).toBeUndefined();
+  });
+  it("gapirishga ruxsat berilganda: video rejimda mikrofon va kamera, ovozli chatda faqat mikrofon", () => {
+    expect(speakSources("s", S)).toEqual([2, 1]);
+    expect(speakSources("e", S)).toEqual([2, 1]);
+    expect(speakSources("q", S)).toEqual([2]);
+    expect(speakSources("o", S)).toEqual([2]);
+  });
   it("hech kim o'z ma'lumotini o'zgartira olmaydi", () => {
-    for (const r of ["host", "guest"] as const) expect(grantFor(r, "s", "u360-x", S).canUpdateOwnMetadata).toBe(false);
+    for (const m of VOICE_MODES) for (const r of ["host", "guest"] as const) expect(grantFor(r, m, "u360-x", S).canUpdateOwnMetadata).toBe(false);
   });
 });
 
 describe("kichik yordamchilar", () => {
   it("xona nomi, rejim, ism", () => {
     expect(livekitRoomName(code)).toBe("u360-abcdefghjk");
-    expect(isVoiceMode("s") && isVoiceMode("e") && !isVoiceMode("x")).toBe(true);
+    expect(VOICE_MODES.every((m) => isVoiceMode(m)) && !isVoiceMode("x") && !isVoiceMode(5)).toBe(true);
     expect(guestName("  Ali   Valiyev ")).toBe("Ali Valiyev");
     expect(guestName("")).toBe("Mehmon");
     expect(guestName(undefined)).toBe("Mehmon");
@@ -69,6 +92,7 @@ describe("kichik yordamchilar", () => {
   it("so'rov shakllari", () => {
     const k = "a".repeat(22);
     expect(roomInput.safeParse({ mode: "s" }).success).toBe(true);
+    expect(roomInput.safeParse({ mode: "q" }).success && roomInput.safeParse({ mode: "o" }).success).toBe(true);
     expect(roomInput.safeParse({ mode: "x" }).success).toBe(false);
     expect(tokenInput.safeParse({ code, mode: "s", k, name: "Ali" }).success).toBe(true);
     expect(tokenInput.safeParse({ code: "kalta", mode: "s", k }).success).toBe(false);

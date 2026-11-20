@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { isRoomCode, cleanName } from "../lib/dars";
+import { VOICE_MODES, hasVideo, isFree, isVoiceMode, type VoiceMode } from "../lib/voice-mode";
 
 /**
  * Ovozli dars xonasi (LiveKit): imzo va ruxsat mantig'i. Toza funksiyalar, tarmoqqa tegmaydi.
@@ -8,9 +9,7 @@ import { isRoomCode, cleanName } from "../lib/dars";
  * O'quvchi havolasida faqat `k` (kirish imzosi), ustoz havolasida qo'shimcha `h` (boshqaruv imzosi) bo'ladi.
  */
 
-/** s = sinf (o'quvchi qo'l ko'taradi, ustoz gapirishga ruxsat beradi), e = erkin suhbat (hamma gapira oladi). */
-export type VoiceMode = "s" | "e";
-export const isVoiceMode = (v: unknown): v is VoiceMode => v === "s" || v === "e";
+export { isVoiceMode, type VoiceMode };
 export type VoiceRole = "host" | "guest";
 
 export const livekitRoomName = (code: string) => `u360-${code}`;
@@ -35,27 +34,30 @@ export function verifyRoom(secret: string, o: { code: unknown; mode: unknown; k:
 /** LiveKit manba turlari (raqamli qiymatlar server tomonida beriladi, mantiq shu yerda toza qoladi). */
 export type Sources = { mic: number; camera: number; screen: number };
 
+/** Gapiruvchi o'quvchi nimani yoqa oladi: video rejimda mikrofon va kamera, ovozli chatda faqat mikrofon. */
+export const speakSources = (mode: VoiceMode, S: Sources): number[] => (hasVideo(mode) ? [S.mic, S.camera] : [S.mic]);
+
 /**
- * LiveKit ruxsatlari. Ustoz har doim gapira oladi, kamera va ekranni ulashadi, xonani boshqaradi.
- * Sinf rejimida o'quvchi tomosha qiladi va yozadi, gapirish va kamera ruxsati ustoz bergach ochiladi;
- * erkin suhbatda hamma mikrofon va kamerani yoqa oladi. O'quvchi ekranini ulasha olmaydi.
+ * LiveKit ruxsatlari. Ustoz har doim gapira oladi, xonani boshqaradi; video rejimda kamera va ekranni ham ulashadi.
+ * Ruxsat bilan rejimlarda (s, q) o'quvchi tinglaydi va yozadi, gapirish ustoz bergach ochiladi;
+ * erkin rejimlarda (e, o) hamma gapira oladi. Ovozli chatda (q, o) kamera va ekran umuman yopiq. O'quvchi ekranini ulasha olmaydi.
  */
 export function grantFor(role: VoiceRole, mode: VoiceMode, room: string, S: Sources) {
   const base = { roomJoin: true, room, canSubscribe: true, canPublishData: true, canUpdateOwnMetadata: false } as const;
-  if (role === "host") return { ...base, roomAdmin: true, canPublish: true, canPublishSources: [S.mic, S.camera, S.screen] };
-  return mode === "e" ? { ...base, canPublish: true, canPublishSources: [S.mic, S.camera] } : { ...base, canPublish: false };
+  if (role === "host") return { ...base, roomAdmin: true, canPublish: true, canPublishSources: hasVideo(mode) ? [S.mic, S.camera, S.screen] : [S.mic] };
+  return isFree(mode) ? { ...base, canPublish: true, canPublishSources: speakSources(mode, S) } : { ...base, canPublish: false };
 }
 
 export const guestName = (raw: unknown) => cleanName(raw) || "Mehmon";
 
 const roomCtx = z.object({
   code: z.string().length(10),
-  mode: z.enum(["s", "e"]),
+  mode: z.enum(VOICE_MODES),
   k: z.string().min(10).max(40),
   h: z.string().min(10).max(40).optional(),
 });
 export const tokenInput = roomCtx.extend({ name: z.string().max(80).optional() });
-export const roomInput = z.object({ mode: z.enum(["s", "e"]) });
+export const roomInput = z.object({ mode: z.enum(VOICE_MODES) });
 export const controlInput = z.discriminatedUnion("action", [
   roomCtx.extend({ action: z.literal("speak"), identity: z.string().min(1).max(64), allow: z.boolean() }),
   roomCtx.extend({ action: z.literal("mute-all") }),

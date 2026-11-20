@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { CalendarClock, CheckCircle2, Copy, ExternalLink, Eye, Info, Link2, Play, Send, Share2, Trash2, Video } from "lucide-react";
+import { CalendarClock, CheckCircle2, Copy, ExternalLink, Eye, Info, Link2, Play, Send, Mic, Share2, Trash2, Video } from "lucide-react";
 import { PageHeader } from "@/components/layout/page";
 import { QrCode } from "@/components/dars/qr-code";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import {
   ROOMS_KEY, addSavedRoom, cleanTitle, fromLocalInput, inviteText, joinUrl, lessonCountdown, lessonTimeLabel, newRoomCode, parseSavedRooms, telegramShareUrl, type SavedRoom,
 } from "@/lib/dars";
+import { modeLabel, modeOf, type VoiceMode } from "@/lib/voice-mode";
 
 const read = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const write = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* maxfiy rejim */ } };
@@ -27,10 +28,10 @@ const CHECK = [
 ];
 
 const DURING = [
-  ["Mikrofon / Kamera", "pastdagi tugmalar: o'zingizni yoqish yoki o'chirish. Siz kirganda ular yoqiq bo'ladi"],
-  ["Qo'l ko'targanlar", "ishtirokchilar ro'yxatida sariq belgi chiqadi: «Gapirishga ruxsat» ni bosasiz, o'quvchining mikrofoni va kamerasi ochiladi"],
+  ["Mikrofon / Kamera", "pastdagi tugmalar: o'zingizni yoqish yoki o'chirish. Siz kirganda ular yoqiq bo'ladi (ovozli chatda kamera yo'q)"],
+  ["Qo'l ko'targanlar", "ishtirokchilar ro'yxatida sariq belgi chiqadi: «Gapirishga ruxsat» ni bosasiz, o'quvchining mikrofoni (video darsda kamerasi ham) ochiladi"],
   ["Ruxsatni olish", "gapirib bo'lgach, o'quvchi yonidagi «Ruxsatni olish» yoki «Hammaning ruxsatini olish»"],
-  ["Ekranni ulashish", "kompyuterda: slayd, hujjat yoki doskani hammaga ko'rsatadi. Telefonda bu tugma yo'q"],
+  ["Ekranni ulashish", "faqat video darsda, kompyuterda: slayd, hujjat yoki doskani hammaga ko'rsatadi. Telefonda bu tugma yo'q"],
   ["Yozishma (chat)", "o'quvchi savol yozadi, siz havola yoki vazifani yuborasiz"],
   ["Darsni yakunlash", "darsni hamma uchun tugatadi"],
 ];
@@ -46,7 +47,9 @@ export default function Page() {
   const [canShare, setCanShare] = React.useState(false);
   const [now, setNow] = React.useState(() => Date.now());
   const [voiceOn, setVoiceOn] = React.useState(false);
-  const [mode, setMode] = React.useState<"s" | "e">("s");
+  const [video, setVideo] = React.useState(true);
+  const [free, setFree] = React.useState(false);
+  const mode = modeOf(video, free);
   const [creating, setCreating] = React.useState(false);
   const [createErr, setCreateErr] = React.useState("");
 
@@ -67,7 +70,7 @@ export default function Page() {
     try {
       // Xona kodi va imzolari serverda hosil bo'ladi (faqat tizimga kirgan ustoz yarata oladi).
       const r = await fetch("/api/dars/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }) });
-      const d = (await r.json().catch(() => ({}))) as { code?: string; mode?: "s" | "e"; k?: string; h?: string; error?: string };
+      const d = (await r.json().catch(() => ({}))) as { code?: string; mode?: VoiceMode; k?: string; h?: string; error?: string };
       if (!r.ok || !d.code || !d.k || !d.h || !d.mode) throw new Error(d.error ?? "Xona yaratib bo'lmadi.");
       const room: SavedRoom = { code: d.code, title: cleanTitle(title), at: Date.now(), ...(startsAt && { startsAt }), voice: { mode: d.mode, k: d.k, h: d.h } };
       const next = addSavedRoom(rooms, room);
@@ -93,7 +96,7 @@ export default function Page() {
   const linkOf = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, false, r.startsAt, r.voice) : "");
   const startUrl = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, true, r.startsAt, r.voice) : "#");
   const textOf = (r: SavedRoom) => inviteText({ title: r.title, startsAt: r.startsAt, link: linkOf(r), mode: r.voice.mode });
-  const kindLabel = (r: SavedRoom) => (r.voice.mode === "s" ? "Sinf rejimi" : "Erkin suhbat");
+  const kindLabel = (r: SavedRoom) => modeLabel(r.voice.mode);
 
   return (
     <>
@@ -110,19 +113,28 @@ export default function Page() {
               <li><b className="text-foreground">4.</b> Dars vaqtida «Darsni boshlash» ni bosing. Birinchi bo&apos;lib siz kiring: xonani siz ochasiz.</li>
             </ol>
             <form className="mt-4 space-y-3" onSubmit={(e) => { e.preventDefault(); void create(); }}>
-              {(
-                <fieldset>
-                  <legend className="mb-1.5 text-sm font-semibold">Dars rejimi</legend>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {([["s", "Sinf", "O'quvchi qo'l ko'taradi, siz gapirishga ruxsat berasiz."], ["e", "Erkin suhbat", "Hamma gapira oladi (kichik guruh uchun)."]] as const).map(([k, l, d]) => (
-                      <label key={k} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", mode === k ? "border-primary bg-primary/5" : "border-border")}>
-                        <input type="radio" name="rejim" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={mode === k} onChange={() => setMode(k)} />
-                        <span><b>{l}</b><br /><span className="text-muted-foreground">{d}</span></span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              )}
+              <fieldset>
+                <legend className="mb-1.5 text-sm font-semibold">Xona turi</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([[true, "Video dars", "Kamera, ovoz, ekran ulashish va yozishma."], [false, "Ovozli chat", "Telegramdagi ovozli chatga o'xshash: faqat ovoz va yozishma, kamera yo'q."]] as const).map(([v, l, d]) => (
+                    <label key={l} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", video === v ? "border-primary bg-primary/5" : "border-border")}>
+                      <input type="radio" name="turi" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={video === v} onChange={() => setVideo(v)} />
+                      <span><b>{l}</b><br /><span className="text-muted-foreground">{d}</span></span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend className="mb-1.5 text-sm font-semibold">Kim gapira oladi</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([[false, "Ruxsat bilan", "O'quvchi qo'l ko'taradi, siz gapirishga ruxsat berasiz."], [true, "Hamma", "Hamma ruxsatsiz gapira oladi (kichik guruh uchun)."]] as const).map(([f, l, d]) => (
+                    <label key={l} className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm", free === f ? "border-primary bg-primary/5" : "border-border")}>
+                      <input type="radio" name="rejim" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={free === f} onChange={() => setFree(f)} />
+                      <span><b>{l}</b><br /><span className="text-muted-foreground">{d}</span></span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               <div className="grid gap-3 sm:grid-cols-[1fr_13rem_auto] sm:items-end">
               <Field label="Dars nomi (ixtiyoriy)">
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} placeholder="Masalan: 5-sinf matematika, kasr sonlar" />
@@ -130,7 +142,7 @@ export default function Page() {
               <Field label="Dars vaqti (ixtiyoriy)">
                 <Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
               </Field>
-              <Button type="submit" size="lg" loading={creating} disabled={!voiceOn}><Video className="h-5 w-5" aria-hidden />Xona yaratish</Button>
+              <Button type="submit" size="lg" loading={creating} disabled={!voiceOn}>{video ? <Video className="h-5 w-5" aria-hidden /> : <Mic className="h-5 w-5" aria-hidden />}Xona yaratish</Button>
               </div>
               {!voiceOn && <p role="status" className="rounded-xl bg-amber/10 p-3 text-sm text-amber">Dars xonasi hozircha o'chiq: LiveKit kalitlari qo'yilmagan yoki sayt hali yangilanmagan.</p>}
               {createErr && <p role="alert" className="rounded-xl bg-danger/10 p-3 text-sm text-danger">{createErr}</p>}
@@ -234,8 +246,9 @@ export default function Page() {
           <Card className="p-5 text-sm">
             <p className="flex items-center gap-2 font-extrabold"><Info className="h-4 w-4 text-primary" aria-hidden />Bilib qo&apos;ying</p>
             <ul className="mt-2 space-y-1.5 text-muted-foreground">
-              <li>• Dars shu saytning o&apos;zida o&apos;tadi: video, ovoz, yozishma va qo&apos;l ko&apos;tarish. O&apos;quvchi boshqa saytga o&apos;tmaydi.</li>
-              <li>• <b className="text-foreground">Sinf rejimida</b> o&apos;quvchi ustozni ko&apos;radi va eshitadi; gapirish uchun qo&apos;l ko&apos;taradi, siz ruxsat berasiz. <b className="text-foreground">Erkin suhbatda</b> hamma gapira oladi (kichik guruh uchun).</li>
+              <li>• Dars shu saytning o&apos;zida o&apos;tadi: video yoki ovoz, yozishma va qo&apos;l ko&apos;tarish. O&apos;quvchi boshqa saytga o&apos;tmaydi.</li>
+              <li>• <b className="text-foreground">Video dars</b>: o&apos;quvchi ustozni ko&apos;radi va eshitadi. <b className="text-foreground">Ovozli chat</b>: faqat ovoz, kamera yo&apos;q (Telegramdagi ovozli chatga o&apos;xshash).</li>
+              <li>• <b className="text-foreground">Ruxsat bilan</b> rejimda o&apos;quvchi gapirish uchun qo&apos;l ko&apos;taradi, siz ruxsat berasiz. <b className="text-foreground">Hamma</b> rejimida hamma gapira oladi (kichik guruh uchun).</li>
               <li>• Havolani faqat o&apos;quvchilarga yuboring: havolasi bor har kim kira oladi.</li>
               <li>• Davomat, o&apos;z chatimiz va yozib olish keyingi bosqichda.</li>
             </ul>

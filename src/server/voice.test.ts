@@ -51,6 +51,19 @@ describe("kirish belgisi (token)", () => {
     expect(r.canSpeak).toBe(true);
     expect((await verify(r.token)).name).toBe("Mehmon");
   });
+  it("ovozli chat (kamerasiz): ustoz tokenida faqat mikrofon; erkin (o) da o'quvchi gapira oladi, ruxsat bilan (q) da yo'q", async () => {
+    const q = signRoom(AUTH, code, "q");
+    const host = await withEnv(() => issueToken({ code, mode: "q", k: q.k, h: q.h, name: "Dilnoza" }));
+    expect((await verify(host.token)).video?.canPublishSources?.length).toBe(1);
+    const guestQ = await withEnv(() => issueToken({ code, mode: "q", k: q.k }));
+    expect(guestQ.canSpeak).toBe(false);
+    const o = signRoom(AUTH, code, "o");
+    const guestO = await withEnv(() => issueToken({ code, mode: "o", k: o.k }));
+    expect(guestO.canSpeak).toBe(true);
+    const vo = (await verify(guestO.token)).video;
+    expect(vo?.canPublish).toBe(true);
+    expect(vo?.canPublishSources?.length).toBe(1); // faqat mikrofon
+  });
   it("yaroqsiz imzo bilan token berilmaydi", async () => {
     const { k } = signRoom(AUTH, code, "s");
     await expect(withEnv(() => issueToken({ code, mode: "e", k }))).rejects.toMatchObject({ status: 403 });
