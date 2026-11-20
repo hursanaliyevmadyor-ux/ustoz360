@@ -69,11 +69,19 @@ export function ClassBar({ api, meId }: { api: ClassApi; meId: string }) {
     return () => clearTimeout(t);
   }, [pick]);
   const poll = cls.poll;
-  const nothing = !timerEnd && !(pick && dismissed !== pick.id) && !(!isHost && (cls.pulse || poll)) && !(!isHost && cls.mats.length);
+  const drawer = !isHost && api.canDraw && cls.stage === "board";
+  const nothing = !drawer && !timerEnd && !(pick && dismissed !== pick.id) && !(!isHost && (cls.pulse || poll)) && !(!isHost && cls.mats.length);
   if (nothing) return null;
   return (
     <div className="space-y-3" aria-live="polite">
       {timerEnd && cls.timer && <TimerChip end={timerEnd} total={cls.timer.total} />}
+
+      {drawer && (
+        <div className="flex items-center gap-3 rounded-2xl bg-primary p-3 text-white" role="status">
+          <PenLine className="h-6 w-6 shrink-0" aria-hidden />
+          <p className="min-w-0 flex-1 text-sm font-bold">Ustoz sizni doskaga chaqirdi: pastdagi asboblar bilan chizishingiz mumkin.</p>
+        </div>
+      )}
 
       {pick && dismissed !== pick.id && (
         <div className={cn("flex items-center gap-3 rounded-2xl p-3 text-white", pick.who === meId ? "bg-success" : "bg-primary")} role="status">
@@ -145,8 +153,8 @@ type Panel = "poll" | "pulse" | "timer" | "pick" | "mats" | "attend" | null;
 
 function Tool({ icon: Icon, label, on, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; on?: boolean; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={on} className={cn("flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border-2 px-2 py-2 text-center text-xs font-bold", on ? "border-primary bg-primary/10 text-primary" : "border-border bg-card")}>
-      <Icon className="h-5 w-5" aria-hidden />{label}
+    <button type="button" onClick={onClick} aria-pressed={on} aria-label={label} className={cn("flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl border-2 px-1 py-2 text-center text-[11px] font-bold leading-tight", on ? "border-primary bg-primary/10 text-primary" : "border-border bg-card")}>
+      <Icon className="h-5 w-5" aria-hidden /><span aria-hidden>{label.replace("Tushundingizmi?", "Tushun\u00addingizmi?")}</span>
     </button>
   );
 }
@@ -157,7 +165,7 @@ export function HostTools({ api, title }: { api: ClassApi; title: string }) {
   const [panel, setPanel] = React.useState<Panel>(null);
   const toggle = (p: Exclude<Panel, null>) => setPanel((cur) => (cur === p ? null : p));
   return (
-    <Card className="p-4">
+    <div>
       <h2 className="text-sm font-extrabold">Dars asboblari</h2>
       <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
         <Tool icon={PenLine} label={cls.stage === "board" ? "Doskani yopish" : "Doska"} on={cls.stage === "board"} onClick={() => api.patch({ stage: cls.stage === "board" ? "auto" : "board" })} />
@@ -208,7 +216,7 @@ export function HostTools({ api, title }: { api: ClassApi; title: string }) {
           <AttendanceButtons title={title} rows={attendance} />
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 

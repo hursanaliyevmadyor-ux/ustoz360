@@ -3,6 +3,8 @@
  * hammasi ustoz brauzerida turadi va LiveKit ma'lumot kanalida o'quvchilarga yuboriladi. Bazaga hech narsa yozilmaydi.
  * Bu fayl toza funksiyalar: shakllarni tekshirish, hisoblash, matn tayyorlash. Tarmoqqa va brauzerga tegmaydi.
  */
+import { isBg, type Bg } from "./board";
+
 export const MAX_Q = 200;
 export const MAX_OPT = 80;
 export const MIN_OPTS = 2;
@@ -11,6 +13,7 @@ export const MAX_MATS = 10;
 export const MAX_TITLE = 80;
 export const MAX_URL = 300;
 export const MAX_TIMER_SEC = 3 * 3600;
+export const MAX_DRAWERS = 4;
 export const OPT_LETTERS = ["A", "B", "C", "D", "E"] as const;
 
 export type Poll = { id: number; q: string; opts: string[]; open: boolean; show: boolean; correct: number | null; counts: number[] | null };
@@ -18,14 +21,15 @@ export type Material = { id: number; title: string; url: string };
 export type ClassState = {
   lock: boolean; // chat o'quvchilar uchun to'xtatilgan
   stage: "auto" | "board"; // sahnada nima: video/ekran yoki doska
-  grid: boolean; // doskada katak
+  bg: Bg; // doskaning orqa foni
+  draw: string[]; // ustoz doskaga chaqirgan o'quvchilar (identity)
   timer: { left: number; total: number } | null; // soniyada; `left` yuborilgan paytdagi qoldiq
   pick: { id: number; name: string; who: string } | null; // tasodifiy tanlangan o'quvchi (who = uning identity)
   mats: Material[];
   poll: Poll | null;
   pulse: { id: number } | null; // "tushundingizmi?" so'rovi ochiq
 };
-export const emptyClass = (): ClassState => ({ lock: false, stage: "auto", grid: false, timer: null, pick: null, mats: [], poll: null, pulse: null });
+export const emptyClass = (): ClassState => ({ lock: false, stage: "auto", bg: "plain", draw: [], timer: null, pick: null, mats: [], poll: null, pulse: null });
 
 /** O'quvchidan ustozga keladigan javoblar. */
 export type Act = { t: "vote"; poll: number; o: number } | { t: "pulse"; id: number; v: 0 | 1 | 2 };
@@ -101,7 +105,8 @@ export function parseClass(v: unknown): ClassState | null {
   return {
     lock: v.lock === true,
     stage: v.stage === "board" ? "board" : "auto",
-    grid: v.grid === true,
+    bg: isBg(v.bg) ? v.bg : "plain",
+    draw: Array.isArray(v.draw) ? [...new Set(v.draw.map((x) => text(x, 64)).filter(Boolean))].slice(0, MAX_DRAWERS) : [],
     timer: t && t.left !== null && t.total !== null ? { left: t.left, total: t.total } : null,
     pick: pk && pk.id !== null && pk.name ? { id: pk.id, name: pk.name, who: pk.who } : null,
     mats,
