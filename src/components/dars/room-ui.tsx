@@ -36,13 +36,13 @@ const TONES: Record<DockTone, string> = {
 };
 
 /** Pastki paneldagi aylana tugma: yuqorida belgi, pastida qisqa yozuv. */
-export function DockButton({ icon, label, aria, tone = "default", pressed, loading, disabled, pulse, badge, onClick }: {
-  icon: React.ReactNode; label: string; aria?: string; tone?: DockTone; pressed?: boolean; loading?: boolean; disabled?: boolean; pulse?: boolean; badge?: number; onClick: () => void;
+export function DockButton({ icon, label, aria, tone = "default", pressed, loading, disabled, pulse, badge, hero, onClick }: {
+  icon: React.ReactNode; label: string; aria?: string; tone?: DockTone; pressed?: boolean; loading?: boolean; disabled?: boolean; pulse?: boolean; badge?: number; hero?: boolean; onClick: () => void;
 }) {
   return (
     <button type="button" aria-label={aria ?? label} aria-pressed={pressed} aria-busy={loading || undefined} disabled={disabled || loading} onClick={onClick}
       className="group flex w-[4.25rem] shrink-0 flex-col items-center gap-1 rounded-2xl px-0.5 py-1 text-[11px] font-bold leading-tight disabled:opacity-50 sm:w-[4.75rem]">
-      <span className={cn("relative grid h-12 w-12 place-items-center rounded-full shadow-sm transition group-active:scale-95", TONES[tone], pulse && "animate-pulse")}>
+      <span className={cn("relative grid place-items-center rounded-full shadow-sm transition group-active:scale-95", hero ? "h-14 w-14" : "h-12 w-12", TONES[tone], hero && tone === "on" && "shadow-[0_0_0_5px_rgba(22,129,93,0.22)]", hero && tone === "primary" && "shadow-[0_6px_18px_rgba(56,103,244,0.45)]", pulse && "animate-pulse")}>
         {loading ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : icon}
         {!!badge && <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[11px] font-extrabold text-white ring-2 ring-card">{badge}</span>}
       </span>

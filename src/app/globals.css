@@ -56,3 +56,13 @@ body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-s
   body[data-print="student"] .print-teacher, body[data-print="teacher"] .print-student { display: none !important; }
   .print-page { break-after: page; }
 }
+
+/* Xona jonlantirgichlari: reaksiyalar, konfetti, paydo bo'lish */
+@keyframes float-up { 0% { transform: translateY(0) scale(.6); opacity: 0; } 15% { opacity: 1; transform: translateY(-20px) scale(1); } 100% { transform: translateY(-260px) scale(1.2); opacity: 0; } }
+@keyframes confetti-fall { 0% { transform: translateY(-30%) rotate(0deg); opacity: 1; } 100% { transform: translateY(320%) rotate(600deg); opacity: 0; } }
+@keyframes pop-in { 0% { transform: scale(.92); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes live-dot { 0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, .6); } 50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); } }
+.anim-float-up { animation: float-up 3s ease-out forwards; }
+.anim-confetti { animation: confetti-fall 1.9s ease-in forwards; }
+.anim-pop { animation: pop-in .28s ease-out; }
+.anim-live { animation: live-dot 1.6s ease-in-out infinite; }

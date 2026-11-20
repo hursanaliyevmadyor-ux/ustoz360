@@ -10,7 +10,8 @@ import { MAX_CHAT, sortPeople } from "@/lib/voice-msg";
 import { hasVideo, isFree, type VoiceMode } from "@/lib/voice-mode";
 import { ClipAssembler, SEND_GAP_MS, parseChunk, splitClip, type Clip } from "@/lib/voice-clip";
 import { VoiceNotePlayer, VoiceNoteRecorder } from "./voice-note";
-import { ClassBar, HostTools } from "./class-tools";
+import { ClassBar, HostTools, NoteBanner, ReactionBar } from "./class-tools";
+import { ReactionLimiter, parseReaction } from "@/lib/reactions";
 import { useClassTools } from "./use-class";
 import { Whiteboard } from "./whiteboard";
 import { Avatar, DockButton, ElapsedChip } from "./room-ui";
@@ -50,6 +51,9 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   const [canShare, setCanShare] = React.useState(false);
   const [recording, setRecording] = React.useState(false);
   const [joinedAt] = React.useState(() => Date.now());
+  const [bubbles, setBubbles] = React.useState<{ id: number; e: string; x: number }[]>([]);
+  const limiter = React.useMemo(() => new ReactionLimiter(), []);
+  const myLimiter = React.useMemo(() => new ReactionLimiter(), []);
   const cx = useClassTools(engine, session, people, (p) => void allow(p, true));
   const lockRef = React.useRef(false);
   lockRef.current = cx.cls.lock;
@@ -73,6 +77,12 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
     });
   }, []);
 
+  /** Reaksiya emojisini ekranda ko'taradi (3 soniyadan keyin o'chadi, bir vaqtda 14 tagacha). */
+  const showBubble = React.useCallback((e: string) => {
+    const id = Date.now() + Math.random();
+    setBubbles((b) => [...b.slice(-13), { id, e, x: Math.round(Math.random() * 70) }]);
+    setTimeout(() => setBubbles((b) => b.filter((x) => x.id !== id)), 3100);
+  }, []);
   const video = hasVideo(ctl.mode);
   const modeFree = isFree(ctl.mode); // havola "hamma gapira oladi" rejimida yaratilgan (eski xonalar)
   const freeNow = modeFree || free;
@@ -115,6 +125,10 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
       } else if (e.type === "state") setState(e.state);
       else if (e.type === "audio") setAudioBlocked(e.blocked);
       else if (e.type === "free") setFree(e.on);
+      else if (e.type === "json" && e.topic === "react") {
+        const em = parseReaction(e.data);
+        if (em && limiter.allow(e.from.identity)) showBubble(em);
+      }
       else if (e.type === "clip") {
         if (lockRef.current && !e.from.host) return; // chat to'xtatilganda o'quvchidan ovozli xabar ham olinmaydi
         const c = parseChunk(e.chunk);
@@ -137,7 +151,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
     });
     engine.connect().then((s) => { if (live) setSession(s); }).catch((e: unknown) => { if (live) { setErr(e instanceof Error ? e.message : "Xonaga ulanib bo'lmadi."); setState("ended"); } });
     return () => { live = false; off(); engine.disconnect(); chatRef.current.forEach((m) => { if (m.clip) URL.revokeObjectURL(m.clip.url); }); };
-  }, [engine, asm, addChat]);
+  }, [engine, asm, addChat, limiter, showBubble]);
 
   // Ekran o'chib qolmasin (telefonda dars paytida)
   React.useEffect(() => {
@@ -188,6 +202,12 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   function flash(msg: string) {
     setErr(msg);
     setTimeout(() => setErr((cur) => (cur === msg ? "" : cur)), 5000);
+  }
+  /** O'z reaksiyam: o'zimda darrov ko'rinadi, boshqalarga yuboriladi (tez-tez bosilsa, tashlanadi). */
+  function react(e: string) {
+    if (!myLimiter.allow("me")) return;
+    showBubble(e);
+    void engine.sendJson("react", { e }).catch(() => {});
   }
   async function sendClip(clip: Clip) {
     if (!session) return;
@@ -250,22 +270,32 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   );
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] pb-32">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-border bg-card px-4 py-3 shadow-soft">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary" aria-hidden>{video ? <Video className="h-5 w-5" /> : <Mic className="h-5 w-5" />}</span>
-        <div className="min-w-[9rem] flex-1">
-          <h1 className="truncate text-lg font-extrabold leading-tight">{title || "Dars"}</h1>
-          <p className="truncate text-xs text-muted-foreground">{video ? "Onlayn dars" : "Ovozli chat"} · {freeNow ? "hamma gapira oladi" : "gapirish ustoz ruxsati bilan"}</p>
+    <div className="relative isolate mx-auto w-full max-w-[1500px] pb-32">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 -top-10 -z-10 h-[30rem] overflow-hidden">
+        <div className="absolute -left-24 top-0 h-80 w-80 rounded-full bg-primary/20 blur-3xl" />
+        <div className="absolute right-0 top-16 h-80 w-80 rounded-full bg-cyan-400/20 blur-3xl" />
+        <div className="absolute left-1/3 top-48 h-60 w-60 rounded-full bg-amber/15 blur-3xl" />
+      </div>
+      <header className="relative flex flex-wrap items-center gap-x-3 gap-y-2 overflow-hidden rounded-3xl bg-gradient-to-r from-[#0B2D6B] via-primary to-[#00B8D4] px-4 py-3.5 text-white shadow-lg">
+        <span aria-hidden className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-white/10" />
+        <span aria-hidden className="pointer-events-none absolute right-24 -bottom-12 h-28 w-28 rounded-full bg-white/10" />
+        <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/20 ring-1 ring-white/30 backdrop-blur" aria-hidden>{video ? <Video className="h-6 w-6" /> : <Mic className="h-6 w-6" />}</span>
+        <div className="relative min-w-[9rem] flex-1">
+          <h1 className="truncate text-xl font-black leading-tight tracking-tight">{title || "Dars"}</h1>
+          <p className="truncate text-xs font-semibold text-white/80">{video ? "Onlayn dars" : "Ovozli chat"} · {freeNow ? "hamma gapira oladi" : "gapirish ustoz ruxsati bilan"}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold", live ? "bg-success/15 text-success" : "bg-amber/15 text-amber")} aria-live="polite">
-            <Wifi className="h-3.5 w-3.5" aria-hidden />{state === "connecting" ? "Ulanmoqda..." : state === "reconnecting" ? "Aloqa tiklanmoqda..." : "Jonli"}
+        <div className="relative flex flex-wrap items-center gap-2">
+          <span className={cn("inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-extrabold backdrop-blur", !live && "text-amber-200")} aria-live="polite">
+            <span aria-hidden className={cn("h-2 w-2 rounded-full", live ? "anim-live bg-red-500" : "bg-amber")} />{state === "connecting" ? "Ulanmoqda..." : state === "reconnecting" ? "Aloqa tiklanmoqda..." : "Jonli"}
           </span>
-          {live && <span className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground sm:inline-flex"><Clock className="h-4 w-4" aria-hidden /><ElapsedChip since={joinedAt} /></span>}
-          <span className="inline-flex items-center gap-1 text-sm font-semibold text-muted-foreground"><Users className="h-4 w-4" aria-hidden />{people.length}</span>
-          <Button variant="outline" size="sm" onClick={onExit}><LogOut className="h-4 w-4" aria-hidden />Chiqish</Button>
+          {live && <span className="hidden items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur sm:inline-flex"><Clock className="h-3.5 w-3.5" aria-hidden /><ElapsedChip since={joinedAt} /></span>}
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur"><Users className="h-3.5 w-3.5" aria-hidden />{people.length}</span>
+          {isHost && handCount > 0 && <span className="inline-flex animate-bounce items-center gap-1 rounded-full bg-amber px-3 py-1 text-xs font-extrabold text-white shadow" aria-label={`${handCount} ta qo'l ko'tarilgan`}><Hand className="h-3.5 w-3.5" aria-hidden />{handCount}</span>}
+          <Button variant="outline" size="sm" className="border-white/30 bg-white/10 text-white hover:bg-white/20" onClick={onExit}><LogOut className="h-4 w-4" aria-hidden />Chiqish</Button>
         </div>
       </header>
+
+      {cx.cls.note && <div className="mt-3"><NoteBanner note={cx.cls.note} onClear={isHost ? () => cx.host.setNote("") : undefined} /></div>}
 
       <div className="mt-3 space-y-2 empty:hidden">
         {audioBlocked && live && (
@@ -277,30 +307,33 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
         {(err || mediaErr) && <p role="alert" className="flex gap-2 rounded-2xl bg-danger/10 p-3 text-sm text-danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{err || mediaErr}</p>}
       </div>
 
-      <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
-        {/* Sahna: telefonda sahifa aylantirilganda ham tepada turadi */}
+      <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
+        {/* Sahna: telefonda sahifa aylantirilganda ham tepada turadi (doskada chizayotganda emas) */}
         {(video || boardOn) && (
-          <div className="sticky top-0 z-20 -mx-4 bg-background/90 px-4 py-2 backdrop-blur lg:static lg:z-auto lg:col-start-1 lg:row-start-1 lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-            <div ref={stageRef} className={cn("relative aspect-video w-full overflow-hidden rounded-2xl shadow-soft ring-1 ring-black/5", boardOn ? "bg-white" : "bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800")} data-testid="stage">
-              {boardOn ? board : stage?.person ? (
-                <VideoView key={`${stage.person.identity}-${stage.source}`} engine={engine} identity={stage.person.identity} source={stage.source} mirror={stage.source === "camera" && stage.person.me} />
-              ) : (
-                <div className="grid h-full w-full place-items-center text-center text-white/80">
-                  <div>
-                    <Avatar name={host?.name ?? "?"} size={84} className="mx-auto" />
-                    <p className="mt-3 text-sm font-semibold">{host ? `${host.name}: kamera o'chiq` : "Ustoz hali kirmadi"}</p>
+          <div className={cn("z-20 -mx-4 px-4 py-2 lg:static lg:z-auto lg:col-start-1 lg:row-start-1 lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none", !(boardOn && cx.canDraw) && "sticky top-0 bg-background/90 backdrop-blur")}>
+            {boardOn ? board : (
+              <div ref={stageRef} className="relative aspect-video w-full overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-[#0f2347] to-slate-900 shadow-xl ring-1 ring-black/10" data-testid="stage">
+                {stage?.person ? (
+                  <VideoView key={`${stage.person.identity}-${stage.source}`} engine={engine} identity={stage.person.identity} source={stage.source} mirror={stage.source === "camera" && stage.person.me} />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-center text-white/80">
+                    <div>
+                      <Avatar name={host?.name ?? "?"} size={92} speaking={!!host?.speaking} className="mx-auto" />
+                      <p className="mt-3 text-sm font-semibold">{host ? `${host.name}: kamera o'chiq` : "Ustoz hali kirmadi"}</p>
+                    </div>
                   </div>
-                </div>
-              )}
-              {!boardOn && stage?.person && (
-                <span className="absolute bottom-2 left-2 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-bold text-white">
-                  {stage.source === "screen" ? "Ekran: " : ""}{stage.person.name}{stage.person.host ? " · Ustoz" : ""}
-                </span>
-              )}
-              {(boardOn || stage) && typeof document !== "undefined" && document.fullscreenEnabled && (
-                <button type="button" onClick={() => void stageRef.current?.requestFullscreen?.()} className="absolute right-2 top-2 z-10 grid h-9 w-9 place-items-center rounded-lg bg-black/60 text-white" aria-label="To'liq ekran"><Maximize2 className="h-4 w-4" aria-hidden /></button>
-              )}
-            </div>
+                )}
+                {live && <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-white shadow"><span aria-hidden className="anim-live h-1.5 w-1.5 rounded-full bg-white" />Jonli</span>}
+                {stage?.person && (
+                  <span className="absolute bottom-3 left-3 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-bold text-white backdrop-blur">
+                    {stage.source === "screen" ? "Ekran: " : ""}{stage.person.name}{stage.person.host ? " · Ustoz" : ""}
+                  </span>
+                )}
+                {stage && typeof document !== "undefined" && document.fullscreenEnabled && (
+                  <button type="button" onClick={() => void stageRef.current?.requestFullscreen?.()} className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-lg bg-black/60 text-white backdrop-blur" aria-label="To'liq ekran"><Maximize2 className="h-4 w-4" aria-hidden /></button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -360,7 +393,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
             <div className={cn("grid shrink-0 gap-1 border-b border-border bg-muted/40 p-1.5", isHost ? "grid-cols-3" : "grid-cols-2")} role="tablist" aria-label="Bo'limlar">
               {tabs.map(([k, label, Icon]) => (
                 <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-                  className={cn("relative flex h-10 items-center justify-center gap-1.5 rounded-xl text-sm font-bold transition-colors", tab === k ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:bg-card")}>
+                  className={cn("relative flex h-10 items-center justify-center gap-1.5 rounded-xl text-sm font-bold transition-colors", tab === k ? "bg-gradient-to-r from-primary to-sky-500 text-white shadow-md" : "text-muted-foreground hover:bg-card")}>
                   <Icon className="h-4 w-4" aria-hidden /><span className="truncate">{label}</span>
                   {k === "chat" && unread > 0 && tab !== "chat" && <span className="absolute -right-0.5 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1 text-[11px] text-white">{unread}</span>}
                   {k === "people" && isHost && handCount > 0 && tab !== "people" && <span className="absolute -right-0.5 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-amber px-1 text-[11px] text-white" aria-label={`${handCount} ta qo'l ko'tarilgan`}>{handCount}</span>}
@@ -457,12 +490,18 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
         </aside>
       </div>
 
+      {/* Reaksiyalar: hamma ekranida ko'tariladigan emoji */}
+      <div aria-hidden className="pointer-events-none fixed bottom-28 right-3 z-30 h-72 w-24 sm:right-8">
+        {bubbles.map((b) => <span key={b.id} className="anim-float-up absolute bottom-0 text-4xl drop-shadow" style={{ left: `${b.x}%` }}>{b.e}</span>)}
+      </div>
+      {live && <div className="fixed bottom-[5.9rem] right-3 z-30 sm:right-6"><ReactionBar onReact={react} /></div>}
+
       {/* Pastki panel */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <div className="pointer-events-auto flex max-w-full items-start justify-center gap-0.5 overflow-x-auto rounded-3xl border border-border bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur" role="toolbar" aria-label="Dars boshqaruvi">
+        <div className="pointer-events-auto flex max-w-full items-start justify-center gap-0.5 overflow-x-auto rounded-[1.75rem] border border-white/60 bg-card/90 px-2.5 py-1.5 shadow-[0_10px_40px_rgba(11,45,107,0.25)] ring-1 ring-black/5 backdrop-blur-xl" role="toolbar" aria-label="Dars boshqaruvi">
           {canSpeak ? (
             <>
-              <DockButton label="Mikrofon" aria={micOn ? "Mikrofon yoqiq" : "Mikrofonni yoqish"} icon={micOn ? <Mic className="h-5 w-5" aria-hidden /> : <MicOff className="h-5 w-5" aria-hidden />} tone={micOn ? "on" : "primary"} pressed={micOn} loading={busy === "mic"} disabled={!live} pulse={!micOn && !!notice} onClick={() => void media("mic")} />
+              <DockButton hero label="Mikrofon" aria={micOn ? "Mikrofon yoqiq" : "Mikrofonni yoqish"} icon={micOn ? <Mic className="h-5 w-5" aria-hidden /> : <MicOff className="h-5 w-5" aria-hidden />} tone={micOn ? "on" : "primary"} pressed={micOn} loading={busy === "mic"} disabled={!live} pulse={!micOn && !!notice} onClick={() => void media("mic")} />
               {video && <DockButton label="Kamera" aria={camOn ? "Kamera yoqiq" : "Kamerani yoqish"} icon={camOn ? <Video className="h-5 w-5" aria-hidden /> : <VideoOff className="h-5 w-5" aria-hidden />} tone={camOn ? "on" : "default"} pressed={camOn} loading={busy === "cam"} disabled={!live} onClick={() => void media("cam")} />}
             </>
           ) : (

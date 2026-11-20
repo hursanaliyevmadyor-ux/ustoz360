@@ -1,11 +1,12 @@
 "use client";
 import * as React from "react";
-import { BarChart3, Check, ClipboardList, Copy, Download, Link2, Lock, LockOpen, PenLine, Play, Plus, Shuffle, Square, ThumbsUp, Timer as TimerIcon, Trash2, X } from "lucide-react";
+import { BarChart3, Check, ClipboardList, Copy, Download, Link2, Lock, LockOpen, Megaphone, PenLine, Pin, Play, Plus, Shuffle, Square, ThumbsUp, Timer as TimerIcon, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
-import { MAX_OPT, MAX_OPTS, MAX_Q, MIN_OPTS, OPT_LETTERS, PULSE, attendanceCsv, attendanceText, fmtClock, fmtTimer } from "@/lib/class-tools";
+import { MAX_NOTE, MAX_OPT, MAX_OPTS, MAX_Q, MIN_OPTS, OPT_LETTERS, PULSE, attendanceCsv, attendanceText, fmtClock, fmtTimer } from "@/lib/class-tools";
+import { REACTIONS } from "@/lib/reactions";
 import type { ClassApi } from "./use-class";
 
 function beep() {
@@ -20,6 +21,43 @@ function beep() {
     o.start(); o.stop(ctx.currentTime + 0.7);
     setTimeout(() => void ctx.close(), 900);
   } catch { /* brauzer ovozga ruxsat bermadi: jim o'tamiz */ }
+}
+
+const CONFETTI = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6"];
+/** Bayram konfettisi: kartochka ichida bir marta yog'adi (harakat sozlamasi o'chiq bo'lsa ko'rinmaydi). */
+export function Confetti() {
+  return (
+    <span className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      {Array.from({ length: 26 }, (_, i) => (
+        <span key={i} className="anim-confetti absolute top-0 h-2.5 w-1.5 rounded-sm opacity-0" style={{ left: `${(i * 37) % 100}%`, backgroundColor: CONFETTI[i % CONFETTI.length], animationDelay: `${(i % 9) * 0.09}s`, animationDuration: `${1.5 + (i % 5) * 0.2}s` }} />
+      ))}
+    </span>
+  );
+}
+
+/** Ustozning muhim e'loni: hamma ko'radigan yorqin lavha. */
+export function NoteBanner({ note, onClear }: { note: string; onClear?: () => void }) {
+  return (
+    <div className="anim-pop relative flex items-center gap-3 overflow-hidden rounded-2xl bg-gradient-to-r from-amber via-orange-500 to-rose-500 p-3.5 text-white shadow-soft" role="status" aria-label="Ustozning e'loni">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/25"><Pin className="h-5 w-5" aria-hidden /></span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-extrabold uppercase tracking-widest text-white/85">Muhim</p>
+        <p className="break-words text-base font-extrabold leading-snug">{note}</p>
+      </div>
+      {onClear && <button type="button" onClick={onClear} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/25 hover:bg-white/35" aria-label="E'lonni olib tashlash"><X className="h-4 w-4" aria-hidden /></button>}
+    </div>
+  );
+}
+
+/** Reaksiya tugmalari: bosilganda hamma ekranida emoji ko'tariladi. */
+export function ReactionBar({ onReact, disabled }: { onReact: (e: string) => void; disabled?: boolean }) {
+  return (
+    <div className="flex items-center gap-0.5 rounded-full border border-border bg-card/95 p-1 shadow-lg backdrop-blur" role="group" aria-label="Reaksiyalar">
+      {REACTIONS.map((e) => (
+        <button key={e} type="button" disabled={disabled} onClick={() => onReact(e)} aria-label={`Reaksiya ${e}`} className="grid h-9 w-9 place-items-center rounded-full text-xl transition-transform hover:scale-125 active:scale-90 disabled:opacity-40">{e}</button>
+      ))}
+    </div>
+  );
 }
 
 /** Taymer: hamma ko'radi; vaqt tugaganda qisqa signal beradi. */
@@ -84,7 +122,8 @@ export function ClassBar({ api, meId }: { api: ClassApi; meId: string }) {
       )}
 
       {pick && dismissed !== pick.id && (
-        <div className={cn("flex items-center gap-3 rounded-2xl p-3 text-white", pick.who === meId ? "bg-success" : "bg-primary")} role="status">
+        <div className={cn("anim-pop relative flex items-center gap-3 overflow-hidden rounded-2xl p-3 text-white", pick.who === meId ? "bg-gradient-to-r from-success to-emerald-500" : "bg-gradient-to-r from-primary to-sky-500")} role="status">
+          {pick.who === meId && <Confetti />}
           <Shuffle className="h-6 w-6 shrink-0" aria-hidden />
           <p className="min-w-0 flex-1 font-bold">{pick.who === meId ? "Sizning navbatingiz! Mikrofonni yoqib, javob bering." : `Navbat: ${pick.name}`}</p>
           <button type="button" onClick={() => setDismissed(pick.id)} className="grid h-8 w-8 place-items-center rounded-lg bg-white/20" aria-label="Yopish"><X className="h-4 w-4" aria-hidden /></button>
@@ -125,7 +164,7 @@ export function ClassBar({ api, meId }: { api: ClassApi; meId: string }) {
           ) : poll.show && poll.counts ? (
             <div className="mt-3 space-y-3">
               {poll.correct !== null && guest.myVote !== null && (
-                <p className={cn("rounded-xl p-2.5 text-center text-sm font-extrabold", guest.myVote === poll.correct ? "bg-success/15 text-success" : "bg-danger/10 text-danger")}>{guest.myVote === poll.correct ? "To'g'ri javob!" : `Noto'g'ri. To'g'ri javob: ${OPT_LETTERS[poll.correct]}`}</p>
+                <p className={cn("relative overflow-hidden rounded-xl p-2.5 text-center text-sm font-extrabold", guest.myVote === poll.correct ? "bg-success/15 text-success" : "bg-danger/10 text-danger")}>{guest.myVote === poll.correct && <Confetti />}{guest.myVote === poll.correct ? "To'g'ri javob!" : `Noto'g'ri. To'g'ri javob: ${OPT_LETTERS[poll.correct]}`}</p>
               )}
               <Bars labels={poll.opts} counts={poll.counts} correct={poll.correct} mine={guest.myVote} total={poll.counts.reduce((a, b) => a + b, 0)} />
             </div>
@@ -149,7 +188,7 @@ export function ClassBar({ api, meId }: { api: ClassApi; meId: string }) {
   );
 }
 
-type Panel = "poll" | "pulse" | "timer" | "pick" | "mats" | "attend" | null;
+type Panel = "poll" | "pulse" | "timer" | "pick" | "mats" | "attend" | "note" | null;
 
 function Tool({ icon: Icon, label, on, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; on?: boolean; onClick: () => void }) {
   return (
@@ -167,13 +206,14 @@ export function HostTools({ api, title }: { api: ClassApi; title: string }) {
   return (
     <div>
       <h2 className="text-sm font-extrabold">Dars asboblari</h2>
-      <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+      <div className="mt-3 grid grid-cols-3 gap-2">
         <Tool icon={PenLine} label={cls.stage === "board" ? "Doskani yopish" : "Doska"} on={cls.stage === "board"} onClick={() => api.patch({ stage: cls.stage === "board" ? "auto" : "board" })} />
         <Tool icon={BarChart3} label="So'rovnoma" on={panel === "poll" || !!cls.poll} onClick={() => toggle("poll")} />
         <Tool icon={ThumbsUp} label="Tushundingizmi?" on={panel === "pulse" || !!cls.pulse} onClick={() => toggle("pulse")} />
         <Tool icon={TimerIcon} label="Taymer" on={panel === "timer" || !!timerEnd} onClick={() => toggle("timer")} />
         <Tool icon={Shuffle} label="Tasodifiy o'quvchi" on={panel === "pick"} onClick={() => toggle("pick")} />
         <Tool icon={Link2} label={`Materiallar${cls.mats.length ? ` (${cls.mats.length})` : ""}`} on={panel === "mats"} onClick={() => toggle("mats")} />
+        <Tool icon={Megaphone} label="E'lon" on={panel === "note" || !!cls.note} onClick={() => toggle("note")} />
         <Tool icon={ClipboardList} label="Davomat" on={panel === "attend"} onClick={() => toggle("attend")} />
         <Tool icon={cls.lock ? Lock : LockOpen} label={cls.lock ? "Chatni yoqish" : "Chatni to'xtatish"} on={cls.lock} onClick={() => api.patch({ lock: !cls.lock })} />
       </div>
@@ -200,6 +240,7 @@ export function HostTools({ api, title }: { api: ClassApi; title: string }) {
       {panel === "timer" && <TimerPanel api={api} />}
       {panel === "pick" && <PickPanel api={api} />}
       {panel === "mats" && <MatsPanel api={api} />}
+      {panel === "note" && <NotePanel api={api} />}
       {panel === "attend" && (
         <div className="mt-4 space-y-3 border-t border-border pt-4">
           <p className="text-sm text-muted-foreground">Dars paytida kirgan o&apos;quvchilar ({attendance.length}). Ro&apos;yxat shu sahifada turadi: sahifani yopsangiz yo&apos;qoladi, shuning uchun dars oxirida nusxalab oling.</p>
@@ -325,6 +366,20 @@ function PickPanel({ api }: { api: ClassApi }) {
       {msg && <p role="alert" className="text-sm font-semibold text-danger">{msg}</p>}
       {pick && <p className="rounded-xl bg-primary/10 p-3 text-sm font-bold">Tanlandi: {pick.name} <button type="button" className="ml-2 text-xs font-semibold text-primary underline" onClick={api.host.clearPick}>Yashirish</button></p>}
     </div>
+  );
+}
+
+function NotePanel({ api }: { api: ClassApi }) {
+  const [v, setV] = React.useState(api.cls.note);
+  return (
+    <form className="mt-4 space-y-3 border-t border-border pt-4" onSubmit={(e) => { e.preventDefault(); api.host.setNote(v); }}>
+      <p className="text-sm text-muted-foreground">Muhim gapni hamma ekranida yorqin lavha qilib chiqaradi: uyga vazifa, test sanasi, keyingi dars vaqti. Yangisini yozsangiz, eskisi almashadi.</p>
+      <Input value={v} onChange={(e) => setV(e.target.value)} maxLength={MAX_NOTE} placeholder="Masalan: Uyga vazifa: 12-bet, 3-mashq" aria-label="E'lon matni" />
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={!v.trim()}><Megaphone className="h-4 w-4" aria-hidden />Hammaga chiqarish</Button>
+        {api.cls.note && <Button type="button" variant="outline" onClick={() => { api.host.setNote(""); setV(""); }}><X className="h-4 w-4" aria-hidden />Olib tashlash</Button>}
+      </div>
+    </form>
   );
 }
 
