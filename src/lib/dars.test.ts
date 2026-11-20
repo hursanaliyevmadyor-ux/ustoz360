@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ROOM_ALPHABET, ROOM_CODE_LEN, addSavedRoom, cleanName, cleanTitle, connectionQuality, describeMediaError, fromLocalInput, inviteText, isRoomCode, isTelegramBrowser,
+  ROOM_ALPHABET, ROOM_CODE_LEN, addSavedRoom, cleanName, cleanTitle, connectionQuality, describeMediaError, externalBrowserUrl, fromLocalInput, inviteText, isRoomCode, isTelegramBrowser,
   joinUrl, lessonCountdown, lessonTimeLabel, newRoomCode, parseSavedRooms, parseStartsAt, telegramShareUrl, toLocalInput,
 } from "./dars";
 
@@ -173,5 +173,31 @@ describe("ovozli xona havolalari", () => {
     const r = { code: "abcdefghjk", title: "A", at: 1, voice };
     expect(parseSavedRooms(JSON.stringify([r]))).toEqual([r]);
     expect(parseSavedRooms(JSON.stringify([{ ...r, voice: { mode: "x", k: "a", h: "b" } }]))).toEqual([]);
+  });
+});
+
+describe("tashqi brauzerda ochish", () => {
+  const link = "https://ustoz360.vercel.app/d/abcdefghjk?r=s&k=ABC";
+  it("Android: Chrome intent havolasi, orqaga qaytish manzili bilan", () => {
+    const u = externalBrowserUrl(link, "Mozilla/5.0 (Linux; Android 13) Telegram-Android/10.0")!;
+    expect(u.startsWith("intent://ustoz360.vercel.app/d/abcdefghjk?r=s&k=ABC#Intent;scheme=https;package=com.android.chrome;")).toBe(true);
+    expect(u).toContain("S.browser_fallback_url=" + encodeURIComponent(link));
+    expect(u.endsWith(";end")).toBe(true);
+  });
+  it("iPhone: Safari havolasi", () => {
+    expect(externalBrowserUrl(link, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Telegram")).toBe(`x-safari-${link}`);
+  });
+  it("kompyuter yoki noto'g'ri havola uchun null", () => {
+    expect(externalBrowserUrl(link, "Mozilla/5.0 (Windows NT 10.0)")).toBeNull();
+    expect(externalBrowserUrl("javascript:alert(1)", "Android")).toBeNull();
+    expect(externalBrowserUrl("salom", "Android")).toBeNull();
+  });
+  it("fan havolaga qo'shiladi va saqlangan xonada qoladi, noma'lum fan tashlanadi", () => {
+    const voice = { mode: "s" as const, k: "K".repeat(22), h: "H".repeat(22) };
+    expect(joinUrl("https://x.uz", "abcdefghjk", "A", true, null, voice, "math")).toContain("f=math");
+    expect(joinUrl("https://x.uz", "abcdefghjk", "A", true, null, voice, "zzz")).not.toContain("f=");
+    const r = { code: "abcdefghjk", title: "A", at: 1, subject: "chem", voice };
+    expect(parseSavedRooms(JSON.stringify([r]))).toEqual([r]);
+    expect(parseSavedRooms(JSON.stringify([{ ...r, subject: "zzz" }]))[0]).not.toHaveProperty("subject");
   });
 });

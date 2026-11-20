@@ -3,7 +3,7 @@ import * as React from "react";
 import { BoardStore, type BoardMsg, parseBoard } from "@/lib/board";
 import { BlobAssembler, parseBlobChunk, splitBlob } from "@/lib/blob-chunks";
 import { shrinkImage } from "@/lib/image-shrink";
-import { MAX_DRAWERS, MAX_MATS, MAX_TIMER_SEC, type ClassState, type Material, type Seen, cleanUrl, emptyClass, makePoll, parseAct, parseClass, pickRandom, pollCounts } from "@/lib/class-tools";
+import { MAX_DRAWERS, MAX_MATS, MAX_PLAN, MAX_PLAN_ITEM, MAX_STAR, MAX_TIMER_SEC, type ClassState, type Material, type Seen, cleanUrl, emptyClass, makePoll, parseAct, parseClass, pickRandom, pollCounts } from "@/lib/class-tools";
 import type { VEngine, VEvent, VPerson, VSession } from "./voice-engine";
 
 const rid = () => Math.floor(Math.random() * 2 ** 31);
@@ -244,9 +244,17 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   return {
     imageUrl: images.get(board.image) ?? null, placeImage, clearImage,
     cls, isHost, canDraw: isHost || (!!session && cls.draw.includes(session.identity)), timerEnd, board, boardVer, boardChanged, boardNet, patch,
-    host: { setNote: (note: string) => publish({ ...clsRef.current, note: note.replace(/\s+/g, " ").trim().slice(0, 160) }), setDrawer, startPoll, closePoll, showPoll, clearPoll, startPulse, stopPulse, startTimer, stopTimer, pickStudent, clearPick, addMat, removeMat },
+    host: {
+      setPlan: (items: string[]) => { const it = items.map((x) => x.replace(/\s+/g, " ").trim().slice(0, MAX_PLAN_ITEM)).filter(Boolean).slice(0, MAX_PLAN); publish({ ...clsRef.current, plan: it.length ? { items: it, at: 0 } : null }); },
+      planGo: (at: number) => { const p = clsRef.current.plan; if (p) publish({ ...clsRef.current, plan: { ...p, at: Math.max(0, Math.min(p.items.length, at)) } }); },
+      giveStar: (identity: string, d = 1) => {
+        const cur = clsRef.current.stars, n = Math.max(0, Math.min(MAX_STAR, (cur[identity] ?? 0) + d)), next = { ...cur };
+        if (n) next[identity] = n; else delete next[identity];
+        publish({ ...clsRef.current, stars: next });
+      },
+      setNote: (note: string) => publish({ ...clsRef.current, note: note.replace(/\s+/g, " ").trim().slice(0, 160) }), setDrawer, startPoll, closePoll, showPoll, clearPoll, startPulse, stopPulse, startTimer, stopTimer, pickStudent, clearPick, addMat, removeMat },
     counts, voters: poll ? [...votes.current.keys()].filter((id) => present.has(id)).length : 0, pulseCounts, pulseVoters: pulseCounts[0] + pulseCounts[1] + pulseCounts[2],
-    attendance: [...seen.current.values()].sort((a, b) => a.first - b.first),
+    attendance: [...seen.current.values()].sort((a, b) => a.first - b.first).map((s) => ({ ...s, stars: cls.stars[s.identity] ?? 0 })),
     guest: { vote, sendPulse, myVote: poll && myVote?.poll === poll.id ? myVote.o : null, myPulse: cls.pulse && myPulse?.id === cls.pulse.id ? myPulse.v : null },
   };
 }

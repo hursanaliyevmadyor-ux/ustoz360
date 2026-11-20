@@ -69,7 +69,7 @@ function Sidebar() {
         <NavLink href="/imtihon" icon={GraduationCap} label="Imtihon simulyatori" active={path === "/imtihon" || path.startsWith("/imtihon/")} />
         <NavLink href="/reyting" icon={Trophy} label="Ustozlar reytingi" active={path === "/reyting" || path.startsWith("/reyting/")} />
         <NavLink href="/seminarlar" icon={CalendarDays} label="Seminarlar" active={path === "/seminarlar"} />
-        <NavLink href="/dars" icon={Video} label="Dars xonasi" active={path === "/dars"} />
+        <NavLink href="/dars" icon={Video} label="Jonli dars" active={path === "/dars"} />
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Modullar</p>
         {visible.filter((m) => m.key !== "ai").map((m) => <NavLink key={m.key} href={m.href} icon={m.icon} label={m.name} active={cur === m.key} />)}
         <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-wider text-white/40">Hisob</p>
@@ -86,17 +86,24 @@ function BottomNav() {
   const items = [
     { href: "/dashboard", label: "Bosh", icon: Home, on: path === "/dashboard" },
     { href: "/ustoz-ai", label: "O'rganish", icon: modules[0].icon, on: path.startsWith("/ustoz-ai") },
+    { href: "/dars", label: "Dars", icon: Video, on: path === "/dars", live: true },
     { href: "/imtihon", label: "Imtihon", icon: GraduationCap, on: path === "/imtihon" || path.startsWith("/imtihon/") },
     { href: "/reyting", label: "Reyting", icon: Trophy, on: path === "/reyting" || path.startsWith("/reyting/") },
     { href: "/profil", label: "Profil", icon: User, on: path.startsWith("/profil") },
   ];
   return (
     <nav aria-label="Mobil menyu" className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {items.map((i) => (
           <li key={i.label}>
-            <Link href={i.href} aria-current={i.on ? "page" : undefined} className={cn("flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-[11px] font-semibold", i.on ? "text-primary" : "text-muted-foreground")}>
-              <i.icon className="h-5 w-5" aria-hidden />{i.label}
+            <Link href={i.href} aria-current={i.on ? "page" : undefined} aria-label={i.live ? "Jonli dars: xona yaratish va dars o'tkazish" : undefined} className={cn("flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-[10.5px] font-semibold", i.on ? "text-primary" : "text-muted-foreground")}>
+              {i.live ? (
+                <span className="relative grid h-7 w-9 place-items-center rounded-xl bg-gradient-to-br from-primary to-sky-500 text-white shadow-sm">
+                  <i.icon className="h-[18px] w-[18px]" aria-hidden />
+                  <span aria-hidden className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-card" />
+                </span>
+              ) : <i.icon className="h-5 w-5" aria-hidden />}
+              {i.label}
             </Link>
           </li>
         ))}
@@ -118,6 +125,18 @@ function AllServices({ open, setOpen }: { open: boolean; setOpen: (v: boolean) =
             <Link href="/ai" onClick={() => setOpen(false)} className="flex h-full flex-col gap-2 rounded-2xl border border-border p-3.5 hover:bg-muted">
               <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-white"><Sparkles className="h-5 w-5" aria-hidden /></span>
               <b className="text-sm">AI yordamchi</b><span className="text-xs text-muted-foreground">Erkin savol va suhbat</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/dars" onClick={() => setOpen(false)} className="flex h-full flex-col gap-2 rounded-2xl border border-primary/30 bg-primary/5 p-3.5 hover:bg-primary/10">
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-primary to-sky-500 text-white"><Video className="h-5 w-5" aria-hidden /></span>
+              <b className="text-sm">Jonli dars</b><span className="text-xs text-muted-foreground">Doska, video, o'quvchilar bilan</span>
+            </Link>
+          </li>
+          <li>
+            <Link href="/reyting" onClick={() => setOpen(false)} className="flex h-full flex-col gap-2 rounded-2xl border border-border p-3.5 hover:bg-muted">
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber text-white"><Trophy className="h-5 w-5" aria-hidden /></span>
+              <b className="text-sm">Reyting</b><span className="text-xs text-muted-foreground">Ustozlar reytingi</span>
             </Link>
           </li>
           <li>

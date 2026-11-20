@@ -8,9 +8,10 @@ import { cn } from "@/lib/utils";
 import { describeMediaError } from "@/lib/dars";
 import { MAX_CHAT, sortPeople } from "@/lib/voice-msg";
 import { hasVideo, isFree, type VoiceMode } from "@/lib/voice-mode";
+import { subjectOf } from "@/lib/subjects";
 import { ClipAssembler, SEND_GAP_MS, parseChunk, splitClip, type Clip } from "@/lib/voice-clip";
 import { VoiceNotePlayer, VoiceNoteRecorder } from "./voice-note";
-import { ClassBar, HostTools, NoteBanner, ReactionBar } from "./class-tools";
+import { ClassBar, HostTools, NoteBanner, PlanBar, ReactionBar } from "./class-tools";
 import { ReactionLimiter, parseReaction } from "@/lib/reactions";
 import { useClassTools } from "./use-class";
 import { Whiteboard } from "./whiteboard";
@@ -33,7 +34,7 @@ function VideoView({ engine, identity, source, mirror, className }: { engine: VE
 }
 
 /** Dars xonasi: video, ishtirokchilar, mikrofon, kamera, ekran ulashish, qo'l ko'tarish, yozishma; ustozga boshqaruv. */
-export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl: Ctl; title: string; onExit: () => void }) {
+export function VoiceRoom({ engine, ctl, title, onExit, subject }: { engine: VEngine; ctl: Ctl; title: string; onExit: () => void; subject?: string | null }) {
   const [state, setState] = React.useState<VState>("connecting");
   const [err, setErr] = React.useState("");
   const [session, setSession] = React.useState<VSession | null>(null);
@@ -51,6 +52,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   const [canShare, setCanShare] = React.useState(false);
   const [recording, setRecording] = React.useState(false);
   const [joinedAt] = React.useState(() => Date.now());
+  const [reactOpen, setReactOpen] = React.useState(false);
   const [bubbles, setBubbles] = React.useState<{ id: number; e: string; x: number }[]>([]);
   const limiter = React.useMemo(() => new ReactionLimiter(), []);
   const myLimiter = React.useMemo(() => new ReactionLimiter(), []);
@@ -83,6 +85,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
     setBubbles((b) => [...b.slice(-13), { id, e, x: Math.round(Math.random() * 70) }]);
     setTimeout(() => setBubbles((b) => b.filter((x) => x.id !== id)), 3100);
   }, []);
+  const subj = subjectOf(subject);
   const video = hasVideo(ctl.mode);
   const modeFree = isFree(ctl.mode); // havola "hamma gapira oladi" rejimida yaratilgan (eski xonalar)
   const freeNow = modeFree || free;
@@ -112,6 +115,14 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   }, [ctl]);
 
   React.useEffect(() => { setCanShare(typeof navigator.mediaDevices?.getDisplayMedia === "function" && !/Android|iPhone|iPad/i.test(navigator.userAgent)); }, []);
+
+  // Fan tanlangan xonada ustoz kirganda doska shu fanga mos fon bilan boshlanadi (bir marta)
+  const subjApplied = React.useRef(false);
+  React.useEffect(() => {
+    if (!isHost || !subj || subjApplied.current || !session) return;
+    subjApplied.current = true;
+    if (cx.cls.bg === "plain" && subj.bg !== "plain") cx.patch({ bg: subj.bg });
+  }, [isHost, subj, session, cx]);
 
   // Ulanish
   React.useEffect(() => {
@@ -161,6 +172,14 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
     void wl?.request("screen").then((l) => { lock = l; }).catch(() => {});
     return () => { void lock?.release().catch(() => {}); };
   }, [state]);
+
+  // Ustoz ⭐ bersa, o'quvchi bayram qiladi (kirgan zahoti kelgan eski yulduzlar uchun emas)
+  const myStars = session ? cx.cls.stars[session.identity] ?? 0 : 0;
+  const prevStars = React.useRef(0);
+  React.useEffect(() => {
+    if (!isHost && myStars > prevStars.current && Date.now() - joinedAt > 4000) { setNotice("Ustoz sizga ⭐ berdi. Barakalla!"); showBubble("⭐"); showBubble("🎉"); }
+    prevStars.current = myStars;
+  }, [myStars, isHost, joinedAt, showBubble]);
 
   // Gapirishga ruxsat berilsa: qo'l tushadi va ogohlantirish chiqadi
   React.useEffect(() => {
@@ -265,7 +284,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
   const tabs = (isHost ? [["people", "Ishtirokchilar", Users], ["chat", "Yozishma", MessageCircle], ["tools", "Asboblar", LayoutGrid]] : [["people", "Ishtirokchilar", Users], ["chat", "Yozishma", MessageCircle]]) as readonly (readonly ["people" | "chat" | "tools", string, typeof Users])[];
   const board = (
     <Whiteboard store={cx.board} version={cx.boardVer} bg={cx.cls.bg} canDraw={cx.canDraw} isHost={isHost} net={cx.boardNet} onChange={cx.boardChanged}
-      onBg={isHost ? (b) => cx.patch({ bg: b }) : undefined} imageUrl={cx.imageUrl}
+      onBg={isHost ? (b) => cx.patch({ bg: b }) : undefined} imageUrl={cx.imageUrl} subject={subject}
       onPickImage={isHost ? (f) => void cx.placeImage(f).then((m) => { if (m) flash(m); }) : undefined} onClearImage={isHost ? cx.clearImage : undefined} />
   );
 
@@ -282,12 +301,13 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
         <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/20 ring-1 ring-white/30 backdrop-blur" aria-hidden>{video ? <Video className="h-6 w-6" /> : <Mic className="h-6 w-6" />}</span>
         <div className="relative min-w-[9rem] flex-1">
           <h1 className="truncate text-xl font-black leading-tight tracking-tight">{title || "Dars"}</h1>
-          <p className="truncate text-xs font-semibold text-white/80">{video ? "Onlayn dars" : "Ovozli chat"} · {freeNow ? "hamma gapira oladi" : "gapirish ustoz ruxsati bilan"}</p>
+          <p className="truncate text-xs font-semibold text-white/80">{subj ? `${subj.label} · ` : ""}{video ? "Onlayn dars" : "Ovozli chat"} · {freeNow ? "hamma gapira oladi" : "gapirish ustoz ruxsati bilan"}</p>
         </div>
         <div className="relative flex flex-wrap items-center gap-2">
           <span className={cn("inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-extrabold backdrop-blur", !live && "text-amber-200")} aria-live="polite">
             <span aria-hidden className={cn("h-2 w-2 rounded-full", live ? "anim-live bg-red-500" : "bg-amber")} />{state === "connecting" ? "Ulanmoqda..." : state === "reconnecting" ? "Aloqa tiklanmoqda..." : "Jonli"}
           </span>
+          {!isHost && myStars > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-amber px-3 py-1 text-xs font-extrabold text-white shadow" aria-label={`Sizning yulduzlaringiz: ${myStars}`}>⭐ {myStars}</span>}
           {live && <span className="hidden items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur sm:inline-flex"><Clock className="h-3.5 w-3.5" aria-hidden /><ElapsedChip since={joinedAt} /></span>}
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold backdrop-blur"><Users className="h-3.5 w-3.5" aria-hidden />{people.length}</span>
           {isHost && handCount > 0 && <span className="inline-flex animate-bounce items-center gap-1 rounded-full bg-amber px-3 py-1 text-xs font-extrabold text-white shadow" aria-label={`${handCount} ta qo'l ko'tarilgan`}><Hand className="h-3.5 w-3.5" aria-hidden />{handCount}</span>}
@@ -296,6 +316,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
       </header>
 
       {cx.cls.note && <div className="mt-3"><NoteBanner note={cx.cls.note} onClear={isHost ? () => cx.host.setNote("") : undefined} /></div>}
+      {cx.cls.plan && <div className="mt-3"><PlanBar plan={cx.cls.plan} onGo={isHost ? cx.host.planGo : undefined} /></div>}
 
       <div className="mt-3 space-y-2 empty:hidden">
         {audioBlocked && live && (
@@ -439,6 +460,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
                               {p.screenOn && <span className="inline-flex items-center gap-1 font-semibold text-primary"><MonitorUp className="h-3 w-3" aria-hidden />ekranni ulashdi</span>}
                               {hands.has(p.identity) && <span className="inline-flex items-center gap-1 font-semibold text-amber"><Hand className="h-3 w-3" aria-hidden />qo&apos;l ko&apos;tardi</span>}
                               {cx.cls.draw.includes(p.identity) && <span className="inline-flex items-center gap-1 font-semibold text-primary"><PenLine className="h-3 w-3" aria-hidden />doskada</span>}
+                              {!!cx.cls.stars[p.identity] && <span className="font-extrabold text-amber" aria-label={`${cx.cls.stars[p.identity]} ta yulduz`}>⭐ {cx.cls.stars[p.identity]}</span>}
                             </p>
                           </div>
                           {video && <span className={cn("shrink-0", p.camOn ? "text-success" : "text-muted-foreground")} aria-label={p.camOn ? "Kamera yoqiq" : "Kamera o'chiq"}>
@@ -453,6 +475,7 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
                             {p.canSpeak
                               ? <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" loading={busy === p.identity} onClick={() => void allow(p, false)}>Ruxsatni olish</Button>
                               : <Button size="sm" variant={hands.has(p.identity) ? "success" : "outline"} className="h-8 px-2.5 text-xs" loading={busy === p.identity} onClick={() => void allow(p, true)}>Gapirishga ruxsat</Button>}
+                            <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" aria-label={`${p.name} ga yulduz berish`} onClick={() => cx.host.giveStar(p.identity)}>⭐ Yulduz</Button>
                             {boardOn && <Button size="sm" variant={cx.cls.draw.includes(p.identity) ? "primary" : "outline"} className="h-8 px-2.5 text-xs" onClick={() => cx.host.setDrawer(p.identity, !cx.cls.draw.includes(p.identity))}><PenLine className="h-3.5 w-3.5" aria-hidden />{cx.cls.draw.includes(p.identity) ? "Doskadan qaytarish" : "Doskaga chiqarish"}</Button>}
                           </div>
                         )}
@@ -494,11 +517,11 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
       <div aria-hidden className="pointer-events-none fixed bottom-28 right-3 z-30 h-72 w-24 sm:right-8">
         {bubbles.map((b) => <span key={b.id} className="anim-float-up absolute bottom-0 text-4xl drop-shadow" style={{ left: `${b.x}%` }}>{b.e}</span>)}
       </div>
-      {live && <div className="fixed bottom-[5.9rem] right-3 z-30 sm:right-6"><ReactionBar onReact={react} /></div>}
+      {live && <div className={cn("fixed bottom-[5.9rem] right-3 z-30 sm:right-6", !reactOpen && "hidden sm:block")}><ReactionBar onReact={(e) => { react(e); setReactOpen(false); }} /></div>}
 
       {/* Pastki panel */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <div className="pointer-events-auto flex max-w-full items-start justify-center gap-0.5 overflow-x-auto rounded-[1.75rem] border border-white/60 bg-card/90 px-2.5 py-1.5 shadow-[0_10px_40px_rgba(11,45,107,0.25)] ring-1 ring-black/5 backdrop-blur-xl" role="toolbar" aria-label="Dars boshqaruvi">
+        <div className="pointer-events-auto max-w-full overflow-x-auto rounded-[1.75rem] border border-white/60 bg-card/90 px-2 py-1.5 shadow-[0_10px_40px_rgba(11,45,107,0.25)] ring-1 ring-black/5 backdrop-blur-xl sm:px-2.5" role="toolbar" aria-label="Dars boshqaruvi"><div className="mx-auto flex w-max items-start gap-0.5">
           {canSpeak ? (
             <>
               <DockButton hero label="Mikrofon" aria={micOn ? "Mikrofon yoqiq" : "Mikrofonni yoqish"} icon={micOn ? <Mic className="h-5 w-5" aria-hidden /> : <MicOff className="h-5 w-5" aria-hidden />} tone={micOn ? "on" : "primary"} pressed={micOn} loading={busy === "mic"} disabled={!live} pulse={!micOn && !!notice} onClick={() => void media("mic")} />
@@ -511,7 +534,9 @@ export function VoiceRoom({ engine, ctl, title, onExit }: { engine: VEngine; ctl
             <DockButton label="Ekran" aria={sharing ? "Ulashishni to'xtatish" : "Ekranni ulashish"} icon={<MonitorUp className="h-5 w-5" aria-hidden />} tone={sharing ? "on" : "default"} pressed={sharing} loading={busy === "screen"} disabled={!live} onClick={() => void media("screen")} />
           )}
           {isHost && <DockButton label="Doska" aria={boardOn ? "Doskani yopish" : "Doskani ko'rsatish"} icon={<PenLine className="h-5 w-5" aria-hidden />} tone={boardOn ? "on" : "default"} pressed={boardOn} disabled={!live} onClick={() => cx.patch({ stage: boardOn ? "auto" : "board" })} />}
+          <div className="sm:hidden"><DockButton label="Reaksiya" aria={reactOpen ? "Reaksiyalarni yopish" : "Reaksiya yuborish"} icon={<span aria-hidden className="text-xl leading-none">😊</span>} tone={reactOpen ? "primary" : "default"} pressed={reactOpen} disabled={!live} onClick={() => setReactOpen((v) => !v)} /></div>
           {isHost && <DockButton label="Yakunlash" aria="Darsni yakunlash" icon={<PhoneOff className="h-5 w-5" aria-hidden />} tone="danger" loading={busy === "close"} onClick={() => void endForAll()} />}
+        </div>
         </div>
       </div>
     </div>

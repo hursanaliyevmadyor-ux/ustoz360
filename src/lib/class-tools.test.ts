@@ -47,7 +47,7 @@ describe("pollCounts", () => {
 });
 
 describe("parseClass", () => {
-  const good = { lock: true, stage: "board", note: "Vazifa: 12-bet", bg: "grid", draw: ["o-1", "o-2"], timer: { left: 60, total: 120 }, pick: { id: 3, name: "Ali", who: "o-1" }, mats: [{ id: 1, title: "Video", url: "https://youtu.be/x.y" }],
+  const good = { lock: true, stage: "board", note: "Vazifa: 12-bet", plan: { items: ["Takrorlash", "Yangi mavzu"], at: 1 }, stars: { "o-1": 3 }, bg: "grid", draw: ["o-1", "o-2"], timer: { left: 60, total: 120 }, pick: { id: 3, name: "Ali", who: "o-1" }, mats: [{ id: 1, title: "Video", url: "https://youtu.be/x.y" }],
     poll: { id: 2, q: "Q?", opts: ["A", "B"], open: true, show: false, correct: 1, counts: null }, pulse: { id: 4 } };
   it("to'g'ri holat o'zgarmasdan o'tadi", () => {
     expect(parseClass(JSON.parse(JSON.stringify(good)))).toEqual({ ...good, mats: [{ id: 1, title: "Video", url: "https://youtu.be/x.y" }] });
@@ -57,6 +57,21 @@ describe("parseClass", () => {
     expect(parseClass({})).toEqual(emptyClass());
     const c = parseClass({ ...good, stage: "x", timer: { left: -1, total: 5 }, pick: { id: "a", name: "A", who: "o-2" }, poll: { id: 1, q: "", opts: ["A", "B"] }, pulse: { id: "x" }, mats: [{ id: 1, title: "x", url: "javascript:alert(1)" }, 5, null] })!;
     expect(c.stage).toBe("auto"); expect(c.timer).toBeNull(); expect(c.pick).toBeNull(); expect(c.poll).toBeNull(); expect(c.pulse).toBeNull(); expect(c.mats).toEqual([]);
+  });
+  it("dars rejasi: bosqichlar tozalanadi, hozirgi bosqich chegarada", () => {
+    expect(parseClass({ plan: { items: ["  A  ", "", "B"], at: 2 } })!.plan).toEqual({ items: ["A", "B"], at: 2 });
+    expect(parseClass({ plan: { items: ["A"], at: 9 } })!.plan).toEqual({ items: ["A"], at: 0 }); // chegaradan oshsa 0
+    expect(parseClass({ plan: { items: Array.from({ length: 20 }, (_, i) => `B${i}`), at: 0 } })!.plan!.items).toHaveLength(7);
+    for (const bad of [{ items: [] }, { items: ["", " "] }, { items: "A" }, "x", 5, { at: 1 }]) expect(parseClass({ plan: bad })!.plan).toBeNull();
+    expect(parseClass({ plan: { items: ["x".repeat(200)], at: 0 } })!.plan!.items[0]).toHaveLength(60);
+  });
+  it("yulduzlar: faqat to'g'ri sonlar, 99 gacha, 80 kishigacha, xavfli kalit rad", () => {
+    expect(parseClass({ stars: { a: 3, b: 0, c: -1, d: 1.5, e: "2", f: 100, g: 99 } })!.stars).toEqual({ a: 3, g: 99 });
+    expect(parseClass({ stars: 5 })!.stars).toEqual({});
+    expect(Object.keys(parseClass({ stars: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`u${i}`, 1])) })!.stars)).toHaveLength(80);
+    const evil = JSON.parse('{"__proto__": 5, "a": 1}');
+    expect(parseClass({ stars: evil })!.stars).toEqual({ a: 1 });
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
   it("e'lon: tozalanadi va uzunligi cheklanadi", () => {
     expect(parseClass({ note: "  Muhim:   test\nertaga  " })!.note).toBe("Muhim: test ertaga");
@@ -130,9 +145,9 @@ describe("taymer va davomat", () => {
   });
   it("CSV: vergulli ism qo'shtirnoqda, formula bilan boshlangan ism zararsizlantiriladi", () => {
     const csv = attendanceCsv(rows).split("\n");
-    expect(csv[0]).toBe("№,Ism,Kirdi,Chiqdi");
-    expect(csv[1]).toBe("1,Ali,15:02,xonada");
+    expect(csv[0]).toBe("№,Ism,Kirdi,Chiqdi,Yulduz");
+    expect(csv[1]).toBe("1,Ali,15:02,xonada,0");
     expect(csv[2]!.startsWith("2,\"'=HYPERLINK(\"\"x\"\")\"")).toBe(true);
-    expect(csv[3]).toBe('3,"Vali, 5-sinf",15:06,xonada');
+    expect(csv[3]).toBe('3,"Vali, 5-sinf",15:06,xonada,0');
   });
 });

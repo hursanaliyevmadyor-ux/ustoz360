@@ -5,12 +5,13 @@ import { PageHeader } from "@/components/layout/page";
 import { QrCode } from "@/components/dars/qr-code";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, Input, Textarea } from "@/components/ui/form";
+import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import {
   ROOMS_KEY, addSavedRoom, cleanTitle, fromLocalInput, inviteText, joinUrl, lessonCountdown, lessonTimeLabel, newRoomCode, parseSavedRooms, telegramShareUrl, type SavedRoom,
 } from "@/lib/dars";
 import { modeLabel, modeOf, type VoiceMode } from "@/lib/voice-mode";
+import { SUBJECTS, isSubject, subjectOf } from "@/lib/subjects";
 
 const read = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const write = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* maxfiy rejim */ } };
@@ -33,7 +34,8 @@ const DURING = [
   ["Ruxsatni olish", "gapirib bo'lgach, o'quvchi yonidagi «Ruxsatni olish» yoki «Hammaning ruxsatini olish»"],
   ["Ekranni ulashish", "faqat video darsda, kompyuterda: slayd, hujjat yoki doskani hammaga ko'rsatadi. Telefonda bu tugma yo'q"],
   ["Kim gapira oladi", "«Ishtirokchilar» bo'limida «Ruxsat bilan» yoki «Hamma» ni xona ichida jonli almashtirasiz"],
-  ["Doska", "pastdagi «Doska» tugmasi. Chapda asboblar: tanlash va ko'chirish, qalam, marker, o'chirg'ich, obyekt o'chirg'ich, 9 xil shakl (to'ldirish va punktir bilan), matn (², √, π belgilari bilan), stikerlar, shablonlar (jadval, sonlar o'qi, koordinata, Venn), lazer. Yuqorida sahifalar, fon, rasm qo'yish va saqlash; pastda 12 rang va qalinlik"],
+  ["Doska", "pastdagi «Doska» tugmasi. Chapda asboblar: tanlash va ko'chirish, qalam, marker, o'chirg'ich (hudud belgilab birdan o'chirish, erkin hudud, surtib, chiziqni butunlay), 9 xil shakl, matn (fanga mos belgilar: ², √, H₂O, →, transkripsiya), stikerlar, shablonlar (fanlar bo'yicha), grafik chizish (y = x², sin x), lazer. Yuqorida sahifalar, 8 xil fon (katak, koordinata, yozuv chiziqlari, nota yo'li...), rasm qo'yish va saqlash"],
+  ["Dars rejasi va yulduzchalar", "«Asboblar» → «Dars rejasi»: bosqichlarni yozasiz, hamma hozirgi bosqichni ko'radi. O'quvchi yonidagi «⭐ Yulduz» bilan faol o'quvchini rag'batlantirasiz; davomatda ham ko'rinadi"],
   ["Doskaga chiqarish", "«Ishtirokchilar» bo'limida o'quvchi yonidagi «Doskaga chiqarish»: u ham chiza oladi, keyin «Doskadan qaytarish»"],
   ["So'rovnoma / mini-test", "savol va variantlarni yozasiz, o'quvchilar bosadi, natijani siz ko'rasiz va xohlasangiz hammaga ko'rsatasiz"],
   ["Tushundingizmi?", "o'quvchilarga «Tushundim / Sekinroq / Tushunmadim» tugmalari chiqadi, javobni faqat siz ko'rasiz"],
@@ -57,6 +59,7 @@ export default function Page() {
   const [voiceOn, setVoiceOn] = React.useState(false);
   const [video, setVideo] = React.useState(true);
   const mode = modeOf(video, false); // "kim gapira oladi" xona ichida jonli almashtiriladi
+  const [subject, setSubject] = React.useState("");
   const [creating, setCreating] = React.useState(false);
   const [createErr, setCreateErr] = React.useState("");
 
@@ -71,17 +74,21 @@ export default function Page() {
 
   const startsAt = fromLocalInput(when);
 
-  async function create() {
+  /** Xona yaratadi. `go` bo'lsa, darhol ustoz sifatida xonaga kiradi (bitta bosishda dars boshlash). */
+  async function create(opts?: { go?: boolean; video?: boolean }) {
     setCreateErr("");
     setCreating(true);
+    const useMode = opts?.video === undefined ? mode : modeOf(opts.video, false);
     try {
       // Xona kodi va imzolari serverda hosil bo'ladi (faqat tizimga kirgan ustoz yarata oladi).
-      const r = await fetch("/api/dars/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode }) });
+      const r = await fetch("/api/dars/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: useMode }) });
       const d = (await r.json().catch(() => ({}))) as { code?: string; mode?: VoiceMode; k?: string; h?: string; error?: string };
       if (!r.ok || !d.code || !d.k || !d.h || !d.mode) throw new Error(d.error ?? "Xona yaratib bo'lmadi.");
-      const room: SavedRoom = { code: d.code, title: cleanTitle(title), at: Date.now(), ...(startsAt && { startsAt }), voice: { mode: d.mode, k: d.k, h: d.h } };
+      const room: SavedRoom = { code: d.code, title: cleanTitle(title), at: Date.now(), ...(startsAt && { startsAt }), ...(isSubject(subject) && { subject }), voice: { mode: d.mode, k: d.k, h: d.h } };
       const next = addSavedRoom(rooms, room);
-      setRooms(next); write(ROOMS_KEY, JSON.stringify(next)); setCurrent(room); setTitle(""); setWhen("");
+      setRooms(next); write(ROOMS_KEY, JSON.stringify(next));
+      if (opts?.go) { window.location.assign(joinUrl(window.location.origin, room.code, room.title, true, room.startsAt, room.voice, room.subject)); return; }
+      setCurrent(room); setTitle(""); setWhen("");
     } catch (e) {
       setCreateErr(e instanceof Error ? e.message : "Xona yaratib bo'lmadi.");
     }
@@ -100,14 +107,26 @@ export default function Page() {
     setCopied(key); setTimeout(() => setCopied((c) => (c === key ? "" : c)), 2500);
   }
 
-  const linkOf = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, false, r.startsAt, r.voice) : "");
-  const startUrl = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, true, r.startsAt, r.voice) : "#");
+  const linkOf = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, false, r.startsAt, r.voice, r.subject) : "");
+  const startUrl = (r: SavedRoom) => (origin ? joinUrl(origin, r.code, r.title, true, r.startsAt, r.voice, r.subject) : "#");
   const textOf = (r: SavedRoom) => inviteText({ title: r.title, startsAt: r.startsAt, link: linkOf(r), mode: r.voice.mode });
-  const kindLabel = (r: SavedRoom) => modeLabel(r.voice.mode);
+  const kindLabel = (r: SavedRoom) => `${modeLabel(r.voice.mode)}${subjectOf(r.subject) ? ` · ${subjectOf(r.subject)!.label}` : ""}`;
 
   return (
     <>
       <PageHeader title="Dars xonasi" description="Onlayn dars o'tkazing: o'quvchilar havola orqali kiradi, hisob ochish shart emas" />
+
+      <section aria-label="Tez boshlash" className="mb-5 overflow-hidden rounded-3xl bg-gradient-to-r from-[#0B2D6B] via-primary to-[#00B8D4] p-5 text-white shadow-lg">
+        <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-white/80"><span aria-hidden className="h-2 w-2 animate-pulse rounded-full bg-red-400" />Tez boshlash</p>
+        <h2 className="mt-1 text-xl font-black leading-tight">Hozir dars boshlash</h2>
+        <p className="mt-1 text-sm text-white/85">Bitta bosish: xona yaratiladi va siz darhol kirasiz. Taklif havolasini xonaning ichidan Telegramga yuborasiz.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="lg" className="bg-white text-primary hover:bg-white/90" loading={creating} disabled={!voiceOn} onClick={() => void create({ go: true, video: true })}><Video className="h-5 w-5" aria-hidden />Video dars</Button>
+          <Button size="lg" variant="outline" className="border-white/40 bg-white/10 text-white hover:bg-white/20" disabled={!voiceOn || creating} onClick={() => void create({ go: true, video: false })}><Mic className="h-5 w-5" aria-hidden />Ovozli chat</Button>
+        </div>
+        {!voiceOn && <p className="mt-2 text-xs font-semibold text-amber-200">Dars xonasi hozircha sozlanmagan.</p>}
+        {createErr && <p role="alert" className="mt-2 text-sm font-semibold text-amber-200">{createErr}</p>}
+      </section>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-5">
@@ -131,6 +150,12 @@ export default function Page() {
                   ))}
                 </div>
               </fieldset>
+              <Field label="Fan (ixtiyoriy)" hint={subjectOf(subject)?.tip ?? "Fan tanlansa, doska va asboblar shu fanga mos boshlanadi (masalan, matematikada katak va grafik)."}>
+                <Select value={subject} onChange={(e) => setSubject(e.target.value)}>
+                  <option value="">Tanlanmagan</option>
+                  {SUBJECTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </Select>
+              </Field>
               <div className="grid gap-3 sm:grid-cols-[1fr_13rem_auto] sm:items-end">
               <Field label="Dars nomi (ixtiyoriy)">
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} placeholder="Masalan: 5-sinf matematika, kasr sonlar" />

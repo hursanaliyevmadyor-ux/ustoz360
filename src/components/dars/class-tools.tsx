@@ -1,13 +1,14 @@
 "use client";
 import * as React from "react";
-import { BarChart3, Check, ClipboardList, Copy, Download, Link2, Lock, LockOpen, Megaphone, PenLine, Pin, Play, Plus, Shuffle, Square, ThumbsUp, Timer as TimerIcon, Trash2, X } from "lucide-react";
+import { BarChart3, Check, ClipboardList, Copy, Download, Link2, ListChecks, Lock, LockOpen, Megaphone, PenLine, Pin, Play, Plus, Shuffle, Square, ThumbsUp, Timer as TimerIcon, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
-import { MAX_NOTE, MAX_OPT, MAX_OPTS, MAX_Q, MIN_OPTS, OPT_LETTERS, PULSE, attendanceCsv, attendanceText, fmtClock, fmtTimer } from "@/lib/class-tools";
+import { DEFAULT_PLAN, MAX_NOTE, MAX_OPT, MAX_OPTS, MAX_Q, MIN_OPTS, OPT_LETTERS, PULSE, attendanceCsv, attendanceText, fmtClock, fmtTimer } from "@/lib/class-tools";
 import { REACTIONS } from "@/lib/reactions";
 import type { ClassApi } from "./use-class";
+import type { ClassState } from "@/lib/class-tools";
 
 function beep() {
   try {
@@ -32,6 +33,27 @@ export function Confetti() {
         <span key={i} className="anim-confetti absolute top-0 h-2.5 w-1.5 rounded-sm opacity-0" style={{ left: `${(i * 37) % 100}%`, backgroundColor: CONFETTI[i % CONFETTI.length], animationDelay: `${(i % 9) * 0.09}s`, animationDuration: `${1.5 + (i % 5) * 0.2}s` }} />
       ))}
     </span>
+  );
+}
+
+/** Dars rejasi: bosqichlar va hozirgi bosqich hamma ko'zi oldida. Ustoz bosqichni bosib o'tkazadi. */
+export function PlanBar({ plan, onGo }: { plan: NonNullable<ClassState["plan"]>; onGo?: (i: number) => void }) {
+  const n = plan.items.length, done = plan.at >= n;
+  return (
+    <section aria-label="Dars rejasi" className="anim-pop rounded-2xl border border-border bg-card p-3 shadow-soft">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-primary"><ListChecks className="h-4 w-4" aria-hidden />Dars rejasi</p>
+        <span className="text-xs font-bold text-muted-foreground">{done ? "Tugadi" : `${plan.at + 1} / ${n}`}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-gradient-to-r from-primary to-cyan-400 transition-[width]" style={{ width: `${(Math.min(plan.at, n) / n) * 100}%` }} /></div>
+      <ol className="mt-2.5 flex gap-1.5 overflow-x-auto pb-0.5">
+        {plan.items.map((t, i) => {
+          const cls = cn("inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold", i < plan.at ? "bg-success/15 text-success" : i === plan.at ? "bg-primary text-white shadow-sm" : "bg-muted text-muted-foreground");
+          const inner = <>{i < plan.at ? <Check className="h-3.5 w-3.5" aria-hidden /> : <span className="tabular-nums">{i + 1}.</span>}{t}</>;
+          return <li key={i}>{onGo ? <button type="button" className={cls} onClick={() => onGo(i)} aria-current={i === plan.at ? "step" : undefined}>{inner}</button> : <span className={cls} aria-current={i === plan.at ? "step" : undefined}>{inner}</span>}</li>;
+        })}
+      </ol>
+    </section>
   );
 }
 
@@ -188,7 +210,7 @@ export function ClassBar({ api, meId }: { api: ClassApi; meId: string }) {
   );
 }
 
-type Panel = "poll" | "pulse" | "timer" | "pick" | "mats" | "attend" | "note" | null;
+type Panel = "poll" | "pulse" | "timer" | "pick" | "mats" | "attend" | "note" | "plan" | null;
 
 function Tool({ icon: Icon, label, on, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; on?: boolean; onClick: () => void }) {
   return (
@@ -213,6 +235,7 @@ export function HostTools({ api, title }: { api: ClassApi; title: string }) {
         <Tool icon={TimerIcon} label="Taymer" on={panel === "timer" || !!timerEnd} onClick={() => toggle("timer")} />
         <Tool icon={Shuffle} label="Tasodifiy o'quvchi" on={panel === "pick"} onClick={() => toggle("pick")} />
         <Tool icon={Link2} label={`Materiallar${cls.mats.length ? ` (${cls.mats.length})` : ""}`} on={panel === "mats"} onClick={() => toggle("mats")} />
+        <Tool icon={ListChecks} label="Dars rejasi" on={panel === "plan" || !!cls.plan} onClick={() => toggle("plan")} />
         <Tool icon={Megaphone} label="E'lon" on={panel === "note" || !!cls.note} onClick={() => toggle("note")} />
         <Tool icon={ClipboardList} label="Davomat" on={panel === "attend"} onClick={() => toggle("attend")} />
         <Tool icon={cls.lock ? Lock : LockOpen} label={cls.lock ? "Chatni yoqish" : "Chatni to'xtatish"} on={cls.lock} onClick={() => api.patch({ lock: !cls.lock })} />
@@ -241,6 +264,7 @@ export function HostTools({ api, title }: { api: ClassApi; title: string }) {
       {panel === "pick" && <PickPanel api={api} />}
       {panel === "mats" && <MatsPanel api={api} />}
       {panel === "note" && <NotePanel api={api} />}
+      {panel === "plan" && <PlanPanel api={api} />}
       {panel === "attend" && (
         <div className="mt-4 space-y-3 border-t border-border pt-4">
           <p className="text-sm text-muted-foreground">Dars paytida kirgan o&apos;quvchilar ({attendance.length}). Ro&apos;yxat shu sahifada turadi: sahifani yopsangiz yo&apos;qoladi, shuning uchun dars oxirida nusxalab oling.</p>
@@ -365,6 +389,29 @@ function PickPanel({ api }: { api: ClassApi }) {
       <Button onClick={() => setMsg(api.host.pickStudent(allow) ? "" : "Xonada o'quvchi yo'q.")}><Shuffle className="h-4 w-4" aria-hidden />O&apos;quvchi tanlash</Button>
       {msg && <p role="alert" className="text-sm font-semibold text-danger">{msg}</p>}
       {pick && <p className="rounded-xl bg-primary/10 p-3 text-sm font-bold">Tanlandi: {pick.name} <button type="button" className="ml-2 text-xs font-semibold text-primary underline" onClick={api.host.clearPick}>Yashirish</button></p>}
+    </div>
+  );
+}
+
+function PlanPanel({ api }: { api: ClassApi }) {
+  const plan = api.cls.plan;
+  const [v, setV] = React.useState((plan?.items ?? []).join("\n"));
+  const n = plan?.items.length ?? 0;
+  return (
+    <div className="mt-4 space-y-3 border-t border-border pt-4">
+      <p className="text-sm text-muted-foreground">Dars bosqichlarini yozing (har bir qatorga bittadan, 7 tagacha). O&apos;quvchilar hozir qaysi bosqichda ekanini ko&apos;rib turadi. Bosqichni bosib yoki «Keyingi» tugmasi bilan o&apos;tkazasiz.</p>
+      <textarea value={v} onChange={(e) => setV(e.target.value)} rows={5} aria-label="Dars rejasi bosqichlari" placeholder={"Takrorlash\nYangi mavzu\nMashq\nUyga vazifa"} className="w-full rounded-xl border border-border bg-card p-3 text-sm outline-none focus:border-primary" />
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => api.host.setPlan(v.split("\n"))} disabled={!v.trim()}><Check className="h-4 w-4" aria-hidden />Rejani qo&apos;yish</Button>
+        <Button variant="outline" onClick={() => { setV(DEFAULT_PLAN.join("\n")); api.host.setPlan([...DEFAULT_PLAN]); }}>Standart reja</Button>
+      </div>
+      {plan && (
+        <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+          <Button variant="outline" onClick={() => api.host.planGo(plan.at - 1)} disabled={plan.at <= 0}>Oldingi</Button>
+          <Button onClick={() => api.host.planGo(plan.at + 1)} disabled={plan.at >= n}><Play className="h-4 w-4" aria-hidden />Keyingi bosqich</Button>
+          <Button variant="outline" onClick={() => { api.host.setPlan([]); setV(""); }}><X className="h-4 w-4" aria-hidden />Olib tashlash</Button>
+        </div>
+      )}
     </div>
   );
 }

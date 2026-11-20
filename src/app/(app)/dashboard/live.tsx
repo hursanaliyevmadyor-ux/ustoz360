@@ -6,7 +6,7 @@ import { useQuery } from "@/lib/use-query";
 import type { MyRank } from "@/lib/ranking-client";
 import { MyRankCard } from "@/components/ranking/my-rank";
 import { Skeleton } from "@/components/ui/states";
-import { ModulesAndQuick } from "@/components/layout/dashboard-bits";
+import { LiveLessonCta, ModulesAndQuick } from "@/components/layout/dashboard-bits";
 import { StatCard } from "@/components/layout/page";
 import { LineChart } from "@/components/charts/charts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +42,8 @@ export function LiveDashboard({ d }: { d: DashboardData }) {
         <div><h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Salom, {d.name.split(" ")[0]}!</h1><p className="text-muted-foreground">Tayyorgarlik holati</p></div>
         <Button asChild><Link href="/ustoz-ai/diagnostika"><Play className="h-4 w-4" />Test boshlash</Link></Button>
       </div>
+
+      <LiveLessonCta />
 
       {d.announcements && d.announcements.length > 0 && (
         <section aria-label="Yangiliklar va e'lonlar" className="mb-6 space-y-2">

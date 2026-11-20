@@ -10,12 +10,16 @@ export const COLORS = ["#111827", "#ffffff", "#6b7280", "#1d4ed8", "#0ea5e9", "#
 export const COLOR_NAMES = ["Qora", "Oq", "Kulrang", "Ko'k", "Moviy", "Yashil", "Och yashil", "Sariq", "To'q sariq", "Qizil", "Pushti", "Binafsha"] as const;
 /** Qalamning qalinligi (1600 pikselli doskada, pikselda). Marker 3 baravar, o'chirg'ich 4 baravar keng. */
 export const WIDTHS = [3, 6, 12, 22] as const;
+/** O'chirg'ich qalinligi (1600 pikselli doskada, pikselda): ancha keng, dars paytida tez o'chirish uchun. */
+export const ERASER_W = [30, 60, 110, 200] as const;
 export const WIDTH_NAMES = ["Juda ingichka", "Ingichka", "O'rta", "Qalin"] as const;
 /** Chiziq turlari: 0 qalam, 1 marker, 2 o'chirg'ich, 3 chiziq, 4 strelka, 5 to'rtburchak, 6 ellips, 7 matn (va stiker), 8 uchburchak, 9 to'g'ri burchakli uchburchak, 10 romb, 11 yulduz, 12 ikki tomonlama strelka. */
-export const KIND = { pen: 0, hl: 1, eraser: 2, line: 3, arrow: 4, rect: 5, ellipse: 6, text: 7, triangle: 8, rtri: 9, diamond: 10, star: 11, darrow: 12 } as const;
-export const MAX_KIND = 12;
-export const isFreehand = (k: number) => k <= 2;
-export const isShape = (k: number) => (k >= 3 && k <= 6) || k >= 8;
+export const KIND = { pen: 0, hl: 1, eraser: 2, line: 3, arrow: 4, rect: 5, ellipse: 6, text: 7, triangle: 8, rtri: 9, diamond: 10, star: 11, darrow: 12, area: 13, lasso: 14 } as const;
+export const MAX_KIND = 14;
+export const isFreehand = (k: number) => k <= 2 || k === KIND.lasso;
+export const isShape = (k: number) => (k >= 3 && k <= 6) || (k >= 8 && k <= 13);
+/** O'chirg'ichlar: qalam bilan (2), to'rtburchak hudud (13), erkin hudud (14). Ular tagidagi hamma narsani o'chiradi va o'zlari tanlanmaydi. */
+export const isEraserKind = (k: number) => k === KIND.eraser || k === KIND.area || k === KIND.lasso;
 /** Yopiq shakl (to'ldirish mumkin): to'rtburchak, ellips, uchburchaklar, romb, yulduz. */
 export const isClosed = (k: number) => k === KIND.rect || k === KIND.ellipse || (k >= 8 && k <= 11);
 /** Shakl parametrlari (bitlar): 1 to'ldirilgan, 2 punktir. */
@@ -25,9 +29,9 @@ export const OPT_DASH = 2;
 export const UNIT = BOARD_X / 1600;
 /** Matn o'lchamlari (1600 pikselli doskada shrift balandligi). */
 export const FONT_SIZES = [28, 44, 68, 104] as const;
-export const BGS = ["plain", "grid", "lines", "dots", "axes", "dark"] as const;
+export const BGS = ["plain", "grid", "lines", "dots", "axes", "writing", "staff", "dark"] as const;
 export type Bg = (typeof BGS)[number];
-export const BG_NAMES: Record<Bg, string> = { plain: "Oq", grid: "Katak", lines: "Chiziqli", dots: "Nuqtali", axes: "Koordinata", dark: "Qora doska" };
+export const BG_NAMES: Record<Bg, string> = { plain: "Oq", grid: "Katak", lines: "Chiziqli", dots: "Nuqtali", axes: "Koordinata", writing: "Yozuv chiziqlari", staff: "Nota yo'li", dark: "Qora doska" };
 export const isBg = (v: unknown): v is Bg => typeof v === "string" && (BGS as readonly string[]).includes(v);
 export const MAX_PAGES = 20;
 export const MAX_STROKES = 400; // bir sahifada
@@ -263,6 +267,9 @@ export function constrainShape(k: number, x0: number, y0: number, x: number, y: 
   return [x, y];
 }
 
+/** Chiziqlar tasmasi: SVG ni CSS fon rasmi sifatida (uzaygan holda) takrorlaydi. */
+const svgTile = (inner: string) => `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'>${inner.replace(/<line /g, "<line vector-effect='non-scaling-stroke' ")}</svg>")`;
+
 /** Orqa fon (CSS gradient bilan ekranda, `drawBg` bilan rasmga saqlashda chiziladi). */
 export function bgStyle(bg: Bg): { backgroundColor: string; backgroundImage?: string; backgroundSize?: string; backgroundPosition?: string } {
   const line = "rgba(148,163,184,0.55)";
@@ -271,6 +278,8 @@ export function bgStyle(bg: Bg): { backgroundColor: string; backgroundImage?: st
     case "lines": return { backgroundColor: "#ffffff", backgroundImage: `linear-gradient(to bottom, transparent calc(100% - 1px), ${line} 1px)`, backgroundSize: "100% 8.3333%" };
     case "dots": return { backgroundColor: "#ffffff", backgroundImage: "radial-gradient(circle, rgba(100,116,139,0.8) 1.4px, transparent 1.6px)", backgroundSize: "3.125% 5.5556%", backgroundPosition: "1.5625% 2.7778%" };
     case "axes": return { backgroundColor: "#ffffff", backgroundImage: `linear-gradient(to right, transparent calc(50% - 1px), #0f172a calc(50% - 1px), #0f172a calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(to bottom, transparent calc(50% - 1px), #0f172a calc(50% - 1px), #0f172a calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(to right, ${line} 1px, transparent 1px), linear-gradient(to bottom, ${line} 1px, transparent 1px)`, backgroundSize: "100% 100%, 100% 100%, 3.125% 5.5556%, 3.125% 5.5556%", backgroundPosition: "0 0, 0 0, 50% 50%, 50% 50%" };
+    case "writing": return { backgroundColor: "#ffffff", backgroundImage: svgTile("<line x1='0' x2='100' y1='14' y2='14' stroke='%2394a3b8' stroke-width='1'/><line x1='0' x2='100' y1='40' y2='40' stroke='%2394a3b8' stroke-width='1' stroke-dasharray='4 4'/><line x1='0' x2='100' y1='66' y2='66' stroke='%2364748b' stroke-width='1.6'/><line x1='0' x2='100' y1='92' y2='92' stroke='%2394a3b8' stroke-width='1'/>"), backgroundSize: "100% 16.6667%" };
+    case "staff": return { backgroundColor: "#ffffff", backgroundImage: svgTile("<line x1='0' x2='100' y1='28' y2='28' stroke='%23475569' stroke-width='1.2'/><line x1='0' x2='100' y1='40' y2='40' stroke='%23475569' stroke-width='1.2'/><line x1='0' x2='100' y1='52' y2='52' stroke='%23475569' stroke-width='1.2'/><line x1='0' x2='100' y1='64' y2='64' stroke='%23475569' stroke-width='1.2'/><line x1='0' x2='100' y1='76' y2='76' stroke='%23475569' stroke-width='1.2'/>"), backgroundSize: "100% 16.6667%" };
     case "dark": return { backgroundColor: "#1f3a2f" };
     default: return { backgroundColor: "#ffffff" };
   }
@@ -364,7 +373,7 @@ export function strokeDistance(s: Stroke, x: number, y: number): number {
 export function hitTest(strokes: readonly Stroke[], x: number, y: number, tol: number): Stroke | null {
   for (let i = strokes.length - 1; i >= 0; i--) {
     const s = strokes[i]!;
-    if (s.k !== KIND.eraser && strokeDistance(s, x, y) <= tol) return s;
+    if (!isEraserKind(s.k) && strokeDistance(s, x, y) <= tol) return s;
   }
   return null;
 }
@@ -373,45 +382,116 @@ export function hitTest(strokes: readonly Stroke[], x: number, y: number, tol: n
 // Shablonlar: bir bosishda doskaga tayyor chizma (jadval, sonlar o'qi, koordinata tekisligi, Venn)
 // ---------------------------------------------------------------------------
 export const TEMPLATES = [
-  { id: "table", name: "Jadval 4×4" },
-  { id: "numline", name: "Sonlar o'qi" },
-  { id: "axes", name: "Koordinata tekisligi" },
-  { id: "venn", name: "Venn diagrammasi" },
+  { id: "table", name: "Jadval 4×4", group: "Umumiy" },
+  { id: "tchart", name: "T-jadval (ikki ustun)", group: "Umumiy" },
+  { id: "kwl", name: "Bilaman, bilmoqchiman, o'rgandim", group: "Umumiy" },
+  { id: "concept", name: "Tushuncha xaritasi", group: "Umumiy" },
+  { id: "venn", name: "Venn diagrammasi", group: "Umumiy" },
+  { id: "numline", name: "Sonlar o'qi", group: "Matematika" },
+  { id: "axes", name: "Koordinata tekisligi", group: "Matematika" },
+  { id: "fraction", name: "Kasrlar: a/b = c/d", group: "Matematika" },
+  { id: "columns", name: "Ustun-hisob", group: "Matematika" },
+  { id: "circuit", name: "Elektr zanjiri", group: "Fizika" },
+  { id: "forces", name: "Jismga ta'sir etuvchi kuchlar", group: "Fizika" },
+  { id: "reaction", name: "Reaksiya tenglamasi", group: "Kimyo va biologiya" },
+  { id: "cell", name: "Hujayra", group: "Kimyo va biologiya" },
+  { id: "timeline", name: "Vaqt chizig'i", group: "Tarix va geografiya" },
+  { id: "flow", name: "Blok-sxema (algoritm)", group: "Informatika" },
 ] as const;
 export type TemplateId = (typeof TEMPLATES)[number]["id"];
-const TPL_SIZE: Record<TemplateId, [number, number]> = { table: [5200, 3200], numline: [7200, 1100], axes: [4600, 4600], venn: [5400, 2800] };
+const TPL_SIZE: Record<TemplateId, [number, number]> = {
+  table: [5200, 3200], tchart: [5600, 3600], kwl: [7200, 3800], concept: [7000, 4000], venn: [5400, 2800],
+  numline: [7200, 1100], axes: [4600, 4600], fraction: [5600, 2000], columns: [3200, 3800],
+  circuit: [5200, 3000], forces: [3800, 3400], reaction: [7400, 1100], cell: [4600, 3400], timeline: [8400, 1900], flow: [3400, 5000],
+};
 
-/** Shablon xabarlari: (x, y) chap yuqori burchak (doskadan chiqib ketmasligi uchun suriladi). `next` har bir chiziq uchun yangi raqam beradi. */
+/** Shablon xabarlari: (x, y) markaz (doskadan chiqib ketmasligi uchun suriladi). `next` har bir chiziq uchun yangi raqam beradi. */
 export function templateMsgs(id: TemplateId, x: number, y: number, c: number, w: number, next: () => number): BoardMsg[] {
   const [W, H] = TPL_SIZE[id];
   const ox = Math.max(0, Math.min(BOARD_X - W, Math.round(x - W / 2))), oy = Math.max(0, Math.min(BOARD_Y - H, Math.round(y - H / 2)));
   const out: BoardMsg[] = [];
-  const shape = (k: number, x1: number, y1: number, x2: number, y2: number, ww = w): void => { out.push({ t: "b", id: next(), k, c, w: ww, p: [ox + x1, oy + y1, ox + x2, oy + y2].map(Math.round), r: 1 }); };
-  const label = (s: string, lx: number, ly: number): void => { out.push({ t: "b", id: next(), k: KIND.text, c, w: 1, p: [Math.max(0, Math.min(BOARD_X, Math.round(ox + lx))), Math.max(0, Math.min(BOARD_Y, Math.round(oy + ly)))], s }); };
-  if (id === "table") {
-    shape(KIND.rect, 0, 0, W, H);
-    for (let i = 1; i < 4; i++) { shape(KIND.line, (W / 4) * i, 0, (W / 4) * i, H, 0); shape(KIND.line, 0, (H / 4) * i, W, (H / 4) * i, 0); }
-  } else if (id === "numline") {
-    shape(KIND.darrow, 0, 450, W, 450);
-    for (let i = 0; i <= 10; i++) {
-      const tx = 400 + ((W - 800) / 10) * i;
-      shape(KIND.line, tx, 330, tx, 570, 0);
-      const t = String(i - 5);
-      label(t, tx - t.length * 130, 640);
-    }
-  } else if (id === "axes") {
-    shape(KIND.arrow, 0, H / 2, W, H / 2); // x o'qi
-    shape(KIND.arrow, W / 2, H, W / 2, 0); // y o'qi
-    for (let i = -4; i <= 4; i++) {
-      if (i === 0) continue;
-      shape(KIND.line, W / 2 + (W / 10) * i, H / 2 - 90, W / 2 + (W / 10) * i, H / 2 + 90, 0);
-      shape(KIND.line, W / 2 - 90, H / 2 - (H / 10) * i, W / 2 + 90, H / 2 - (H / 10) * i, 0);
-    }
-    label("x", W - 260, H / 2 + 140); label("y", W / 2 + 160, 40); label("0", W / 2 + 130, H / 2 + 110);
-  } else {
-    shape(KIND.ellipse, 0, 0, 2800, 2800);
-    shape(KIND.ellipse, 2600, 0, 5400, 2800);
-    label("A", 900, 1180); label("B", 4200, 1180);
+  const shape = (k: number, x1: number, y1: number, x2: number, y2: number, ww = w): void => { out.push({ t: "b", id: next(), k, c, w: ww, p: [ox + x1, oy + y1, ox + x2, oy + y2].map((v, i) => Math.max(0, Math.min(i % 2 ? BOARD_Y : BOARD_X, Math.round(v)))), r: 1 }); };
+  const line = (x1: number, y1: number, x2: number, y2: number) => shape(KIND.line, x1, y1, x2, y2, 0);
+  const label = (s: string, lx: number, ly: number, size = 1): void => { out.push({ t: "b", id: next(), k: KIND.text, c, w: size, p: [Math.max(0, Math.min(BOARD_X, Math.round(ox + lx))), Math.max(0, Math.min(BOARD_Y, Math.round(oy + ly)))], s }); };
+  switch (id) {
+    case "table":
+      shape(KIND.rect, 0, 0, W, H);
+      for (let i = 1; i < 4; i++) { line((W / 4) * i, 0, (W / 4) * i, H); line(0, (H / 4) * i, W, (H / 4) * i); }
+      break;
+    case "tchart":
+      shape(KIND.rect, 0, 0, W, H); line(W / 2, 0, W / 2, H); line(0, 600, W, 600);
+      label("A", W / 4 - 100, 150, 2); label("B", (W * 3) / 4 - 100, 150, 2);
+      break;
+    case "kwl":
+      shape(KIND.rect, 0, 0, W, H); line(W / 3, 0, W / 3, H); line((W * 2) / 3, 0, (W * 2) / 3, H); line(0, 700, W, 700);
+      label("Bilaman", 300, 200); label("Bilmoqchiman", W / 3 + 140, 200); label("O'rgandim", (W * 2) / 3 + 330, 200);
+      break;
+    case "concept":
+      shape(KIND.ellipse, W / 2 - 1100, H / 2 - 600, W / 2 + 1100, H / 2 + 600); label("Mavzu", W / 2 - 330, H / 2 - 120, 2);
+      shape(KIND.rect, 0, 0, 2200, 900); shape(KIND.rect, W - 2200, 0, W, 900); shape(KIND.rect, 0, H - 900, 2200, H); shape(KIND.rect, W - 2200, H - 900, W, H);
+      line(2200, 900, W / 2 - 800, H / 2 - 450); line(W - 2200, 900, W / 2 + 800, H / 2 - 450); line(2200, H - 900, W / 2 - 800, H / 2 + 450); line(W - 2200, H - 900, W / 2 + 800, H / 2 + 450);
+      break;
+    case "venn":
+      shape(KIND.ellipse, 0, 0, 2800, 2800); shape(KIND.ellipse, 2600, 0, 5400, 2800); label("A", 900, 1180); label("B", 4200, 1180);
+      break;
+    case "numline":
+      shape(KIND.darrow, 0, 450, W, 450);
+      for (let i = 0; i <= 10; i++) {
+        const tx = 400 + ((W - 800) / 10) * i, t = String(i - 5);
+        line(tx, 330, tx, 570); label(t, tx - t.length * 130, 640);
+      }
+      break;
+    case "axes":
+      shape(KIND.arrow, 0, H / 2, W, H / 2); shape(KIND.arrow, W / 2, H, W / 2, 0);
+      for (let i = -4; i <= 4; i++) {
+        if (i === 0) continue;
+        line(W / 2 + (W / 10) * i, H / 2 - 90, W / 2 + (W / 10) * i, H / 2 + 90); line(W / 2 - 90, H / 2 - (H / 10) * i, W / 2 + 90, H / 2 - (H / 10) * i);
+      }
+      label("x", W - 260, H / 2 + 140); label("y", W / 2 + 160, 40); label("0", W / 2 + 130, H / 2 + 110);
+      break;
+    case "fraction":
+      for (const ox2 of [0, 3300]) { shape(KIND.rect, ox2, 0, ox2 + 1000, 700); line(ox2 - 100, 1000, ox2 + 1100, 1000); shape(KIND.rect, ox2, 1300, ox2 + 1000, 2000); }
+      label("=", 1750, 780, 2);
+      break;
+    case "columns":
+      for (let r = 0; r < 4; r++) for (let col = 0; col < 5; col++) { if (r === 2) continue; shape(KIND.rect, 300 + col * 560, 150 + r * 850, 300 + col * 560 + 500, 150 + r * 850 + 700, 0); }
+      label("+", 20, 1000, 2); line(0, 2000, W, 2000);
+      break;
+    case "circuit":
+      line(500, 300, W - 500, 300); line(W - 500, 300, W - 500, H - 300); line(500, H - 300, W - 500, H - 300); line(500, 300, 500, H / 2 - 300); line(500, H / 2 + 300, 500, H - 300);
+      line(300, H / 2 - 300, 700, H / 2 - 300); line(380, H / 2 - 100, 620, H / 2 - 100); // batareya
+      line(300, H / 2 + 100, 700, H / 2 + 100); line(300, H / 2 + 300, 700, H / 2 + 300);
+      shape(KIND.rect, W / 2 - 500, 150, W / 2 + 500, 450); label("R", W / 2 - 60, 20); // qarshilik
+      shape(KIND.ellipse, W - 800, H / 2 - 300, W - 200, H / 2 + 300); line(W - 740, H / 2 - 240, W - 260, H / 2 + 240); line(W - 260, H / 2 - 240, W - 740, H / 2 + 240); // lampochka
+      break;
+    case "forces":
+      shape(KIND.rect, W / 2 - 700, H / 2 - 500, W / 2 + 700, H / 2 + 500);
+      shape(KIND.arrow, W / 2, H / 2 - 500, W / 2, 80); shape(KIND.arrow, W / 2, H / 2 + 500, W / 2, H - 80);
+      shape(KIND.arrow, W / 2 + 700, H / 2, W - 80, H / 2); shape(KIND.arrow, W / 2 - 700, H / 2, 80, H / 2);
+      label("N", W / 2 + 120, 80); label("mg", W / 2 + 120, H - 380); label("F", W - 400, H / 2 - 320); label("Fishq", 90, H / 2 - 320);
+      break;
+    case "reaction":
+      label("A  +  B", 100, 200, 2); shape(KIND.arrow, 2300, 550, 4200, 550); label("C  +  D", 4500, 200, 2);
+      label("t°", 3000, 130, 0); label("kat.", 2900, 640, 0);
+      break;
+    case "cell":
+      shape(KIND.ellipse, 0, 0, W, H); shape(KIND.ellipse, W / 2 - 600, H / 2 - 500, W / 2 + 600, H / 2 + 500); shape(KIND.ellipse, 500, 500, 1100, 900, 0); shape(KIND.ellipse, W - 1100, H - 900, W - 500, H - 500, 0);
+      label("Yadro", W / 2 - 220, H / 2 - 80); label("Membrana", 700, H - 560, 0); label("Sitoplazma", 700, 1100, 0);
+      break;
+    case "timeline":
+      shape(KIND.arrow, 0, 1000, W, 1000);
+      for (let i = 0; i < 6; i++) { const tx = 500 + i * 1400; line(tx, 900, tx, 1100); shape(KIND.rect, tx - 550, i % 2 ? 1250 : 150, tx + 550, i % 2 ? 1850 : 750, 0); }
+      break;
+    case "flow":
+      shape(KIND.ellipse, 800, 0, 2600, 700); label("Boshlash", 1000, 200, 0);
+      shape(KIND.arrow, 1700, 700, 1700, 1100);
+      shape(KIND.rect, 600, 1100, 2800, 1900); label("Amal", 1250, 1330, 0);
+      shape(KIND.arrow, 1700, 1900, 1700, 2300);
+      shape(KIND.diamond, 600, 2300, 2800, 3700); label("Shart?", 1200, 2850, 0);
+      shape(KIND.arrow, 2800, 3000, W, 3000); label("ha", 3000, 2680, 0);
+      shape(KIND.arrow, 1700, 3700, 1700, 4200); label("yo'q", 1800, 3850, 0);
+      shape(KIND.ellipse, 800, 4200, 2600, H); label("Tugash", 1050, 4500, 0);
+      break;
   }
   return out;
 }

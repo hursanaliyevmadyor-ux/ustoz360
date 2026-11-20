@@ -1,18 +1,20 @@
 "use client";
 import * as React from "react";
 import {
-  ArrowLeftRight, ArrowUpRight, Brush, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Delete, Download, Eraser, Highlighter, ImagePlus, LayoutTemplate, Maximize2, Minimize2,
+  ArrowLeftRight, ArrowUpRight, BoxSelect, Brush, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Delete, Download, Eraser, Highlighter, ImagePlus, Lasso, LayoutTemplate, LineChart, Maximize2, Minimize2,
   Minus, MousePointer2, Palette, Pencil, Plus, Redo2, Shapes, Smile, Square, Trash2, Type, Undo2, X,
 } from "lucide-react";
 import {
-  BGS, BG_NAMES, BOARD_X, BOARD_Y, BoardHistory, BoardStore, COLORS, COLOR_NAMES, FONT_SIZES, KIND, MAX_TEXT, OPT_DASH, OPT_FILL, TEMPLATES, UNIT, WIDTHS, WIDTH_NAMES,
-  bgStyle, bundle, constrainShape, hitTest, isClosed, isShape, shapePoly, strokeBBox, templateMsgs, type Bg, type BoardMsg, type Stroke, type TemplateId,
+  BGS, BG_NAMES, BOARD_X, BOARD_Y, BoardHistory, BoardStore, COLORS, COLOR_NAMES, ERASER_W, FONT_SIZES, KIND, MAX_TEXT, OPT_DASH, OPT_FILL, TEMPLATES, UNIT, WIDTHS, WIDTH_NAMES,
+  bgStyle, bundle, constrainShape, hitTest, isClosed, isEraserKind, isShape, shapePoly, strokeBBox, templateMsgs, type Bg, type BoardMsg, type Stroke, type TemplateId,
 } from "@/lib/board";
+import { graphMsgs } from "@/lib/grapher";
+import { SYMBOL_ORDER, SYMBOL_TABS, subjectOf, type SymbolGroup } from "@/lib/subjects";
 import { cn } from "@/lib/utils";
 
 const W = 1600;
 const H = 900;
-type Tool = "select" | "pen" | "hl" | "eraser" | "oeraser" | "shape" | "text" | "sticker" | "laser" | "tpl";
+type Tool = "select" | "pen" | "hl" | "eraser" | "earea" | "elasso" | "oeraser" | "shape" | "text" | "sticker" | "laser" | "tpl";
 
 const px = (v: number) => (v / BOARD_X) * W;
 const py = (v: number) => (v / BOARD_Y) * H;
@@ -24,15 +26,26 @@ export function drawStrokes(ctx: CanvasRenderingContext2D, strokes: readonly Str
   for (const s of strokes) {
     const n = s.p.length / 2;
     if (n === 0) continue;
-    const eraser = s.k === KIND.eraser;
+    const eraser = isEraserKind(s.k);
     ctx.globalCompositeOperation = eraser ? "destination-out" : "source-over";
     ctx.globalAlpha = s.k === KIND.hl ? 0.35 : 1;
     const color = eraser ? "#000" : COLORS[s.c] ?? COLORS[0];
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     const base = WIDTHS[s.w] ?? WIDTHS[1];
-    ctx.lineWidth = s.k === KIND.hl ? base * 3.5 : eraser ? base * 4 : base;
+    ctx.lineWidth = s.k === KIND.hl ? base * 3.5 : s.k === KIND.eraser ? ERASER_W[s.w] ?? ERASER_W[1] : base;
     ctx.setLineDash([]);
+    if (s.k === KIND.area) { // to'rtburchak hudud: ichidagi hamma narsa o'chadi
+      const x1 = px(s.p[0]!), y1 = py(s.p[1]!), x2 = px(s.p[2]!), y2 = py(s.p[3]!);
+      ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+      continue;
+    }
+    if (s.k === KIND.lasso) { // erkin hudud: yopiq chiziq ichi o'chadi
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) (i === 0 ? ctx.moveTo(px(s.p[0]!), py(s.p[1]!)) : ctx.lineTo(px(s.p[i * 2]!), py(s.p[i * 2 + 1]!)));
+      ctx.closePath(); ctx.fill();
+      continue;
+    }
     if (s.k === KIND.text) {
       const size = FONT_SIZES[s.w] ?? FONT_SIZES[1];
       ctx.font = `700 ${size}px ui-sans-serif, system-ui, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
@@ -122,10 +135,12 @@ const SHAPES: { k: number; name: string }[] = [
   { k: KIND.rtri, name: "To'g'ri burchakli uchburchak" }, { k: KIND.diamond, name: "Romb" }, { k: KIND.star, name: "Yulduz" },
 ];
 const STICKERS = ["✅", "❌", "⭐", "❤️", "👍", "👏", "😀", "🤔", "❗", "❓", "💡", "🎯", "🏆", "➕", "➖", "✖️", "➗", "🔥", "📌", "🎉", "😍", "👀", "🌟", "📚"];
-const SYMBOLS = ["²", "³", "√", "π", "½", "⅓", "¼", "≠", "≈", "≤", "≥", "±", "×", "÷", "°", "∞", "∠", "Δ", "α", "β"];
 const HINTS: Partial<Record<Tool, string>> = {
   select: "Chiziqni bosing va sudrab ko'chiring. Delete tugmasi uni o'chiradi.",
   oeraser: "Bosilgan chiziq butunlay o'chadi.",
+  earea: "Joyni belgilab torting: ichidagi hammasi birdan o'chadi.",
+  elasso: "Erkin chizing: yopiq hudud ichidagi hammasi o'chadi.",
+  eraser: "Surtib o'chiring. Katta o'lcham tez o'chiradi.",
   laser: "Bosib turib ko'rsating: hamma qizil nuqtani ko'radi.",
   text: "Joyni bosing va yozing. Tugallash: boshqa joyni bosing.",
   sticker: "Stikerni qo'yish uchun doskani bosing.",
@@ -133,17 +148,18 @@ const HINTS: Partial<Record<Tool, string>> = {
 };
 
 type Laser = { x: number; y: number; t: number };
-type Pop = { id: "shape" | "sticker" | "tpl" | "bg"; x: number; y: number; w: number; h: number } | null;
+type Pop = { id: "shape" | "sticker" | "tpl" | "bg" | "eraser" | "graph"; x: number; y: number; w: number; h: number } | null;
 
 /**
  * Doska. Doska maydoni (16:9) asboblardan ajratilgan: yuqorida sahifalar va amallar, chapda asboblar, pastda rang va qalinlik.
  * Ustoz (va ustoz chaqirgan o'quvchi, canDraw) chizadi; ustoz sahifalar, fon va rasmni boshqaradi, tanlab ko'chiradi va shablon qo'yadi.
  * Hamma ko'radi va rasmga (PNG) saqlab oladi. Chiziqlar `store` da turadi va `net` orqali hammaga yuboriladi.
  */
-export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange, onBg, imageUrl, onPickImage, onClearImage }: {
+export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange, onBg, imageUrl, onPickImage, onClearImage, subject }: {
   store: BoardStore; version: number; bg: Bg; canDraw: boolean; isHost: boolean; net: (m: BoardMsg) => void; onChange: () => void;
-  onBg?: (b: Bg) => void; imageUrl?: string | null; onPickImage?: (f: File) => void; onClearImage?: () => void;
+  onBg?: (b: Bg) => void; imageUrl?: string | null; onPickImage?: (f: File) => void; onClearImage?: () => void; subject?: string | null;
 }) {
+  const subj = subjectOf(subject);
   const ref = React.useRef<HTMLCanvasElement>(null);
   const laserRef = React.useRef<HTMLCanvasElement>(null);
   const frameRef = React.useRef<HTMLDivElement>(null);
@@ -151,9 +167,17 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
   const fileRef = React.useRef<HTMLInputElement>(null);
   const taRef = React.useRef<HTMLTextAreaElement>(null);
   const [tool, setTool] = React.useState<Tool>("pen");
+  const [eraserTool, setEraserTool] = React.useState<"earea" | "elasso" | "eraser" | "oeraser">("earea");
+  const [symTab, setSymTab] = React.useState<SymbolGroup>(subj?.sym ?? "mat");
+  const [area, setArea] = React.useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [lasso, setLasso] = React.useState<number[] | null>(null);
+  const [expr, setExpr] = React.useState("");
+  const [exprErr, setExprErr] = React.useState("");
+  const drag = React.useRef<{ x0: number; y0: number; lx: number; ly: number; pts: number[] } | null>(null);
   const [shapeKind, setShapeKind] = React.useState<number>(KIND.rect);
   const [color, setColor] = React.useState(0);
   const [width, setWidth] = React.useState(1);
+  const [ew, setEw] = React.useState(2); // o'chirg'ich o'lchami alohida: qalam yo'g'onlashib ketmasin
   const [fill, setFill] = React.useState(false);
   const [dash, setDash] = React.useState(false);
   const [sticker, setSticker] = React.useState("⭐");
@@ -171,19 +195,19 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
   const mv = React.useRef<{ id: number; lx: number; ly: number; tx: number; ty: number; px: number; py: number; timer: number } | null>(null);
   const oe = React.useRef<Stroke[] | null>(null);
   const laser = React.useRef<{ pts: Laser[]; on: boolean; raf: number }>({ pts: [], on: false, raf: 0 });
-  const st = React.useRef({ tool, shapeKind, color, width, fill, dash, sticker, tpl });
-  st.current = { tool, shapeKind, color, width, fill, dash, sticker, tpl };
+  const st = React.useRef({ tool, shapeKind, color, width, ew, fill, dash, sticker, tpl });
+  st.current = { tool, shapeKind, color, width, ew, fill, dash, sticker, tpl };
   const pendingText = React.useRef<readonly [number, number] | null>(null);
   const laserMove = React.useRef(0);
 
-  // Telefonda asboblar dastlab yig'iq (doskani yopmasligi uchun); doskaga chaqirilgan o'quvchida ochiq
-  React.useEffect(() => { setOpen(window.matchMedia("(min-width: 640px)").matches || !isHost); }, [isHost]);
+  // Asboblar doska maydonidan tashqarida turadi, shuning uchun dastlab ochiq; telefonda yig'ib qo'yish mumkin
+  React.useEffect(() => { setOpen(true); }, [isHost]);
   // Qora doskada qora qalam ko'rinmaydi: rang avtomatik almashadi
   React.useEffect(() => { setColor((c) => (bg === "dark" && c === 0 ? 1 : bg !== "dark" && c === 1 ? 0 : c)); }, [bg]);
   // Chizish huquqi olinsa, asboblar tozalanadi
   React.useEffect(() => { if (!canDraw) { setSelected(null); setPop(null); setText(null); } }, [canDraw]);
   // O'quvchi uchun tanlash, obyekt o'chirg'ich va shablon yo'q
-  React.useEffect(() => { if (!isHost && (tool === "select" || tool === "oeraser" || tool === "tpl")) setTool("pen"); }, [isHost, tool]);
+  React.useEffect(() => { if (!isHost && (tool === "select" || tool === "oeraser" || tool === "tpl")) setTool("pen"); if (!isHost && eraserTool === "oeraser") setEraserTool("earea"); }, [isHost, tool, eraserTool]);
   React.useEffect(() => {
     const onFs = () => setFs(document.fullscreenElement === frameRef.current);
     document.addEventListener("fullscreenchange", onFs);
@@ -246,7 +270,7 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
   const kindOfTool = (t: Tool) => (t === "pen" ? KIND.pen : t === "hl" ? KIND.hl : t === "eraser" ? KIND.eraser : st.current.shapeKind);
   const kindMsg = (c: NonNullable<typeof cur.current>, p: number[], replace = false): BoardMsg => {
     const o = optBits();
-    return { t: "b", id: c.id, k: c.kind, c: st.current.color, w: st.current.width, p, ...(replace && { r: 1 as const }), ...(o && { o }) };
+    return { t: "b", id: c.id, k: c.kind, c: st.current.color, w: c.kind === KIND.eraser ? st.current.ew : st.current.width, p, ...(replace && { r: 1 as const }), ...(o && { o }) };
   };
 
   const flush = React.useCallback(() => {
@@ -339,6 +363,12 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
       return;
     }
     if (t === "oeraser") { e.currentTarget.setPointerCapture(e.pointerId); oe.current = []; eraseAt(x, y); return; }
+    if (t === "earea" || t === "elasso") {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      drag.current = { x0: x, y0: y, lx: x, ly: y, pts: [x, y] };
+      if (t === "earea") setArea({ x0: x, y0: y, x1: x, y1: y }); else setLasso([x, y]);
+      return;
+    }
     if (t === "sticker") {
       const size = (FONT_SIZES[st.current.width] ?? FONT_SIZES[1]) * UNIT;
       stamp({ t: "b", id: rid(), k: KIND.text, c: st.current.color, w: st.current.width, p: [Math.max(0, Math.round(x - size * 0.5)), Math.max(0, Math.min(BOARD_Y, Math.round(y - size * 0.6)))], s: st.current.sticker });
@@ -377,6 +407,14 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
       return;
     }
     if (oe.current) { const [x, y] = at(e); eraseAt(x, y); return; }
+    const dg = drag.current;
+    if (dg) {
+      const [x, y] = at(e);
+      dg.lx = x; dg.ly = y;
+      if (st.current.tool === "earea") setArea({ x0: dg.x0, y0: dg.y0, x1: x, y1: y });
+      else if (Math.abs(x - dg.pts[dg.pts.length - 2]!) + Math.abs(y - dg.pts[dg.pts.length - 1]!) >= 30) { dg.pts.push(x, y); setLasso([...dg.pts]); }
+      return;
+    }
     const c = cur.current;
     if (!c) return;
     if (isShape(c.kind)) {
@@ -395,8 +433,30 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
       add(x, y);
     }
   }
+  /** Hudud o'chirg'ich tugadi: belgilangan joydagi hamma narsa o'chadi (bitta harakat, bekor qilish mumkin). */
+  function finishErase() {
+    const dg = drag.current;
+    drag.current = null;
+    setArea(null); setLasso(null);
+    if (!dg) return;
+    if (st.current.tool === "earea") {
+      if (Math.abs(dg.lx - dg.x0) < 60 || Math.abs(dg.ly - dg.y0) < 60) return; // juda kichik: tasodifiy bosish
+      stamp({ t: "b", id: rid(), k: KIND.area, c: 0, w: 0, p: [dg.x0, dg.y0, dg.lx, dg.ly], r: 1 });
+      return;
+    }
+    if (dg.pts.length < 6) return;
+    const step = Math.max(1, Math.ceil(dg.pts.length / 2 / 180)); // eng ko'pi bilan ~180 nuqta
+    const p: number[] = [];
+    for (let i = 0; i < dg.pts.length / 2; i += step) p.push(dg.pts[i * 2]!, dg.pts[i * 2 + 1]!);
+    const msgs = BoardStore.strokeMsgs({ id: rid(), k: KIND.lasso, c: 0, w: 0, p });
+    msgs.forEach((m) => store.apply(m));
+    send(msgs);
+    if (isHost) { hist.record({ t: "add", ids: [(msgs[0] as { id: number }).id] }); bumpH(); }
+    onChange();
+  }
   function up() {
     const t = st.current.tool;
+    if (t === "earea" || t === "elasso") { finishErase(); return; }
     if (t === "text") {
       const pt = pendingText.current;
       pendingText.current = null;
@@ -442,6 +502,20 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
     requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(a + sym.length, a + sym.length); });
   }
 
+  /** Formula bo'yicha grafikni doskaga chizadi (koordinata fonida); bitta harakat sifatida bekor qilinadi. */
+  function plotGraph() {
+    const c = st.current.color === 1 && bg !== "dark" ? 3 : st.current.color;
+    const msgs = graphMsgs(expr, c, st.current.width, rid);
+    if (msgs === null) { setExprErr("Formula tushunarsiz. Masalan: x^2, 2x+1, sin(x), 1/x"); return; }
+    if (msgs.length === 0) { setExprErr("Bu formulaning grafigi ko'rinadigan sohada yo'q."); return; }
+    setExprErr("");
+    if (bg !== "axes") onBg?.("axes");
+    msgs.forEach((m) => store.apply(m));
+    send(msgs);
+    hist.record({ t: "add", ids: [...new Set(msgs.map((m) => (m as { id: number }).id))] });
+    bumpH(); onChange(); setPop(null);
+  }
+
   // Tezkor tugmalar (faqat chizish huquqi bor bo'lsa, matn yozilayotganda emas)
   React.useEffect(() => {
     if (!canDraw) return;
@@ -454,13 +528,13 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
       if (mod || e.altKey) return;
       if ((e.key === "Delete" || e.key === "Backspace") && isHost && selected !== null) { e.preventDefault(); removeSelected(); return; }
       if (e.key === "Escape") { setSelected(null); return; }
-      const map: Record<string, Tool> = { V: "select", P: "pen", M: "hl", E: "eraser", X: "oeraser", S: "shape", T: "text", K: "laser" };
+      const map: Record<string, Tool> = { V: "select", P: "pen", M: "hl", E: eraserTool, X: "oeraser", S: "shape", T: "text", K: "laser" };
       const k = map[e.key.toUpperCase()];
       if (k && (isHost || (k !== "select" && k !== "oeraser"))) setTool(k);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canDraw, isHost, undo, redo, selected, removeSelected]);
+  }, [canDraw, isHost, undo, redo, selected, removeSelected, eraserTool]);
 
   async function savePng() {
     const c = document.createElement("canvas");
@@ -508,25 +582,28 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
   const selBox = selStroke ? strokeBBox(selStroke) : null;
   const drawTools = canDraw;
   const showColors = tool === "pen" || tool === "hl" || tool === "shape" || tool === "text" || tool === "sticker" || tool === "tpl";
-  const showWidth = tool !== "select" && tool !== "laser" && tool !== "oeraser";
+  const showWidth = tool !== "select" && tool !== "laser" && tool !== "oeraser" && tool !== "earea" && tool !== "elasso";
   const cursor = !canDraw ? "cursor-default" : tool === "text" ? "cursor-text" : tool === "laser" ? "cursor-none" : tool === "select" ? "cursor-default" : "cursor-crosshair";
-  const toolName: Record<Tool, string> = { select: "Tanlash", pen: "Qalam", hl: "Marker", eraser: "O'chirg'ich", oeraser: "Obyekt o'chirg'ich", shape: SHAPES.find((s) => s.k === shapeKind)?.name ?? "Shakl", text: "Matn", sticker: "Stiker", laser: "Lazer", tpl: "Shablon" };
+  const toolName: Record<Tool, string> = { select: "Tanlash", pen: "Qalam", hl: "Marker", eraser: "Surtib o'chirg'ich", earea: "Hudud o'chirg'ich", elasso: "Erkin hudud o'chirg'ich", oeraser: "Chiziqni o'chirish", shape: SHAPES.find((s) => s.k === shapeKind)?.name ?? "Shakl", text: "Matn", sticker: "Stiker", laser: "Lazer", tpl: "Shablon" };
   const tb = (on: boolean, extra?: string) => cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors disabled:opacity-35", on ? "bg-white text-slate-900 shadow" : "text-white/90 hover:bg-white/15", extra);
   const pill = (on: boolean) => cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-bold transition-colors disabled:opacity-35", on ? "bg-white text-slate-900" : "bg-white/10 text-white hover:bg-white/20");
   const sep = <span className="mx-0.5 h-5 w-px shrink-0 bg-white/25 md:mx-0 md:my-0.5 md:h-px md:w-7" aria-hidden />;
 
+  const isEraser = tool === "eraser" || tool === "earea" || tool === "elasso" || tool === "oeraser";
   const toolList = (
     <>
       {isHost && <button type="button" className={tb(tool === "select")} onClick={() => setTool("select")} aria-label="Tanlash" aria-pressed={tool === "select"} title="Tanlash va ko'chirish (V)"><MousePointer2 className="h-[18px] w-[18px]" aria-hidden /></button>}
       <button type="button" className={tb(tool === "pen")} onClick={() => setTool("pen")} aria-label="Qalam" aria-pressed={tool === "pen"} title="Qalam (P)"><Pencil className="h-[18px] w-[18px]" aria-hidden /></button>
       <button type="button" className={tb(tool === "hl")} onClick={() => setTool("hl")} aria-label="Marker" aria-pressed={tool === "hl"} title="Marker (M)"><Highlighter className="h-[18px] w-[18px]" aria-hidden /></button>
-      <button type="button" className={tb(tool === "eraser")} onClick={() => setTool("eraser")} aria-label="O'chirg'ich" aria-pressed={tool === "eraser"} title="O'chirg'ich (E)"><Eraser className="h-[18px] w-[18px]" aria-hidden /></button>
-      {isHost && <button type="button" className={tb(tool === "oeraser")} onClick={() => setTool("oeraser")} aria-label="Obyekt o'chirg'ich" aria-pressed={tool === "oeraser"} title="Obyekt o'chirg'ich: chiziqni butunlay o'chiradi (X)"><Delete className="h-[18px] w-[18px]" aria-hidden /></button>}
+      <button type="button" data-pop-anchor className={tb(isEraser || pop?.id === "eraser")} onClick={(e) => { setTool(eraserTool); openPop("eraser", e.currentTarget); }} aria-label="O'chirg'ich" aria-pressed={isEraser} aria-expanded={pop?.id === "eraser"} title="O'chirg'ich turlari: hudud, erkin hudud, surtib, chiziqni (E)">
+        {eraserTool === "earea" ? <BoxSelect className="h-[18px] w-[18px]" aria-hidden /> : eraserTool === "elasso" ? <Lasso className="h-[18px] w-[18px]" aria-hidden /> : eraserTool === "oeraser" ? <Delete className="h-[18px] w-[18px]" aria-hidden /> : <Eraser className="h-[18px] w-[18px]" aria-hidden />}
+      </button>
       {sep}
       <button type="button" data-pop-anchor className={tb(tool === "shape" || pop?.id === "shape")} onClick={(e) => { setTool("shape"); openPop("shape", e.currentTarget); }} aria-label="Shakllar" aria-pressed={tool === "shape"} aria-expanded={pop?.id === "shape"} title={`Shakllar: ${toolName.shape} (S)`}><ShapeIcon k={shapeKind} /></button>
       <button type="button" className={tb(tool === "text")} onClick={() => setTool("text")} aria-label="Matn" aria-pressed={tool === "text"} title="Matn (T)"><Type className="h-[18px] w-[18px]" aria-hidden /></button>
       <button type="button" data-pop-anchor className={tb(tool === "sticker" || pop?.id === "sticker")} onClick={(e) => { setTool("sticker"); openPop("sticker", e.currentTarget); }} aria-label="Stikerlar" aria-pressed={tool === "sticker"} aria-expanded={pop?.id === "sticker"} title="Stikerlar"><Smile className="h-[18px] w-[18px]" aria-hidden /></button>
       {isHost && <button type="button" data-pop-anchor className={tb(tool === "tpl" || pop?.id === "tpl")} onClick={(e) => { openPop("tpl", e.currentTarget); }} aria-label="Shablonlar" aria-pressed={tool === "tpl"} aria-expanded={pop?.id === "tpl"} title="Shablonlar: jadval, sonlar o'qi, koordinata, Venn"><LayoutTemplate className="h-[18px] w-[18px]" aria-hidden /></button>}
+      {isHost && <button type="button" data-pop-anchor className={tb(pop?.id === "graph")} onClick={(e) => openPop("graph", e.currentTarget)} aria-label="Grafik chizish" aria-expanded={pop?.id === "graph"} title="Formula bo'yicha grafik chizish (y = x², sin x ...)"><LineChart className="h-[18px] w-[18px]" aria-hidden /></button>}
       {sep}
       <button type="button" className={tb(tool === "laser")} onClick={() => setTool("laser")} aria-label="Lazer ko'rsatkich" aria-pressed={tool === "laser"} title="Lazer ko'rsatkich (K)"><Crosshair className="h-[18px] w-[18px]" aria-hidden /></button>
     </>
@@ -584,6 +661,12 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
             <canvas ref={ref} width={W} height={H} className={cn("absolute inset-0 h-full w-full touch-none", cursor)} aria-label="Doska"
               onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={leave} onLostPointerCapture={() => { if (st.current.tool !== "laser") finish(); }} />
             <canvas ref={laserRef} width={W} height={H} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
+            {(area || lasso) && (
+              <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox={`0 0 ${BOARD_X} ${BOARD_Y}`} preserveAspectRatio="none" aria-hidden data-testid="erase-preview">
+                {area && <rect x={Math.min(area.x0, area.x1)} y={Math.min(area.y0, area.y1)} width={Math.abs(area.x1 - area.x0)} height={Math.abs(area.y1 - area.y0)} fill="rgba(239,68,68,0.14)" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 6" vectorEffect="non-scaling-stroke" />}
+                {lasso && <polygon points={lasso.reduce((acc, v, i) => acc + (i % 2 === 0 ? `${i ? " " : ""}${v}` : `,${v}`), "")} fill="rgba(239,68,68,0.14)" stroke="#ef4444" strokeWidth={2} strokeDasharray="8 6" vectorEffect="non-scaling-stroke" />}
+              </svg>
+            )}
             {selBox && canDraw && tool === "select" && (
               <div className="pointer-events-none absolute rounded border-2 border-dashed border-sky-500 bg-sky-500/10" data-testid="selection"
                 style={{ left: `${(selBox.x1 / BOARD_X) * 100 - 0.4}%`, top: `${(selBox.y1 / BOARD_Y) * 100 - 0.7}%`, width: `${((selBox.x2 - selBox.x1) / BOARD_X) * 100 + 0.8}%`, height: `${((selBox.y2 - selBox.y1) / BOARD_Y) * 100 + 1.4}%` }} />
@@ -596,8 +679,13 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
                   onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setText(null); } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitText(); } }}
                   placeholder="Matn yozing..." style={{ fontSize: fontPx, lineHeight: 1.2, color: COLORS[color] === "#ffffff" && bg !== "dark" ? "#111827" : COLORS[color] }}
                   className="min-w-48 resize-none rounded border-2 border-dashed border-primary bg-white/75 px-1 font-bold outline-none placeholder:text-slate-400" />
-                <div className="mt-1 flex max-w-[22rem] flex-wrap gap-1 rounded-lg bg-slate-900/90 p-1" role="group" aria-label="Belgilar">
-                  {SYMBOLS.map((s) => <button key={s} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertSymbol(s)} className="grid h-7 w-7 place-items-center rounded bg-white/10 text-sm font-bold text-white hover:bg-white/25" aria-label={`Belgi ${s}`}>{s}</button>)}
+                <div className="mt-1 max-w-[22rem] rounded-lg bg-slate-900/90 p-1" role="group" aria-label="Belgilar">
+                  <div className="mb-1 flex gap-1 overflow-x-auto" role="tablist" aria-label="Belgilar to'plami">
+                    {SYMBOL_ORDER.map((g) => <button key={g} type="button" role="tab" aria-selected={symTab === g} onMouseDown={(e) => e.preventDefault()} onClick={() => setSymTab(g)} className={cn("shrink-0 rounded-md px-2 py-0.5 text-[11px] font-bold", symTab === g ? "bg-white text-slate-900" : "bg-white/10 text-white/80")}>{SYMBOL_TABS[g].name}</button>)}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {SYMBOL_TABS[symTab].items.map((s) => <button key={s} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertSymbol(s)} className="grid h-7 min-w-7 place-items-center rounded bg-white/10 px-1 text-sm font-bold text-white hover:bg-white/25" aria-label={`Belgi ${s}`}>{s}</button>)}
+                  </div>
                 </div>
                 <div className="mt-1 flex gap-1.5 text-[11px] font-semibold text-slate-700">
                   <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={commitText} className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-white"><Check className="h-3.5 w-3.5" aria-hidden />Qo&apos;yish</button>
@@ -630,8 +718,8 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
               {showWidth && (
                 <div className="flex items-center gap-1" role="group" aria-label="Qalinlik">
                   {WIDTHS.map((w, i) => (
-                    <button key={w} type="button" className={tb(width === i, "h-8 w-8")} onClick={() => setWidth(i)} aria-label={tool === "text" || tool === "sticker" ? `${i === 0 ? "Kichik" : i === 1 ? "O'rta" : i === 2 ? "Katta" : "Juda katta"} o'lcham` : tool === "eraser" ? `O'chirg'ich: ${WIDTH_NAMES[i]}` : WIDTH_NAMES[i]} aria-pressed={width === i}>
-                      {tool === "text" || tool === "sticker" ? <span className="font-extrabold" style={{ fontSize: 9 + i * 3 }}>A</span> : <span className={cn("rounded-full", width === i ? "bg-slate-900" : "bg-white")} style={{ width: 3 + i * 3 + (tool === "eraser" ? 4 : 0), height: 3 + i * 3 + (tool === "eraser" ? 4 : 0) }} />}
+                    <button key={w} type="button" className={tb((tool === "eraser" ? ew : width) === i, "h-8 w-8")} onClick={() => (tool === "eraser" ? setEw(i) : setWidth(i))} aria-label={tool === "text" || tool === "sticker" ? `${i === 0 ? "Kichik" : i === 1 ? "O'rta" : i === 2 ? "Katta" : "Juda katta"} o'lcham` : tool === "eraser" ? `O'chirg'ich: ${WIDTH_NAMES[i]}` : WIDTH_NAMES[i]} aria-pressed={(tool === "eraser" ? ew : width) === i}>
+                      {tool === "text" || tool === "sticker" ? <span className="font-extrabold" style={{ fontSize: 9 + i * 3 }}>A</span> : <span className={cn("rounded-full", (tool === "eraser" ? ew : width) === i ? "bg-slate-900" : "bg-white")} style={{ width: 3 + i * 3 + (tool === "eraser" ? 4 : 0), height: 3 + i * 3 + (tool === "eraser" ? 4 : 0) }} />}
                     </button>
                   ))}
                 </div>
@@ -643,7 +731,7 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
                 </div>
               )}
               {tool === "select" && selStroke && isHost && <button type="button" className={pill(false)} onClick={removeSelected}><Trash2 className="h-4 w-4" aria-hidden />O&apos;chirish</button>}
-              {HINTS[tool] && <p className="hidden min-w-0 flex-1 truncate text-[11px] font-semibold text-white/60 md:block">{HINTS[tool]}</p>}
+              {(HINTS[tool] ?? subj?.tip) && <p className="hidden min-w-0 flex-1 truncate text-[11px] font-semibold text-white/60 md:block" title={HINTS[tool] ?? subj?.tip}>{HINTS[tool] ?? subj?.tip}</p>}
             </div>
           )}
           <button type="button" onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1 self-center rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-bold text-white/80 hover:bg-white/20 md:hidden" aria-expanded={open} aria-label={open ? "Asboblarni yig'ish" : "Asboblarni ochish"}>
@@ -654,8 +742,8 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
 
       {/* Ochiladigan oynalar: shakllar, stikerlar, shablonlar, fon */}
       {pop && (
-        <div ref={popRef} role="dialog" aria-label={pop.id === "shape" ? "Shakllar" : pop.id === "sticker" ? "Stikerlar" : pop.id === "tpl" ? "Shablonlar" : "Doska foni"}
-          className="absolute z-30 max-h-[70%] w-60 overflow-y-auto rounded-2xl bg-slate-950/95 p-2 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur"
+        <div ref={popRef} role="dialog" aria-label={pop.id === "shape" ? "Shakllar" : pop.id === "sticker" ? "Stikerlar" : pop.id === "tpl" ? "Shablonlar" : pop.id === "eraser" ? "O'chirg'ich turi" : pop.id === "graph" ? "Grafik" : "Doska foni"}
+          className={cn("absolute z-30 max-h-[70%] overflow-y-auto rounded-2xl bg-slate-950/95 p-2 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur", pop.id === "graph" || pop.id === "eraser" || pop.id === "tpl" ? "w-72" : "w-60")}
           style={pop.id === "bg"
             ? { right: 8, top: pop.y + pop.h + 6 }
             : typeof window !== "undefined" && window.innerWidth >= 768
@@ -679,12 +767,51 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
           )}
           {pop.id === "tpl" && (
             <div className="space-y-1">
-              {TEMPLATES.map((t) => (
-                <button key={t.id} type="button" onClick={() => { setTpl(t.id); setTool("tpl"); setPop(null); }} aria-label={`Shablon: ${t.name}`}
-                  className={cn("flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-bold transition-colors", tpl === t.id && tool === "tpl" ? "bg-white text-slate-900" : "bg-white/10 hover:bg-white/20")}>{t.name}</button>
-              ))}
+              {(() => {
+                const featured = subj ? subj.tpl.map((id) => TEMPLATES.find((t) => t.id === id)).filter((t): t is (typeof TEMPLATES)[number] => !!t) : [];
+                const rest = TEMPLATES.filter((t) => !featured.includes(t));
+                const groups = [...new Set(rest.map((t) => t.group))];
+                const btn = (t: (typeof TEMPLATES)[number]) => (
+                  <button key={t.id} type="button" onClick={() => { setTpl(t.id); setTool("tpl"); setPop(null); }} aria-label={`Shablon: ${t.name}`}
+                    className={cn("flex w-full items-center rounded-xl px-3 py-1.5 text-left text-sm font-bold transition-colors", tpl === t.id && tool === "tpl" ? "bg-white text-slate-900" : "bg-white/10 hover:bg-white/20")}>{t.name}</button>
+                );
+                return (
+                  <>
+                    {featured.length > 0 && <><p className="px-1 pt-0.5 text-[11px] font-extrabold uppercase tracking-wider text-cyan-300">{subj!.label} uchun</p>{featured.map(btn)}</>}
+                    {groups.map((g) => <React.Fragment key={g}><p className="px-1 pt-2 text-[11px] font-extrabold uppercase tracking-wider text-white/50">{g}</p>{rest.filter((t) => t.group === g).map(btn)}</React.Fragment>)}
+                  </>
+                );
+              })()}
               <p className="px-1 pt-1 text-[11px] text-white/60">Tanlang, keyin doskada joyni bosing.</p>
             </div>
+          )}
+          {pop.id === "eraser" && (
+            <div className="space-y-1" role="menu" aria-label="O'chirg'ich turi">
+              {([
+                ["earea", "Hudud o'chirg'ich", "To'rtburchak belgilang: ichidagi hammasi birdan o'chadi", BoxSelect],
+                ["elasso", "Erkin hudud o'chirg'ich", "Istalgan shaklda aylantirib chizing: ichi o'chadi", Lasso],
+                ["eraser", "Surtib o'chirg'ich", "Odatdagi o'chirg'ich (4 xil o'lcham)", Eraser],
+                ...(isHost ? [["oeraser", "Chiziqni o'chirish", "Bosilgan chiziq yoki shakl butunlay o'chadi", Delete] as const] : []),
+              ] as const).map(([id, name, desc, Icon]) => (
+                <button key={id} type="button" role="menuitemradio" aria-checked={eraserTool === id} aria-label={name} onClick={() => { setEraserTool(id); setTool(id); setPop(null); }}
+                  className={cn("flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors", eraserTool === id ? "bg-white text-slate-900" : "bg-white/10 hover:bg-white/20")}>
+                  <Icon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden /><span><span className="block text-sm font-bold">{name}</span><span className={cn("block text-[11px]", eraserTool === id ? "text-slate-600" : "text-white/60")}>{desc}</span></span>
+                </button>
+              ))}
+            </div>
+          )}
+          {pop.id === "graph" && (
+            <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); plotGraph(); }}>
+              <label className="block text-xs font-bold text-white/80" htmlFor="graph-expr">Formula: y =</label>
+              <input id="graph-expr" autoFocus value={expr} onChange={(e) => { setExpr(e.target.value); setExprErr(""); }} aria-label="Formula" placeholder="x^2, 2x+1, sin(x)" maxLength={120} autoComplete="off" spellCheck={false}
+                className="h-10 w-full rounded-lg border border-white/20 bg-white/10 px-3 text-sm font-semibold text-white outline-none placeholder:text-white/40 focus:border-cyan-300" />
+              <div className="flex flex-wrap gap-1">
+                {["x^2", "2x+1", "x^3-3x", "sin(x)", "cos(x)", "1/x", "sqrt(x)", "abs(x)", "ln(x)"].map((x) => <button key={x} type="button" onClick={() => { setExpr(x); setExprErr(""); }} className="rounded-md bg-white/10 px-2 py-0.5 text-xs font-bold hover:bg-white/20">{x}</button>)}
+              </div>
+              {exprErr && <p role="alert" className="text-xs font-semibold text-amber-300">{exprErr}</p>}
+              <button type="submit" disabled={!expr.trim()} className="h-9 w-full rounded-lg bg-cyan-400 text-sm font-extrabold text-slate-900 disabled:opacity-40">Grafikni chizish</button>
+              <p className="text-[11px] text-white/55">Koordinata fonida 1 birlik = 1 katak. Rang va qalinlik pastdagi tanlovdan olinadi. Bir nechta grafik chizish mumkin.</p>
+            </form>
           )}
           {pop.id === "bg" && (
             <div role="menu" aria-label="Doska foni" className="space-y-0.5">

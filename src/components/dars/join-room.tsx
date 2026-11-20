@@ -1,11 +1,11 @@
 "use client";
 import * as React from "react";
-import { AlertTriangle, CalendarClock, Camera, CheckCircle2, Mic, MicOff, Signal, Smartphone, Video, VideoOff } from "lucide-react";
+import { AlertTriangle, CalendarClock, Camera, CheckCircle2, Copy, ExternalLink, Mic, MicOff, Signal, Smartphone, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
-import { NAME_KEY, cleanName, connectionQuality, describeMediaError, isTelegramBrowser, lessonCountdown, lessonTimeLabel } from "@/lib/dars";
+import { NAME_KEY, cleanName, connectionQuality, describeMediaError, externalBrowserUrl, isTelegramBrowser, lessonCountdown, lessonTimeLabel } from "@/lib/dars";
 import { hasVideo, isFree, type VoiceMode } from "@/lib/voice-mode";
 import type { VEngine } from "./voice-engine";
 
@@ -43,7 +43,7 @@ async function measureRtt(): Promise<number | null> {
 export type RoomInfo = { mode: VoiceMode; k: string; h?: string };
 
 /** Ochiq (kirishsiz) kirish sahifasi: 1) kamera va mikrofon ruxsati, 2) ism, 3) darsga kirish. */
-export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: string; title: string; asTeacher: boolean; startsAt: number | null; room: RoomInfo }) {
+export function JoinRoom({ code, title, asTeacher, startsAt, room, subject }: { code: string; title: string; asTeacher: boolean; startsAt: number | null; room: RoomInfo; subject?: string | null }) {
   const isHost = !!room.h;
   // Ovozli chatda (q, o) kamera yo'q: faqat mikrofon tekshiriladi.
   const video = hasVideo(room.mode);
@@ -57,6 +57,8 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
   const [level, setLevel] = React.useState(0);
   const [name, setName] = React.useState("");
   const [tg, setTg] = React.useState(false);
+  const [extUrl, setExtUrl] = React.useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = React.useState(false);
   const [skip, setSkip] = React.useState(false);
   const [going, setGoing] = React.useState(false);
   const [engine, setEngine] = React.useState<VEngine | null>(null);
@@ -76,6 +78,7 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
   React.useEffect(() => {
     setName(read(NAME_KEY));
     setTg(isTelegramBrowser(navigator.userAgent));
+    setExtUrl(externalBrowserUrl(window.location.href, navigator.userAgent));
     void measureRtt().then((rtt) => setNet(connectionQuality(rtt, navigator.onLine)));
     const onOff = () => setNet(connectionQuality(null, navigator.onLine));
     window.addEventListener("offline", onOff);
@@ -191,7 +194,7 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
   if (engine) {
     return (
       <React.Suspense fallback={<p className="text-center text-sm text-muted-foreground">Xona yuklanmoqda...</p>}>
-        <VoiceRoom engine={engine} ctl={{ code, mode: room.mode, k: room.k, h: room.h }} title={title} onExit={() => { setEngine(null); setGoing(false); }} />
+        <VoiceRoom engine={engine} ctl={{ code, mode: room.mode, k: room.k, h: room.h }} title={title} subject={subject ?? null} onExit={() => { setEngine(null); setGoing(false); }} />
       </React.Suspense>
     );
   }
@@ -218,7 +221,16 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
       {tg && (
         <div role="note" className="flex gap-3 rounded-2xl border border-amber/40 bg-amber/10 p-4 text-sm">
           <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-amber" aria-hidden />
-          <p><b>Telegram ichidagi oynadasiz.</b> Bu oynada kamera va mikrofon ishlamasligi mumkin. Yuqori burchakdagi <b>⋮</b> (yoki pastdagi kompas/Safari belgisi) ni bosib, <b>«Brauzerda ochish»</b> ni tanlang.</p>
+          <div className="min-w-0 flex-1">
+            <p><b>Telegram ichidagi oynadasiz.</b> Bu oynada kamera va mikrofon ishlamasligi mumkin. Ishonchli ishlashi uchun brauzerda oching.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {extUrl && <a href={extUrl} className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-white shadow-soft"><ExternalLink className="h-4 w-4" aria-hidden />{/Android/i.test(typeof navigator === "undefined" ? "" : navigator.userAgent) ? "Chrome'da ochish" : "Safari'da ochish"}</a>}
+              <button type="button" className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold" onClick={() => { void navigator.clipboard?.writeText(window.location.href).then(() => { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2500); }).catch(() => window.prompt("Havolani nusxalang:", window.location.href)); }}>
+                <Copy className="h-4 w-4" aria-hidden />{linkCopied ? "Nusxalandi" : "Havolani nusxalash"}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Ochilmasa: yuqori burchakdagi <b>⋮</b> (yoki pastdagi kompas/Safari belgisi) ni bosib, <b>«Brauzerda ochish»</b> ni tanlang yoki nusxalangan havolani Chrome/Safari'ga qo&apos;ying.</p>
+          </div>
         </div>
       )}
 
@@ -234,7 +246,7 @@ export function JoinRoom({ code, title, asTeacher, startsAt, room }: { code: str
           </p>
         )}
         {state !== "done" && (
-          <Button size="lg" className="mt-3 w-full" onClick={() => void check()} disabled={state === "busy"} loading={state === "busy"}>
+          <Button size="lg" className="mt-3 h-auto min-h-12 w-full whitespace-normal py-2.5 text-center" onClick={() => void check()} disabled={state === "busy"} loading={state === "busy"}>
             {video ? <Camera className="h-5 w-5" aria-hidden /> : <Mic className="h-5 w-5" aria-hidden />}{video ? "Kamera va mikrofonga ruxsat berish" : "Mikrofonga ruxsat berish"}
           </Button>
         )}

@@ -27,7 +27,7 @@ describe("parseBoard", () => {
   it("yaroqsizlarini rad etadi", () => {
     const base = { t: "b", id: 1, k: 0, c: 0, w: 0, p: [1, 2] };
     const bad: unknown[] = [null, 5, "x", [], {}, { t: "z" }, { t: "b" },
-      { ...base, c: 12 }, { ...base, w: 5 }, { ...base, k: 13 }, { ...base, k: -1 }, { ...base, id: -1 },
+      { ...base, c: 12 }, { ...base, w: 5 }, { ...base, k: 15 }, { ...base, k: -1 }, { ...base, id: -1 },
       { ...base, p: [1] }, { ...base, p: [] }, { ...base, p: [1, 2, 3] },
       { ...base, p: [BOARD_X + 1, 0] }, { ...base, p: [0, BOARD_Y + 1] }, { ...base, p: [1.5, 2] }, { ...base, p: ["1", 2] }, { ...base, p: [NaN, 2] },
       { ...base, p: new Array(MAX_MSG_NUMS + 2).fill(1) },
@@ -176,8 +176,8 @@ describe("snapshot", () => {
 });
 
 describe("fon", () => {
-  it("oltita fon, har biriga uslub bor", () => {
-    expect([...BGS]).toEqual(["plain", "grid", "lines", "dots", "axes", "dark"]);
+  it("sakkizta fon, har biriga uslub bor", () => {
+    expect([...BGS]).toEqual(["plain", "grid", "lines", "dots", "axes", "writing", "staff", "dark"]);
     for (const bg of BGS) expect(bgStyle(bg).backgroundColor).toMatch(/^#/);
     expect(bgStyle("grid").backgroundImage).toContain("linear-gradient");
     expect(bgStyle("plain").backgroundImage).toBeUndefined();
@@ -210,7 +210,7 @@ describe("yangi chiziq turlari va parametrlar", () => {
       expect(parseBoard({ t: "b", id: 1, k, c: 0, w: 0, p: [1, 2, 300, 400], r: 1 }), String(k)).not.toBeNull();
       expect(parseBoard({ t: "b", id: 1, k, c: 0, w: 0, p: [1, 2] })).toBeNull();
     }
-    expect(parseBoard({ t: "b", id: 1, k: 13, c: 0, w: 0, p: [1, 2, 3, 4] })).toBeNull();
+    expect(parseBoard({ t: "b", id: 1, k: 15, c: 0, w: 0, p: [1, 2, 3, 4] })).toBeNull();
     expect(parseBoard({ t: "b", id: 1, k: 5, c: 0, w: 0, p: [1, 2, 3, 4], o: OPT_FILL | OPT_DASH })).toMatchObject({ o: 3 });
     expect(parseBoard({ t: "b", id: 1, k: 5, c: 0, w: 0, p: [1, 2, 3, 4], o: 4 })).toBeNull();
     expect(parseBoard({ t: "b", id: 1, k: 5, c: 0, w: 0, p: [1, 2, 3, 4], o: -1 })).toBeNull();
