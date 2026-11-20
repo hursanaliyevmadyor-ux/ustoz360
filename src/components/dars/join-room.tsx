@@ -1,23 +1,41 @@
 "use client";
 import * as React from "react";
-import { AlertTriangle, Camera, CheckCircle2, Mic, MicOff, Smartphone, Video, VideoOff } from "lucide-react";
+import { AlertTriangle, CalendarClock, Camera, CheckCircle2, Mic, MicOff, Signal, Smartphone, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/form";
+import { Input, Select } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
-import { NAME_KEY, cleanName, describeMediaError, isTelegramBrowser, jitsiUrl } from "@/lib/dars";
+import { NAME_KEY, cleanName, connectionQuality, describeMediaError, isTelegramBrowser, jitsiUrl, lessonCountdown, lessonTimeLabel } from "@/lib/dars";
 
 type Probe = { stream: MediaStream | null; error: unknown };
 const probe = async (c: MediaStreamConstraints): Promise<Probe> => {
   try { return { stream: await navigator.mediaDevices.getUserMedia(c), error: null }; } catch (error) { return { stream: null, error }; }
 };
-const errName = (e: unknown) => (typeof e === "object" && e && "name" in e ? String((e as { name: unknown }).name) : "");
 const stop = (s: MediaStream | null) => s?.getTracks().forEach((t) => t.stop());
+const errName = (e: unknown) => (typeof e === "object" && e && "name" in e ? String((e as { name: unknown }).name) : "");
 const read = (k: string) => { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } };
 const write = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* maxfiy rejim */ } };
 
+type Dev = { id: string; label: string };
+
+/** Taxminiy kechikish (ms): o'z saytimizga 3 ta kichik so'rov, o'rtachasi. Bo'lmasa null. */
+async function measureRtt(): Promise<number | null> {
+  try {
+    const times: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const t0 = performance.now();
+      const r = await fetch(`/icon.svg?rtt=${Date.now()}${i}`, { cache: "no-store" });
+      if (!r.ok) return null;
+      await r.arrayBuffer();
+      times.push(performance.now() - t0);
+    }
+    times.sort((a, b) => a - b);
+    return Math.round(times[1]);
+  } catch { return null; }
+}
+
 /** Ochiq (kirishsiz) kirish sahifasi: 1) kamera va mikrofon ruxsati, 2) ism, 3) darsga kirish. */
-export function JoinRoom({ code, title, asTeacher }: { code: string; title: string; asTeacher: boolean }) {
+export function JoinRoom({ code, title, asTeacher, startsAt }: { code: string; title: string; asTeacher: boolean; startsAt: number | null }) {
   const [state, setState] = React.useState<"idle" | "busy" | "done">("idle");
   const [cam, setCam] = React.useState<boolean | null>(null);
   const [mic, setMic] = React.useState<boolean | null>(null);
@@ -28,6 +46,14 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
   const [tg, setTg] = React.useState(false);
   const [skip, setSkip] = React.useState(false);
   const [going, setGoing] = React.useState(false);
+  const [cams, setCams] = React.useState<Dev[]>([]);
+  const [mics, setMics] = React.useState<Dev[]>([]);
+  const [camId, setCamId] = React.useState("");
+  const [micId, setMicId] = React.useState("");
+  const [audioOff, setAudioOff] = React.useState(!asTeacher); // o'quvchilar mikrofonsiz kiradi (shovqin bo'lmasligi uchun), ustoz yoqiq
+  const [videoOff, setVideoOff] = React.useState(false);
+  const [net, setNet] = React.useState<{ level: "good" | "ok" | "weak" | "offline"; text: string } | null>(null);
+  const [now, setNow] = React.useState(() => Date.now());
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const rafRef = React.useRef(0);
@@ -36,9 +62,19 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
   React.useEffect(() => {
     setName(read(NAME_KEY));
     setTg(isTelegramBrowser(navigator.userAgent));
-    return () => release();
+    void measureRtt().then((rtt) => setNet(connectionQuality(rtt, navigator.onLine)));
+    const onOff = () => setNet(connectionQuality(null, navigator.onLine));
+    window.addEventListener("offline", onOff);
+    return () => { window.removeEventListener("offline", onOff); release(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Dars vaqtigacha qolgan vaqt har yarim daqiqada yangilanadi.
+  React.useEffect(() => {
+    if (!startsAt) return;
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, [startsAt]);
 
   function release() {
     cancelAnimationFrame(rafRef.current);
@@ -68,21 +104,35 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
     } catch { /* ovoz o'lchagichi bo'lmasa ham davom etamiz */ }
   }
 
-  async function check() {
+  /** Ruxsat berilgach qurilmalar ro'yxati (nomlari faqat ruxsatdan keyin ko'rinadi). */
+  async function listDevices(stream: MediaStream | null) {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const mk = (k: MediaDeviceKind, fallback: string) => all.filter((d) => d.kind === k && d.deviceId).map((d, i) => ({ id: d.deviceId, label: d.label || `${fallback} ${i + 1}` }));
+      setCams(mk("videoinput", "Kamera")); setMics(mk("audioinput", "Mikrofon"));
+      setCamId(stream?.getVideoTracks()[0]?.getSettings().deviceId ?? ""); setMicId(stream?.getAudioTracks()[0]?.getSettings().deviceId ?? "");
+    } catch { /* ro'yxat bo'lmasa, standart qurilma ishlatiladi */ }
+  }
+
+  /** Ruxsat so'rash va tekshirish. `pick` berilsa, tanlangan qurilma bilan qayta ochiladi. */
+  async function check(pick?: { cam?: string; mic?: string }) {
     release();
-    setState("busy"); setCamErr(""); setMicErr(""); setLevel(0);
+    if (!pick) setState("busy"); // qurilma almashtirilganda ko'rinish o'zgarmaydi
+    setCamErr(""); setMicErr(""); setLevel(0);
     if (!navigator.mediaDevices?.getUserMedia) {
       const m = describeMediaError({ name: "NoMediaDevices" });
       setCam(false); setMic(false); setCamErr(m); setMicErr(m); setState("done");
       return;
     }
+    const vc: MediaTrackConstraints | boolean = pick?.cam ? { deviceId: { exact: pick.cam } } : true;
+    const ac: MediaTrackConstraints | boolean = pick?.mic ? { deviceId: { exact: pick.mic } } : true;
     // Avval ikkalasini birga so'raymiz (brauzer bitta oyna ko'rsatadi); bo'lmasa har birini alohida tekshiramiz.
-    const both = await probe({ video: true, audio: true });
+    const both = await probe({ video: vc, audio: ac });
     let stream = both.stream;
     if (stream) { setCam(true); setMic(true); }
     else {
-      const a = await probe({ audio: true });
-      const v = await probe({ video: true });
+      const a = await probe({ audio: ac });
+      const v = await probe({ video: vc });
       setMic(!!a.stream); setCam(!!v.stream);
       const same = !a.stream && !v.stream && errName(a.error) === errName(v.error);
       // Ikkalasi bir xil sababdan ishlamasa, bitta tushunarli xabar ko'rsatamiz.
@@ -93,6 +143,8 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
     }
     streamRef.current = stream;
     if (stream?.getAudioTracks().length) startMeter(stream);
+    if (!stream?.getVideoTracks().length) setVideoOff(true); // kamera yo'q: kamerasiz kiramiz
+    if (stream) void listDevices(stream);
     setState("done");
   }
 
@@ -104,13 +156,14 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
   const ok = cam === true || mic === true;
   const nameOk = cleanName(name).length >= 2;
   const canEnter = nameOk && (ok || skip);
+  const cd = startsAt ? lessonCountdown(startsAt, now) : null;
 
   function enter() {
     const n = cleanName(name);
     write(NAME_KEY, n);
     setGoing(true);
     release(); // qurilmalarni bo'shatamiz, aks holda Jitsi ularni ocholmaydi
-    window.location.assign(jitsiUrl({ code, name: n, title }));
+    window.location.assign(jitsiUrl({ code, name: n, title, audioMuted: audioOff || mic === false, videoMuted: videoOff || cam === false }));
   }
 
   return (
@@ -118,7 +171,13 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
       <div className="rounded-2xl bg-primary p-5 text-white">
         <p className="text-xs font-bold uppercase tracking-wider text-white/70">Dars xonasi</p>
         <h1 className="mt-1 text-2xl font-extrabold leading-tight">{title || "Onlayn dars"}</h1>
-        <p className="mt-1 text-sm text-white/80">{asTeacher ? "Siz o'qituvchi sifatida kiryapsiz." : "Siz o'quvchi sifatida kiryapsiz. Hisob ochish yoki parol kerak emas."}</p>
+        {startsAt && cd && (
+          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold" aria-live="polite">
+            <CalendarClock className="h-4 w-4" aria-hidden />{lessonTimeLabel(startsAt)}
+            <span className={cn("rounded-full px-2.5 py-0.5 text-xs", cd.state === "future" ? "bg-white/20" : cd.state === "live" ? "bg-success text-white" : "bg-black/20")}>{cd.text}</span>
+          </p>
+        )}
+        <p className="mt-2 text-sm text-white/80">{asTeacher ? "Siz o'qituvchi sifatida kiryapsiz." : "Siz o'quvchi sifatida kiryapsiz. Hisob ochish yoki parol kerak emas."}</p>
       </div>
 
       {tg && (
@@ -132,8 +191,13 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
         <p className="text-sm text-muted-foreground">
           Tugmani bosganingizda brauzer ruxsat so&apos;raydi. Oynada <b>«Ruxsat berish»</b> (yoki <b>Allow</b>) tugmasini bosing. Hech narsa yozib olinmaydi, bu faqat tekshiruv.
         </p>
+        {net && (
+          <p className={cn("mt-2 flex items-center gap-2 text-sm font-semibold", net.level === "good" ? "text-success" : net.level === "ok" ? "text-amber" : "text-danger")} aria-live="polite">
+            <Signal className="h-4 w-4" aria-hidden />{net.text}
+          </p>
+        )}
         {state !== "done" && (
-          <Button size="lg" className="mt-3 w-full" onClick={check} disabled={state === "busy"} loading={state === "busy"}>
+          <Button size="lg" className="mt-3 w-full" onClick={() => void check()} disabled={state === "busy"} loading={state === "busy"}>
             <Camera className="h-5 w-5" aria-hidden />Kamera va mikrofonga ruxsat berish
           </Button>
         )}
@@ -156,10 +220,28 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
                 <p className="mt-1 text-xs text-muted-foreground">Biror narsa deng: yashil chiziq harakatlansa, ovozingiz eshitiladi.</p>
               </div>
             )}
+            {(cams.length > 1 || mics.length > 1) && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {cams.length > 1 && cam && (
+                  <label className="block text-sm font-semibold">Kamera
+                    <Select className="mt-1" value={camId} onChange={(e) => { setCamId(e.target.value); void check({ cam: e.target.value, mic: micId || undefined }); }}>
+                      {cams.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                    </Select>
+                  </label>
+                )}
+                {mics.length > 1 && mic && (
+                  <label className="block text-sm font-semibold">Mikrofon
+                    <Select className="mt-1" value={micId} onChange={(e) => { setMicId(e.target.value); void check({ mic: e.target.value, cam: camId || undefined }); }}>
+                      {mics.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                    </Select>
+                  </label>
+                )}
+              </div>
+            )}
             {camErr && <Problem text={camErr} />}
             {micErr && <Problem text={micErr} />}
             {!(cam && mic) && (
-              <Button variant="outline" className="w-full" onClick={check}>Qayta tekshirish</Button>
+              <Button variant="outline" className="w-full" onClick={() => void check()}>Qayta tekshirish</Button>
             )}
           </div>
         )}
@@ -171,6 +253,16 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
       </Step>
 
       <Step n={3} title="Darsga kiring" done={false}>
+        <div className="mb-3 space-y-2 rounded-xl bg-muted/60 p-3 text-sm">
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[hsl(var(--primary))]" checked={audioOff || mic === false} disabled={mic === false} onChange={(e) => setAudioOff(e.target.checked)} />
+            <span><b>Mikrofon o&apos;chiq holda kirish</b>{!asTeacher && <span className="text-muted-foreground"> (tavsiya etiladi: ovoz aralashmasligi uchun; kerak bo&apos;lsa, darsda o&apos;zingiz yoqasiz)</span>}</span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[hsl(var(--primary))]" checked={videoOff || cam === false} disabled={cam === false} onChange={(e) => setVideoOff(e.target.checked)} />
+            <span><b>Kamera o&apos;chiq holda kirish</b><span className="text-muted-foreground"> (internet zaif bo&apos;lsa foydali)</span></span>
+          </label>
+        </div>
         <Button size="lg" className="w-full" disabled={!canEnter || going} loading={going} onClick={enter}>
           <Video className="h-5 w-5" aria-hidden />Darsga kirish
         </Button>
@@ -186,8 +278,7 @@ export function JoinRoom({ code, title, asTeacher }: { code: string; title: stri
         )}
         <ul className="mt-4 space-y-1.5 text-sm text-muted-foreground">
           <li>• Dars Jitsi oynasida ochiladi. Pastdagi panelda: <b>chat</b> (yozishma), <b>qo&apos;l ko&apos;tarish</b>, <b>mikrofon</b> va <b>kamera</b> tugmalari bor.</li>
-          <li>• Telefonda «Ilovani o&apos;rnating» deb so&apos;rashi mumkin: <b>«Brauzerda davom etish»</b> ni tanlasangiz ham bo&apos;ladi.</li>
-          <li>• Aloqa uzilsa, shu havolani qayta oching.</li>
+          <li>• Darsda ko&apos;rinishingiz uchun «Ismingiz» yozilgan bo&apos;ladi. Aloqa uzilsa, shu havolani qayta oching.</li>
         </ul>
       </Step>
     </div>

@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { JoinRoom } from "@/components/dars/join-room";
-import { cleanTitle, isRoomCode } from "@/lib/dars";
+import { cleanTitle, isRoomCode, parseStartsAt } from "@/lib/dars";
 
-type Props = { params: Promise<{ code: string }>; searchParams: Promise<{ t?: string | string[]; u?: string | string[] }> };
+type Props = { params: Promise<{ code: string }>; searchParams: Promise<{ t?: string | string[]; u?: string | string[]; s?: string | string[] }> };
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /** Xona havolasi qidiruv tizimlariga chiqmasin (faqat havola bilan kiriladi). */
@@ -17,13 +17,14 @@ export default async function Page({ params, searchParams }: Props) {
   const sp = await searchParams;
   const title = cleanTitle(one(sp.t));
   const asTeacher = one(sp.u) === "1";
+  const startsAt = parseStartsAt(one(sp.s));
   return (
     <main className="min-h-dvh bg-background px-4 py-6">
       <header className="mx-auto mb-5 flex max-w-xl items-center gap-2.5">
         <BrandMark className="h-9 w-9" />
         <span className="text-lg font-black tracking-tight">USTOZ <span className="text-primary">360</span></span>
       </header>
-      <JoinRoom code={code} title={title} asTeacher={asTeacher} />
+      <JoinRoom code={code} title={title} asTeacher={asTeacher} startsAt={startsAt} />
     </main>
   );
 }

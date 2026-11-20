@@ -44,25 +44,90 @@ export const cleanName = (s: unknown) => (typeof s === "string" ? s.replace(/\s+
 
 const q = (v: string) => encodeURIComponent(JSON.stringify(v));
 
-/** O'quvchi/ustoz Jitsi xonasiga kiradigan manzil (ism va mavzu tayyor qo'yiladi). */
-export function jitsiUrl(o: { code: string; name?: string; title?: string; host?: string }): string {
+/**
+ * O'quvchi/ustoz Jitsi xonasiga kiradigan manzil: ism, mavzu va boshlang'ich holat (mikrofon/kamera o'chiq) tayyor qo'yiladi.
+ * `disableDeepLinking`: telefonda «ilovani o'rnating» sahifasiga o'tkazmaydi, brauzerning o'zida ochadi.
+ */
+export function jitsiUrl(o: { code: string; name?: string; title?: string; host?: string; audioMuted?: boolean; videoMuted?: boolean }): string {
   const host = o.host ?? jitsiHost();
   const params: string[] = [];
   const name = cleanName(o.name);
   const title = cleanTitle(o.title);
   if (name) params.push(`userInfo.displayName=${q(name)}`);
   if (title) params.push(`config.subject=${q(title)}`);
-  return `https://${host}/${jitsiRoomName(o.code)}${params.length ? `#${params.join("&")}` : ""}`;
+  if (o.audioMuted) params.push("config.startWithAudioMuted=true");
+  if (o.videoMuted) params.push("config.startWithVideoMuted=true");
+  params.push("config.disableDeepLinking=true");
+  return `https://${host}/${jitsiRoomName(o.code)}#${params.join("&")}`;
 }
 
-/** Ulashiladigan qisqa havola: /d/<kod>?t=<dars nomi>. */
-export function joinUrl(origin: string, code: string, title?: string, asTeacher = false): string {
+/** Ulashiladigan qisqa havola: /d/<kod>?t=<dars nomi>&s=<boshlanish vaqti>. */
+export function joinUrl(origin: string, code: string, title?: string, asTeacher = false, startsAt?: number | null): string {
   const p = new URLSearchParams();
   const t = cleanTitle(title);
   if (t) p.set("t", t);
+  if (startsAt) p.set("s", String(Math.round(startsAt)));
   if (asTeacher) p.set("u", "1");
   const qs = p.toString();
   return `${origin.replace(/\/+$/, "")}/d/${code}${qs ? `?${qs}` : ""}`;
+}
+
+/** Manzildagi vaqt (millisekund): faqat o'tgan-kelgusi 2 yil oralig'idagi son qabul qilinadi. */
+export function parseStartsAt(v: unknown, now = Date.now()): number | null {
+  if (typeof v !== "string" || !/^\d{10,14}$/.test(v)) return null;
+  const n = Number(v);
+  return Math.abs(n - now) <= 2 * 365 * 24 * 3600 * 1000 ? n : null;
+}
+
+const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** "22-noyabr, 15:00" (ko'ruvchining mahalliy vaqti). */
+export function lessonTimeLabel(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getDate()}-${MONTHS[d.getMonth()]}, ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** Boshlanishgacha qolgan vaqt: "future" (hali boshlanmagan), "live" (boshlanganiga 3 soatgacha), "past" (3 soatdan oshgan). */
+export function lessonCountdown(startsAt: number, now = Date.now()): { state: "future" | "live" | "past"; text: string } {
+  const diff = startsAt - now;
+  if (diff > 0) {
+    const min = Math.ceil(diff / 60000);
+    const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+    if (d > 0) return { state: "future", text: `Darsga ${d} kun${h ? ` ${h} soat` : ""} qoldi` };
+    if (h > 0) return { state: "future", text: `Darsga ${h} soat${m ? ` ${m} daqiqa` : ""} qoldi` };
+    return { state: "future", text: min <= 1 ? "Dars bir daqiqadan keyin boshlanadi" : `Darsga ${min} daqiqa qoldi` };
+  }
+  if (diff > -3 * 3600 * 1000) return { state: "live", text: "Dars boshlangan: kirishingiz mumkin" };
+  return { state: "past", text: "Dars vaqti o'tgan, lekin xona ochiq" };
+}
+
+/** Telegram va boshqa joylarga yuboriladigan tayyor taklif matni. */
+export function inviteText(o: { title?: string; startsAt?: number | null; link: string }): string {
+  const t = cleanTitle(o.title);
+  return [
+    `Onlayn dars${t ? `: ${t}` : ""}`,
+    ...(o.startsAt ? [`Boshlanishi: ${lessonTimeLabel(o.startsAt)}`] : []),
+    "",
+    "Darsga kirish uchun havolani bosing:",
+    o.link,
+    "",
+    "Qanday kiriladi: havolani bosing, «Kamera va mikrofonga ruxsat berish» tugmasini bosing, ismingizni yozib «Darsga kirish» ni bosing.",
+    "Telegram ichida kamera ishlamasa, havolani Chrome yoki Safari'da oching.",
+  ].join("\n");
+}
+
+/** <input type="datetime-local"> qiymati (mahalliy vaqt) <-> millisekund. */
+export const toLocalInput = (ts: number) => { const d = new Date(ts); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+export const fromLocalInput = (v: string): number | null => { const n = new Date(v).getTime(); return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) && Number.isFinite(n) ? n : null; };
+
+/** Internet sifati (kechikish millisekundda): yaxshi / o'rtacha / zaif. */
+export function connectionQuality(rttMs: number | null, online = true): { level: "good" | "ok" | "weak" | "offline"; text: string } {
+  if (!online) return { level: "offline", text: "Internet yo'q. Ulanishni tekshiring." };
+  if (rttMs === null) return { level: "ok", text: "Internet sifatini aniqlab bo'lmadi." };
+  if (rttMs < 200) return { level: "good", text: "Internet yaxshi." };
+  if (rttMs < 500) return { level: "ok", text: "Internet o'rtacha: video sekin bo'lishi mumkin." };
+  return { level: "weak", text: "Internet zaif: kamerani o'chirib kirish tavsiya etiladi." };
 }
 
 /** Telegramda yuborish: foydalanuvchi o'zi chat tanlaydi (bot yoki kalit kerak emas). */
@@ -98,7 +163,7 @@ export function describeMediaError(e: unknown, what: "kamera" | "mikrofon" | "ka
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Teacher uchun oxirgi xonalar (brauzerda saqlanadi, bazasiz). */
-export type SavedRoom = { code: string; title: string; at: number };
+export type SavedRoom = { code: string; title: string; at: number; startsAt?: number };
 export const ROOMS_KEY = "u360-dars-rooms";
 export const NAME_KEY = "u360-dars-name";
 
@@ -109,7 +174,7 @@ export function parseSavedRooms(raw: string | null): SavedRoom[] {
     if (!Array.isArray(v)) return [];
     return v
       .filter((r): r is SavedRoom => !!r && isRoomCode((r as SavedRoom).code) && typeof (r as SavedRoom).at === "number")
-      .map((r) => ({ code: r.code, title: cleanTitle(r.title), at: r.at }))
+      .map((r) => ({ code: r.code, title: cleanTitle(r.title), at: r.at, ...(typeof r.startsAt === "number" && { startsAt: r.startsAt }) }))
       .slice(0, 10);
   } catch {
     return [];
