@@ -9,8 +9,8 @@ import { decodeMsg, encodeMsg, roleOf, type VoiceMsg, type VoiceTopic } from "@/
  */
 export type VPerson = { identity: string; name: string; host: boolean; speaking: boolean; micOn: boolean; camOn: boolean; screenOn: boolean; canSpeak: boolean; me: boolean };
 /** Dars asboblari xabarlari (class-tools.ts, board.ts): ustoz -> hamma ("class", "board"), o'quvchi -> ustoz ("act"). */
-export type ToolTopic = "class" | "act" | "board";
-export const TOOL_TOPICS: readonly string[] = ["class", "act", "board"];
+export type ToolTopic = "class" | "act" | "board" | "react";
+export const TOOL_TOPICS: readonly string[] = ["class", "act", "board", "react"];
 export type VState = "connecting" | "live" | "reconnecting" | "ended";
 export type VSource = "camera" | "screen";
 export type VEvent =

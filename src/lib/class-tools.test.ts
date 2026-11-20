@@ -47,7 +47,7 @@ describe("pollCounts", () => {
 });
 
 describe("parseClass", () => {
-  const good = { lock: true, stage: "board", bg: "grid", draw: ["o-1", "o-2"], timer: { left: 60, total: 120 }, pick: { id: 3, name: "Ali", who: "o-1" }, mats: [{ id: 1, title: "Video", url: "https://youtu.be/x.y" }],
+  const good = { lock: true, stage: "board", note: "Vazifa: 12-bet", bg: "grid", draw: ["o-1", "o-2"], timer: { left: 60, total: 120 }, pick: { id: 3, name: "Ali", who: "o-1" }, mats: [{ id: 1, title: "Video", url: "https://youtu.be/x.y" }],
     poll: { id: 2, q: "Q?", opts: ["A", "B"], open: true, show: false, correct: 1, counts: null }, pulse: { id: 4 } };
   it("to'g'ri holat o'zgarmasdan o'tadi", () => {
     expect(parseClass(JSON.parse(JSON.stringify(good)))).toEqual({ ...good, mats: [{ id: 1, title: "Video", url: "https://youtu.be/x.y" }] });
@@ -57,6 +57,12 @@ describe("parseClass", () => {
     expect(parseClass({})).toEqual(emptyClass());
     const c = parseClass({ ...good, stage: "x", timer: { left: -1, total: 5 }, pick: { id: "a", name: "A", who: "o-2" }, poll: { id: 1, q: "", opts: ["A", "B"] }, pulse: { id: "x" }, mats: [{ id: 1, title: "x", url: "javascript:alert(1)" }, 5, null] })!;
     expect(c.stage).toBe("auto"); expect(c.timer).toBeNull(); expect(c.pick).toBeNull(); expect(c.poll).toBeNull(); expect(c.pulse).toBeNull(); expect(c.mats).toEqual([]);
+  });
+  it("e'lon: tozalanadi va uzunligi cheklanadi", () => {
+    expect(parseClass({ note: "  Muhim:   test\nertaga  " })!.note).toBe("Muhim: test ertaga");
+    expect(parseClass({ note: "x".repeat(500) })!.note).toHaveLength(160);
+    expect(parseClass({ note: 5 })!.note).toBe("");
+    expect(emptyClass().note).toBe("");
   });
   it("doska foni va doskaga chaqirilganlar", () => {
     expect(parseClass({ bg: "axes" })!.bg).toBe("axes");

@@ -244,7 +244,7 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   return {
     imageUrl: images.get(board.image) ?? null, placeImage, clearImage,
     cls, isHost, canDraw: isHost || (!!session && cls.draw.includes(session.identity)), timerEnd, board, boardVer, boardChanged, boardNet, patch,
-    host: { setDrawer, startPoll, closePoll, showPoll, clearPoll, startPulse, stopPulse, startTimer, stopTimer, pickStudent, clearPick, addMat, removeMat },
+    host: { setNote: (note: string) => publish({ ...clsRef.current, note: note.replace(/\s+/g, " ").trim().slice(0, 160) }), setDrawer, startPoll, closePoll, showPoll, clearPoll, startPulse, stopPulse, startTimer, stopTimer, pickStudent, clearPick, addMat, removeMat },
     counts, voters: poll ? [...votes.current.keys()].filter((id) => present.has(id)).length : 0, pulseCounts, pulseVoters: pulseCounts[0] + pulseCounts[1] + pulseCounts[2],
     attendance: [...seen.current.values()].sort((a, b) => a.first - b.first),
     guest: { vote, sendPulse, myVote: poll && myVote?.poll === poll.id ? myVote.o : null, myPulse: cls.pulse && myPulse?.id === cls.pulse.id ? myPulse.v : null },

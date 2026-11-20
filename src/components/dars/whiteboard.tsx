@@ -1,27 +1,18 @@
 "use client";
 import * as React from "react";
-import { ArrowUpRight, Check, ChevronLeft, ChevronRight, ChevronsUpDown, Circle, Download, Eraser, Highlighter, ImagePlus, Minus, MousePointer2, Palette, Pencil, Plus, Redo2, Square, Trash2, Type, Undo2, X } from "lucide-react";
 import {
-  BGS, BG_NAMES, BOARD_X, BOARD_Y, BoardStore, COLORS, COLOR_NAMES, FONT_SIZES, KIND, MAX_TEXT, WIDTHS, WIDTH_NAMES, bgStyle, constrainShape, isShape,
-  type Bg, type BoardMsg, type Stroke,
+  ArrowLeftRight, ArrowUpRight, Brush, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Delete, Download, Eraser, Highlighter, ImagePlus, LayoutTemplate, Maximize2, Minimize2,
+  Minus, MousePointer2, Palette, Pencil, Plus, Redo2, Shapes, Smile, Square, Trash2, Type, Undo2, X,
+} from "lucide-react";
+import {
+  BGS, BG_NAMES, BOARD_X, BOARD_Y, BoardHistory, BoardStore, COLORS, COLOR_NAMES, FONT_SIZES, KIND, MAX_TEXT, OPT_DASH, OPT_FILL, TEMPLATES, UNIT, WIDTHS, WIDTH_NAMES,
+  bgStyle, bundle, constrainShape, hitTest, isClosed, isShape, shapePoly, strokeBBox, templateMsgs, type Bg, type BoardMsg, type Stroke, type TemplateId,
 } from "@/lib/board";
 import { cn } from "@/lib/utils";
 
 const W = 1600;
 const H = 900;
-type Tool = "pen" | "hl" | "eraser" | "line" | "arrow" | "rect" | "ellipse" | "text" | "laser";
-const KIND_OF: Record<Exclude<Tool, "laser">, number> = { pen: KIND.pen, hl: KIND.hl, eraser: KIND.eraser, line: KIND.line, arrow: KIND.arrow, rect: KIND.rect, ellipse: KIND.ellipse, text: KIND.text };
-const TOOLS: { id: Tool; label: string; key: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: "pen", label: "Qalam", key: "P", icon: Pencil },
-  { id: "hl", label: "Marker", key: "M", icon: Highlighter },
-  { id: "eraser", label: "O'chirg'ich", key: "E", icon: Eraser },
-  { id: "line", label: "Chiziq", key: "L", icon: Minus },
-  { id: "arrow", label: "Strelka", key: "A", icon: ArrowUpRight },
-  { id: "rect", label: "To'rtburchak", key: "R", icon: Square },
-  { id: "ellipse", label: "Ellips", key: "O", icon: Circle },
-  { id: "text", label: "Matn", key: "T", icon: Type },
-  { id: "laser", label: "Lazer ko'rsatkich", key: "K", icon: MousePointer2 },
-];
+type Tool = "select" | "pen" | "hl" | "eraser" | "oeraser" | "shape" | "text" | "sticker" | "laser" | "tpl";
 
 const px = (v: number) => (v / BOARD_X) * W;
 const py = (v: number) => (v / BOARD_Y) * H;
@@ -41,27 +32,37 @@ export function drawStrokes(ctx: CanvasRenderingContext2D, strokes: readonly Str
     ctx.fillStyle = color;
     const base = WIDTHS[s.w] ?? WIDTHS[1];
     ctx.lineWidth = s.k === KIND.hl ? base * 3.5 : eraser ? base * 4 : base;
+    ctx.setLineDash([]);
     if (s.k === KIND.text) {
       const size = FONT_SIZES[s.w] ?? FONT_SIZES[1];
-      ctx.font = `700 ${size}px ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif`;
+      ctx.font = `700 ${size}px ui-sans-serif, system-ui, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
       ctx.textBaseline = "top";
       (s.s ?? "").split("\n").forEach((line, i) => ctx.fillText(line, px(s.p[0]!), py(s.p[1]!) + i * size * 1.2));
       continue;
     }
     if (isShape(s.k)) {
       const x1 = px(s.p[0]!), y1 = py(s.p[1]!), x2 = px(s.p[2]!), y2 = py(s.p[3]!);
+      if ((s.o ?? 0) & OPT_DASH) ctx.setLineDash([base * 2.4, base * 2.4]);
       ctx.beginPath();
+      const head = (ax: number, ay: number, bx: number, by: number) => {
+        const a = Math.atan2(by - ay, bx - ax), len = Math.max(18, base * 4.5);
+        ctx.moveTo(bx, by); ctx.lineTo(bx - len * Math.cos(a - 0.45), by - len * Math.sin(a - 0.45));
+        ctx.moveTo(bx, by); ctx.lineTo(bx - len * Math.cos(a + 0.45), by - len * Math.sin(a + 0.45));
+      };
       if (s.k === KIND.rect) ctx.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
       else if (s.k === KIND.ellipse) ctx.ellipse((x1 + x2) / 2, (y1 + y2) / 2, Math.abs(x2 - x1) / 2, Math.abs(y2 - y1) / 2, 0, 0, Math.PI * 2);
-      else {
+      else if (s.k === KIND.line || s.k === KIND.arrow || s.k === KIND.darrow) {
         ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-        if (s.k === KIND.arrow) {
-          const a = Math.atan2(y2 - y1, x2 - x1), len = Math.max(18, base * 4.5);
-          ctx.moveTo(x2, y2); ctx.lineTo(x2 - len * Math.cos(a - 0.45), y2 - len * Math.sin(a - 0.45));
-          ctx.moveTo(x2, y2); ctx.lineTo(x2 - len * Math.cos(a + 0.45), y2 - len * Math.sin(a + 0.45));
-        }
+        if (s.k !== KIND.line) head(x1, y1, x2, y2);
+        if (s.k === KIND.darrow) head(x2, y2, x1, y1);
+      } else {
+        const poly = shapePoly(s.k, x1, y1, x2, y2);
+        poly.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        ctx.closePath();
       }
+      if (isClosed(s.k) && ((s.o ?? 0) & OPT_FILL)) { ctx.globalAlpha = 0.3; ctx.fill(); ctx.globalAlpha = 1; }
       ctx.stroke();
+      ctx.setLineDash([]);
       continue;
     }
     if (n === 1) { ctx.beginPath(); ctx.arc(px(s.p[0]!), py(s.p[1]!), ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(); continue; }
@@ -77,6 +78,7 @@ export function drawStrokes(ctx: CanvasRenderingContext2D, strokes: readonly Str
   }
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
 }
 
 /** Orqa fonni rasmga saqlash uchun chizadi (ekranda CSS bilan ko'rsatiladi). */
@@ -97,12 +99,46 @@ function drawBg(ctx: CanvasRenderingContext2D, bg: Bg) {
   else if (bg === "axes") { grid(0, 0); ctx.strokeStyle = "#0f172a"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke(); }
 }
 
+/** Shakl belgisi (qalin chiziqli kichik rasm): asboblar paneli va tanlash oynasi uchun. */
+function ShapeIcon({ k, className }: { k: number; className?: string }) {
+  const p = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+  return (
+    <svg viewBox="0 0 24 24" className={cn("h-5 w-5", className)} aria-hidden>
+      {k === KIND.line && <path d="M4 19 20 5" {...p} />}
+      {k === KIND.arrow && <path d="M4 19 20 5M11 5h9v9" {...p} />}
+      {k === KIND.darrow && <path d="M5 19 19 5M5 12v7h7M12 5h7v7" {...p} />}
+      {k === KIND.rect && <rect x="4" y="6" width="16" height="12" rx="1" {...p} />}
+      {k === KIND.ellipse && <ellipse cx="12" cy="12" rx="8.5" ry="6.5" {...p} />}
+      {k === KIND.triangle && <path d="M12 5 20 19H4Z" {...p} />}
+      {k === KIND.rtri && <path d="M5 5v14h14Z" {...p} />}
+      {k === KIND.diamond && <path d="M12 3.5 20.5 12 12 20.5 3.5 12Z" {...p} />}
+      {k === KIND.star && <path d="m12 3.5 2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 17l-5.4 3 1.2-6-4.5-4.2 6.1-.7Z" {...p} />}
+    </svg>
+  );
+}
+const SHAPES: { k: number; name: string }[] = [
+  { k: KIND.line, name: "Chiziq" }, { k: KIND.arrow, name: "Strelka" }, { k: KIND.darrow, name: "Ikki tomonlama strelka" },
+  { k: KIND.rect, name: "To'rtburchak" }, { k: KIND.ellipse, name: "Ellips" }, { k: KIND.triangle, name: "Uchburchak" },
+  { k: KIND.rtri, name: "To'g'ri burchakli uchburchak" }, { k: KIND.diamond, name: "Romb" }, { k: KIND.star, name: "Yulduz" },
+];
+const STICKERS = ["✅", "❌", "⭐", "❤️", "👍", "👏", "😀", "🤔", "❗", "❓", "💡", "🎯", "🏆", "➕", "➖", "✖️", "➗", "🔥", "📌", "🎉", "😍", "👀", "🌟", "📚"];
+const SYMBOLS = ["²", "³", "√", "π", "½", "⅓", "¼", "≠", "≈", "≤", "≥", "±", "×", "÷", "°", "∞", "∠", "Δ", "α", "β"];
+const HINTS: Partial<Record<Tool, string>> = {
+  select: "Chiziqni bosing va sudrab ko'chiring. Delete tugmasi uni o'chiradi.",
+  oeraser: "Bosilgan chiziq butunlay o'chadi.",
+  laser: "Bosib turib ko'rsating: hamma qizil nuqtani ko'radi.",
+  text: "Joyni bosing va yozing. Tugallash: boshqa joyni bosing.",
+  sticker: "Stikerni qo'yish uchun doskani bosing.",
+  tpl: "Joyni bosing: chizma shu yerga tushadi.",
+};
+
 type Laser = { x: number; y: number; t: number };
+type Pop = { id: "shape" | "sticker" | "tpl" | "bg"; x: number; y: number; w: number; h: number } | null;
 
 /**
- * Doska. Ustoz (va ustoz chaqirgan o'quvchi, canDraw) qalam, marker, o'chirg'ich, shakllar, matn va lazer bilan chizadi;
- * ustoz sahifalarni boshqaradi, fonni almashtiradi, rasm qo'yadi. Hamma ko'radi va rasmga (PNG) saqlab oladi.
- * Chiziqlar `store` da turadi va `net` orqali hammaga yuboriladi.
+ * Doska. Doska maydoni (16:9) asboblardan ajratilgan: yuqorida sahifalar va amallar, chapda asboblar, pastda rang va qalinlik.
+ * Ustoz (va ustoz chaqirgan o'quvchi, canDraw) chizadi; ustoz sahifalar, fon va rasmni boshqaradi, tanlab ko'chiradi va shablon qo'yadi.
+ * Hamma ko'radi va rasmga (PNG) saqlab oladi. Chiziqlar `store` da turadi va `net` orqali hammaga yuboriladi.
  */
 export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange, onBg, imageUrl, onPickImage, onClearImage }: {
   store: BoardStore; version: number; bg: Bg; canDraw: boolean; isHost: boolean; net: (m: BoardMsg) => void; onChange: () => void;
@@ -110,26 +146,49 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
 }) {
   const ref = React.useRef<HTMLCanvasElement>(null);
   const laserRef = React.useRef<HTMLCanvasElement>(null);
-  const boxRef = React.useRef<HTMLDivElement>(null);
+  const frameRef = React.useRef<HTMLDivElement>(null);
+  const popRef = React.useRef<HTMLDivElement>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const taRef = React.useRef<HTMLTextAreaElement>(null);
   const [tool, setTool] = React.useState<Tool>("pen");
+  const [shapeKind, setShapeKind] = React.useState<number>(KIND.rect);
   const [color, setColor] = React.useState(0);
   const [width, setWidth] = React.useState(1);
+  const [fill, setFill] = React.useState(false);
+  const [dash, setDash] = React.useState(false);
+  const [sticker, setSticker] = React.useState("⭐");
+  const [tpl, setTpl] = React.useState<TemplateId>("table");
+  const [selected, setSelected] = React.useState<number | null>(null);
   const [hint, setHint] = React.useState("");
   const [open, setOpen] = React.useState(true);
-  const [bgOpen, setBgOpen] = React.useState(false);
+  const [fs, setFs] = React.useState(false);
+  const [pop, setPop] = React.useState<Pop>(null);
   const [text, setText] = React.useState<{ x: number; y: number; v: string } | null>(null);
-  const [redoN, setRedoN] = React.useState(0);
-  const redo = React.useRef<Stroke[]>([]);
+  const [, setHv] = React.useState(0);
+  const hist = React.useMemo(() => new BoardHistory(), []);
+  const bumpH = React.useCallback(() => setHv((v) => v + 1), []);
   const cur = React.useRef<{ id: number; kind: number; buf: number[]; lx: number; ly: number; x0: number; y0: number; ex: number; ey: number; dirty: boolean; timer: number } | null>(null);
-  const laser = React.useRef<{ pts: Laser[]; on: boolean; raf: number; last: number }>({ pts: [], on: false, raf: 0, last: 0 });
-  const st = React.useRef({ tool, color, width });
-  st.current = { tool, color, width };
+  const mv = React.useRef<{ id: number; lx: number; ly: number; tx: number; ty: number; px: number; py: number; timer: number } | null>(null);
+  const oe = React.useRef<Stroke[] | null>(null);
+  const laser = React.useRef<{ pts: Laser[]; on: boolean; raf: number }>({ pts: [], on: false, raf: 0 });
+  const st = React.useRef({ tool, shapeKind, color, width, fill, dash, sticker, tpl });
+  st.current = { tool, shapeKind, color, width, fill, dash, sticker, tpl };
+  const pendingText = React.useRef<readonly [number, number] | null>(null);
+  const laserMove = React.useRef(0);
 
-  // Telefonda asboblar qatori dastlab yig'iq (doskaning ustini yopmasligi uchun)
-  React.useEffect(() => { setOpen(window.matchMedia("(min-width: 640px)").matches || !isHost); }, [isHost]); // doskaga chaqirilgan o'quvchida asboblar ochiq turadi
+  // Telefonda asboblar dastlab yig'iq (doskani yopmasligi uchun); doskaga chaqirilgan o'quvchida ochiq
+  React.useEffect(() => { setOpen(window.matchMedia("(min-width: 640px)").matches || !isHost); }, [isHost]);
   // Qora doskada qora qalam ko'rinmaydi: rang avtomatik almashadi
   React.useEffect(() => { setColor((c) => (bg === "dark" && c === 0 ? 1 : bg !== "dark" && c === 1 ? 0 : c)); }, [bg]);
+  // Chizish huquqi olinsa, asboblar tozalanadi
+  React.useEffect(() => { if (!canDraw) { setSelected(null); setPop(null); setText(null); } }, [canDraw]);
+  // O'quvchi uchun tanlash, obyekt o'chirg'ich va shablon yo'q
+  React.useEffect(() => { if (!isHost && (tool === "select" || tool === "oeraser" || tool === "tpl")) setTool("pen"); }, [isHost, tool]);
+  React.useEffect(() => {
+    const onFs = () => setFs(document.fullscreenElement === frameRef.current);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
 
   React.useEffect(() => {
     const ctx = ref.current?.getContext("2d");
@@ -137,6 +196,15 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
     ctx.clearRect(0, 0, W, H);
     drawStrokes(ctx, store.strokes);
   }, [store, version]);
+
+  // Oynadan tashqariga bosilsa yoki Esc bosilsa, ochiq oyna yopiladi
+  React.useEffect(() => {
+    if (!pop) return;
+    const down = (e: PointerEvent) => { if (!popRef.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest("[data-pop-anchor]")) setPop(null); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setPop(null); };
+    document.addEventListener("pointerdown", down); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key); };
+  }, [pop]);
 
   // ---- Lazer ko'rsatkich (hamma ko'radi, saqlanmaydi)
   const paintLaser = React.useCallback(() => {
@@ -170,8 +238,17 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
     return () => { off(); cancelAnimationFrame(L.raf); L.raf = 0; };
   }, [store, pushLaser]);
 
-  // ---- Chizish
-  const kindMsg = (c: NonNullable<typeof cur.current>, p: number[], replace = false): BoardMsg => ({ t: "b", id: c.id, k: c.kind, c: st.current.color, w: st.current.width, p, ...(replace && { r: 1 as const }) });
+  // ---- Yordamchilar
+  const rid = () => Math.floor(Math.random() * 2 ** 31);
+  const copy = (s: Stroke): Stroke => ({ ...s, p: [...s.p] });
+  const send = React.useCallback((msgs: BoardMsg[]) => { for (const m of bundle(msgs)) net(m); }, [net]);
+  const optBits = () => { const t = st.current; return t.tool === "shape" ? ((isClosed(t.shapeKind) && t.fill ? OPT_FILL : 0) | (t.dash ? OPT_DASH : 0)) : 0; };
+  const kindOfTool = (t: Tool) => (t === "pen" ? KIND.pen : t === "hl" ? KIND.hl : t === "eraser" ? KIND.eraser : st.current.shapeKind);
+  const kindMsg = (c: NonNullable<typeof cur.current>, p: number[], replace = false): BoardMsg => {
+    const o = optBits();
+    return { t: "b", id: c.id, k: c.kind, c: st.current.color, w: st.current.width, p, ...(replace && { r: 1 as const }), ...(o && { o }) };
+  };
+
   const flush = React.useCallback(() => {
     const c = cur.current;
     if (!c) return;
@@ -182,17 +259,38 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
     if (c.buf.length === 0) return;
     const buf = c.buf.splice(0, c.buf.length);
     for (let i = 0; i < buf.length; i += 400) net(kindMsg(c, buf.slice(i, i + 400)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [net]);
-  const end = React.useCallback(() => {
+  const flushMove = React.useCallback(() => {
+    const m = mv.current;
+    if (!m || (m.px === 0 && m.py === 0)) return;
+    net({ t: "mv", id: m.id, dx: m.px, dy: m.py });
+    m.px = 0; m.py = 0;
+  }, [net]);
+
+  const finish = React.useCallback(() => {
     const c = cur.current;
-    if (!c) return;
-    window.clearInterval(c.timer);
-    if (isShape(c.kind)) c.dirty = true;
-    flush();
-    cur.current = null;
-    redo.current = []; setRedoN(0);
-  }, [flush]);
-  React.useEffect(() => end, [end]);
+    if (c) {
+      window.clearInterval(c.timer);
+      if (isShape(c.kind)) c.dirty = true;
+      flush();
+      if (isHost) { hist.record({ t: "add", ids: [c.id] }); bumpH(); }
+      cur.current = null;
+    }
+    const m = mv.current;
+    if (m) {
+      window.clearInterval(m.timer);
+      flushMove();
+      if (m.tx !== 0 || m.ty !== 0) { hist.record({ t: "mv", id: m.id, dx: m.tx, dy: m.ty }); bumpH(); }
+      mv.current = null;
+    }
+    const e = oe.current;
+    if (e) {
+      oe.current = null;
+      if (e.length) { hist.record({ t: "rm", strokes: e }); bumpH(); }
+    }
+  }, [flush, flushMove, hist, bumpH, isHost]);
+  React.useEffect(() => finish, [finish]);
 
   function at(e: { clientX: number; clientY: number }) {
     const r = ref.current!.getBoundingClientRect();
@@ -203,8 +301,6 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
     if (!c) return;
     if (store.apply(kindMsg(c, [x, y]))) { c.buf.push(x, y); onChange(); }
   }
-  const laserMove = React.useRef(0);
-  const pendingText = React.useRef<readonly [number, number] | null>(null);
   function sendLaser(x: number, y: number) {
     const now = performance.now();
     if (now - laserMove.current < 35) return;
@@ -212,25 +308,75 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
     pushLaser({ x, y });
     net({ t: "l", x, y });
   }
+  function eraseAt(x: number, y: number) {
+    const e = oe.current;
+    if (!e) return;
+    const hit = hitTest(store.strokes, x, y, 16 * UNIT);
+    if (!hit) return;
+    e.push(copy(hit));
+    const m: BoardMsg = { t: "rm", id: hit.id };
+    if (store.apply(m)) { net(m); if (selected === hit.id) setSelected(null); onChange(); }
+  }
+  /** Bitta chiziq qo'yadi (stiker yoki matn) va tarixga yozadi. */
+  function stamp(msg: BoardMsg) {
+    if (!store.apply(msg)) return;
+    net(msg);
+    if (isHost && msg.t === "b") { hist.record({ t: "add", ids: [msg.id] }); bumpH(); }
+    onChange();
+  }
+
   function down(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!canDraw || (e.pointerType === "mouse" && e.button > 0)) return;
     const t = st.current.tool;
     const [x, y] = at(e);
+    setPop(null);
     if (t === "laser") { e.currentTarget.setPointerCapture(e.pointerId); sendLaser(x, y); return; }
     if (t === "text") { pendingText.current = [x, y]; return; } // matn maydoni qo'yib yuborilganda ochiladi (fokus bosish bilan yo'qolmasligi uchun)
+    if (t === "select") {
+      const hit = hitTest(store.strokes, x, y, 18 * UNIT);
+      setSelected(hit ? hit.id : null);
+      if (hit) { e.currentTarget.setPointerCapture(e.pointerId); mv.current = { id: hit.id, lx: x, ly: y, tx: 0, ty: 0, px: 0, py: 0, timer: window.setInterval(flushMove, 50) }; }
+      return;
+    }
+    if (t === "oeraser") { e.currentTarget.setPointerCapture(e.pointerId); oe.current = []; eraseAt(x, y); return; }
+    if (t === "sticker") {
+      const size = (FONT_SIZES[st.current.width] ?? FONT_SIZES[1]) * UNIT;
+      stamp({ t: "b", id: rid(), k: KIND.text, c: st.current.color, w: st.current.width, p: [Math.max(0, Math.round(x - size * 0.5)), Math.max(0, Math.min(BOARD_Y, Math.round(y - size * 0.6)))], s: st.current.sticker });
+      return;
+    }
+    if (t === "tpl") {
+      const msgs = templateMsgs(st.current.tpl, x, y, st.current.color, st.current.width, rid);
+      msgs.forEach((m) => store.apply(m));
+      send(msgs);
+      hist.record({ t: "add", ids: msgs.map((m) => (m as { id: number }).id) }); bumpH();
+      onChange(); setTool("select");
+      return;
+    }
     if (store.full) { setHint("Doska to'ldi. Sahifani tozalang yoki yangi sahifa oching."); return; }
     setHint("");
     e.currentTarget.setPointerCapture(e.pointerId);
-    const kind = KIND_OF[t];
-    cur.current = { id: Math.floor(Math.random() * 2 ** 31), kind, buf: [], lx: x, ly: y, x0: x, y0: y, ex: x, ey: y, dirty: false, timer: window.setInterval(flush, 50) };
+    const kind = kindOfTool(t);
+    cur.current = { id: rid(), kind, buf: [], lx: x, ly: y, x0: x, y0: y, ex: x, ey: y, dirty: false, timer: window.setInterval(flush, 50) };
     if (isShape(kind)) { store.apply(kindMsg(cur.current, [x, y, x, y], true)); onChange(); } else add(x, y);
   }
   function move(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!canDraw) return;
-    if (st.current.tool === "laser") {
-      if (e.pointerType === "mouse" || e.buttons) { const [x, y] = at(e); sendLaser(x, y); }
+    const t = st.current.tool;
+    if (t === "laser") { if (e.pointerType === "mouse" || e.buttons) { const [x, y] = at(e); sendLaser(x, y); } return; }
+    const m = mv.current;
+    if (m) {
+      const [x, y] = at(e);
+      const s = store.find(m.id);
+      if (!s) return;
+      const bx = s.p[0]!, by = s.p[1]!;
+      if (store.apply({ t: "mv", id: m.id, dx: x - m.lx, dy: y - m.ly })) {
+        const dx = s.p[0]! - bx, dy = s.p[1]! - by; // chegarada siljish kamayishi mumkin: haqiqiy siljish yuboriladi
+        m.tx += dx; m.ty += dy; m.px += dx; m.py += dy; onChange();
+      }
+      m.lx = x; m.ly = y;
       return;
     }
+    if (oe.current) { const [x, y] = at(e); eraseAt(x, y); return; }
     const c = cur.current;
     if (!c) return;
     if (isShape(c.kind)) {
@@ -250,43 +396,50 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
     }
   }
   function up() {
-    if (st.current.tool === "text") {
+    const t = st.current.tool;
+    if (t === "text") {
       const pt = pendingText.current;
       pendingText.current = null;
       if (pt && canDraw) setText({ x: pt[0], y: pt[1], v: "" });
       return;
     }
-    if (st.current.tool === "laser") { net({ t: "l" }); pushLaser(null); return; }
-    end();
+    if (t === "laser") { net({ t: "l" }); pushLaser(null); return; }
+    finish();
   }
   function leave() { if (st.current.tool === "laser" && canDraw) { net({ t: "l" }); pushLaser(null); } }
 
-  const undo = React.useCallback(() => {
-    const s = store.strokes[store.strokes.length - 1];
-    if (!s || !store.apply({ t: "u" })) return;
-    redo.current.push({ ...s, p: [...s.p] }); setRedoN(redo.current.length);
-    net({ t: "u" }); onChange();
-  }, [store, net, onChange]);
-  const redoIt = React.useCallback(() => {
-    const s = redo.current.pop();
-    setRedoN(redo.current.length);
-    if (!s) return;
-    for (const m of BoardStore.strokeMsgs(s)) { store.apply(m); net(m); }
-    onChange();
-  }, [store, net, onChange]);
-  function clear() {
+  // ---- Tarix (faqat ustozda)
+  const undo = React.useCallback(() => { const msgs = hist.undo(store); if (msgs) { send(msgs); setSelected(null); onChange(); bumpH(); } }, [hist, store, send, onChange, bumpH]);
+  const redo = React.useCallback(() => { const msgs = hist.redo(store); if (msgs) { send(msgs); onChange(); bumpH(); } }, [hist, store, send, onChange, bumpH]);
+  function clearPage() {
     if (store.strokes.length === 0) return;
     if (!window.confirm("Sahifa tozalansinmi?")) return;
-    store.apply({ t: "x" }); net({ t: "x" }); redo.current = []; setRedoN(0); onChange();
+    const all = store.strokes.map(copy);
+    store.apply({ t: "x" }); net({ t: "x" });
+    hist.record({ t: "rm", strokes: all }); setSelected(null); bumpH(); onChange();
   }
-  const page = React.useCallback((m: BoardMsg) => { if (store.apply(m)) { net(m); redo.current = []; setRedoN(0); onChange(); } }, [store, net, onChange]);
+  const removeSelected = React.useCallback(() => {
+    const s = selected === null ? null : store.find(selected);
+    if (!s) return;
+    const m: BoardMsg = { t: "rm", id: s.id };
+    const snap = copy(s);
+    if (store.apply(m)) { net(m); hist.record({ t: "rm", strokes: [snap] }); setSelected(null); bumpH(); onChange(); }
+  }, [selected, store, net, hist, bumpH, onChange]);
+  const page = React.useCallback((m: BoardMsg) => { if (store.apply(m)) { net(m); hist.clear(); setSelected(null); bumpH(); onChange(); } }, [store, net, hist, bumpH, onChange]);
 
   function commitText() {
     const t = text;
     setText(null);
     if (!t || !t.v.trim()) return;
-    const m: BoardMsg = { t: "b", id: Math.floor(Math.random() * 2 ** 31), k: KIND.text, c: st.current.color, w: st.current.width, p: [t.x, t.y], s: t.v.slice(0, MAX_TEXT) };
-    if (store.apply(m)) { net(m); redo.current = []; setRedoN(0); onChange(); }
+    stamp({ t: "b", id: rid(), k: KIND.text, c: st.current.color, w: st.current.width, p: [t.x, t.y], s: t.v.slice(0, MAX_TEXT) });
+  }
+  function insertSymbol(sym: string) {
+    const ta = taRef.current;
+    if (!ta || !text) return;
+    const a = ta.selectionStart ?? text.v.length, b = ta.selectionEnd ?? a;
+    const v = (text.v.slice(0, a) + sym + text.v.slice(b)).slice(0, MAX_TEXT);
+    setText({ ...text, v });
+    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(a + sym.length, a + sym.length); });
   }
 
   // Tezkor tugmalar (faqat chizish huquqi bor bo'lsa, matn yozilayotganda emas)
@@ -296,16 +449,18 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) redoIt(); else if (isHost) undo(); return; }
-      if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); redoIt(); return; }
+      if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (!isHost) return; if (e.shiftKey) redo(); else undo(); return; }
+      if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); if (isHost) redo(); return; }
       if (mod || e.altKey) return;
-      const k = e.key.toUpperCase();
-      const found = TOOLS.find((x) => x.key === k);
-      if (found) setTool(found.id);
+      if ((e.key === "Delete" || e.key === "Backspace") && isHost && selected !== null) { e.preventDefault(); removeSelected(); return; }
+      if (e.key === "Escape") { setSelected(null); return; }
+      const map: Record<string, Tool> = { V: "select", P: "pen", M: "hl", E: "eraser", X: "oeraser", S: "shape", T: "text", K: "laser" };
+      const k = map[e.key.toUpperCase()];
+      if (k && (isHost || (k !== "select" && k !== "oeraser"))) setTool(k);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canDraw, isHost, undo, redoIt]);
+  }, [canDraw, isHost, undo, redo, selected, removeSelected]);
 
   async function savePng() {
     const c = document.createElement("canvas");
@@ -334,115 +489,214 @@ export function Whiteboard({ store, version, bg, canDraw, isHost, net, onChange,
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }, "image/png");
   }
+  function toggleFs() {
+    const f = frameRef.current;
+    if (!f) return;
+    if (document.fullscreenElement) void document.exitFullscreen?.(); else void f.requestFullscreen?.();
+  }
+  function openPop(id: NonNullable<Pop>["id"], el: HTMLElement) {
+    if (pop?.id === id) { setPop(null); return; }
+    const r = el.getBoundingClientRect(), f = frameRef.current!.getBoundingClientRect();
+    setPop({ id, x: r.left - f.left, y: r.top - f.top, w: r.width, h: r.height });
+  }
 
-  const cursor = !canDraw ? "cursor-default" : tool === "text" ? "cursor-text" : tool === "laser" ? "cursor-none" : "cursor-crosshair";
+  // ---- Ko'rinish
   const multi = store.pages.length > 1;
-  const showStyle = tool !== "laser";
-  const fontPx = `calc(${FONT_SIZES[width]} / ${W} * 100cqw)`;
   const bs = bgStyle(bg);
-  const btn = (on: boolean) => cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors sm:h-8 sm:w-8", on ? "bg-white text-slate-900" : "bg-white/10 text-white hover:bg-white/20");
+  const fontPx = `calc(${FONT_SIZES[width]} / ${W} * 100cqw)`;
+  const selStroke = selected === null ? null : store.find(selected);
+  const selBox = selStroke ? strokeBBox(selStroke) : null;
+  const drawTools = canDraw;
+  const showColors = tool === "pen" || tool === "hl" || tool === "shape" || tool === "text" || tool === "sticker" || tool === "tpl";
+  const showWidth = tool !== "select" && tool !== "laser" && tool !== "oeraser";
+  const cursor = !canDraw ? "cursor-default" : tool === "text" ? "cursor-text" : tool === "laser" ? "cursor-none" : tool === "select" ? "cursor-default" : "cursor-crosshair";
+  const toolName: Record<Tool, string> = { select: "Tanlash", pen: "Qalam", hl: "Marker", eraser: "O'chirg'ich", oeraser: "Obyekt o'chirg'ich", shape: SHAPES.find((s) => s.k === shapeKind)?.name ?? "Shakl", text: "Matn", sticker: "Stiker", laser: "Lazer", tpl: "Shablon" };
+  const tb = (on: boolean, extra?: string) => cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors disabled:opacity-35", on ? "bg-white text-slate-900 shadow" : "text-white/90 hover:bg-white/15", extra);
+  const pill = (on: boolean) => cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-bold transition-colors disabled:opacity-35", on ? "bg-white text-slate-900" : "bg-white/10 text-white hover:bg-white/20");
+  const sep = <span className="mx-0.5 h-5 w-px shrink-0 bg-white/25 md:mx-0 md:my-0.5 md:h-px md:w-7" aria-hidden />;
+
+  const toolList = (
+    <>
+      {isHost && <button type="button" className={tb(tool === "select")} onClick={() => setTool("select")} aria-label="Tanlash" aria-pressed={tool === "select"} title="Tanlash va ko'chirish (V)"><MousePointer2 className="h-[18px] w-[18px]" aria-hidden /></button>}
+      <button type="button" className={tb(tool === "pen")} onClick={() => setTool("pen")} aria-label="Qalam" aria-pressed={tool === "pen"} title="Qalam (P)"><Pencil className="h-[18px] w-[18px]" aria-hidden /></button>
+      <button type="button" className={tb(tool === "hl")} onClick={() => setTool("hl")} aria-label="Marker" aria-pressed={tool === "hl"} title="Marker (M)"><Highlighter className="h-[18px] w-[18px]" aria-hidden /></button>
+      <button type="button" className={tb(tool === "eraser")} onClick={() => setTool("eraser")} aria-label="O'chirg'ich" aria-pressed={tool === "eraser"} title="O'chirg'ich (E)"><Eraser className="h-[18px] w-[18px]" aria-hidden /></button>
+      {isHost && <button type="button" className={tb(tool === "oeraser")} onClick={() => setTool("oeraser")} aria-label="Obyekt o'chirg'ich" aria-pressed={tool === "oeraser"} title="Obyekt o'chirg'ich: chiziqni butunlay o'chiradi (X)"><Delete className="h-[18px] w-[18px]" aria-hidden /></button>}
+      {sep}
+      <button type="button" data-pop-anchor className={tb(tool === "shape" || pop?.id === "shape")} onClick={(e) => { setTool("shape"); openPop("shape", e.currentTarget); }} aria-label="Shakllar" aria-pressed={tool === "shape"} aria-expanded={pop?.id === "shape"} title={`Shakllar: ${toolName.shape} (S)`}><ShapeIcon k={shapeKind} /></button>
+      <button type="button" className={tb(tool === "text")} onClick={() => setTool("text")} aria-label="Matn" aria-pressed={tool === "text"} title="Matn (T)"><Type className="h-[18px] w-[18px]" aria-hidden /></button>
+      <button type="button" data-pop-anchor className={tb(tool === "sticker" || pop?.id === "sticker")} onClick={(e) => { setTool("sticker"); openPop("sticker", e.currentTarget); }} aria-label="Stikerlar" aria-pressed={tool === "sticker"} aria-expanded={pop?.id === "sticker"} title="Stikerlar"><Smile className="h-[18px] w-[18px]" aria-hidden /></button>
+      {isHost && <button type="button" data-pop-anchor className={tb(tool === "tpl" || pop?.id === "tpl")} onClick={(e) => { openPop("tpl", e.currentTarget); }} aria-label="Shablonlar" aria-pressed={tool === "tpl"} aria-expanded={pop?.id === "tpl"} title="Shablonlar: jadval, sonlar o'qi, koordinata, Venn"><LayoutTemplate className="h-[18px] w-[18px]" aria-hidden /></button>}
+      {sep}
+      <button type="button" className={tb(tool === "laser")} onClick={() => setTool("laser")} aria-label="Lazer ko'rsatkich" aria-pressed={tool === "laser"} title="Lazer ko'rsatkich (K)"><Crosshair className="h-[18px] w-[18px]" aria-hidden /></button>
+    </>
+  );
+  const actionList = isHost ? (
+    <>
+      <button type="button" className={tb(false)} onClick={undo} disabled={!hist.canUndo} aria-label="Bekor qilish" title="Bekor qilish (Ctrl+Z)"><Undo2 className="h-[18px] w-[18px]" aria-hidden /></button>
+      <button type="button" className={tb(false)} onClick={redo} disabled={!hist.canRedo} aria-label="Qaytarish" title="Qaytarish (Ctrl+Y)"><Redo2 className="h-[18px] w-[18px]" aria-hidden /></button>
+      <button type="button" className={tb(false)} onClick={clearPage} aria-label="Sahifani tozalash" title="Sahifani tozalash"><Trash2 className="h-[18px] w-[18px]" aria-hidden /></button>
+    </>
+  ) : null;
 
   return (
-    <div ref={boxRef} className="relative h-full w-full select-none overflow-hidden" style={{ ...bs, containerType: "inline-size" }}>
-      {imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={imageUrl} alt="Doskadagi rasm" className="pointer-events-none absolute inset-0 h-full w-full object-contain" draggable={false} />}
-      <canvas ref={ref} width={W} height={H} className={cn("absolute inset-0 h-full w-full touch-none", cursor)} aria-label="Doska"
-        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={leave} onLostPointerCapture={() => { if (st.current.tool !== "laser") end(); }} />
-      <canvas ref={laserRef} width={W} height={H} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
+    <div ref={frameRef} className={cn("relative flex w-full flex-col bg-slate-900 text-white shadow-soft ring-1 ring-black/10", fs ? "h-screen" : "rounded-2xl")}>
+      {/* Yuqori qator: sahifalar, nom, amallar */}
+      <div className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 bg-gradient-to-r from-slate-900 to-slate-800 px-2 py-1.5", !fs && "rounded-t-2xl")}>
+        <div className="flex items-center gap-1" role="group" aria-label="Sahifalar">
+          {isHost && <button type="button" className={tb(false)} onClick={() => page({ t: "pg", i: store.cur - 1 })} disabled={store.cur === 0} aria-label="Oldingi sahifa"><ChevronLeft className="h-4 w-4" aria-hidden /></button>}
+          <span className="min-w-12 rounded-lg bg-white/10 px-2 py-1 text-center text-xs font-extrabold tabular-nums" aria-live="polite" aria-label="Joriy sahifa">{store.cur + 1} / {store.pages.length}</span>
+          {isHost && <button type="button" className={tb(false)} onClick={() => page({ t: "pg", i: store.cur + 1 })} disabled={store.cur >= store.pages.length - 1} aria-label="Keyingi sahifa"><ChevronRight className="h-4 w-4" aria-hidden /></button>}
+          {isHost && <button type="button" className={pill(false)} onClick={() => page({ t: "pa" })} aria-label="Yangi sahifa qo'shish" title="Yangi sahifa"><Plus className="h-4 w-4" aria-hidden /><span className="hidden lg:inline">Sahifa</span></button>}
+          {isHost && multi && <button type="button" className={tb(false)} onClick={() => { if (store.strokes.length === 0 || window.confirm("Bu sahifa o'chirilsinmi?")) page({ t: "pd" }); }} aria-label="Sahifani o'chirish" title="Sahifani o'chirish"><Trash2 className="h-4 w-4" aria-hidden /></button>}
+        </div>
+        <div className="hidden min-w-0 flex-1 items-center justify-center gap-2 text-xs font-bold text-white/80 sm:flex">
+          <Brush className="h-4 w-4 text-cyan-300" aria-hidden />Doska{canDraw && <span className="rounded-full bg-white/10 px-2 py-0.5 font-semibold text-white/90">{toolName[tool]}</span>}
+        </div>
+        <div className="ml-auto flex items-center gap-1 sm:ml-0">
+          {isHost && onBg && <button type="button" data-pop-anchor className={pill(pop?.id === "bg")} onClick={(e) => openPop("bg", e.currentTarget)} aria-label="Doska foni" aria-expanded={pop?.id === "bg"} title="Doska foni"><Palette className="h-4 w-4" aria-hidden /><span className="hidden lg:inline">Fon</span></button>}
+          {isHost && onPickImage && (
+            <>
+              <button type="button" className={pill(!!imageUrl)} onClick={() => (imageUrl && onClearImage ? onClearImage() : fileRef.current?.click())} aria-label={imageUrl ? "Rasmni olib tashlash" : "Rasm qo'yish"} title={imageUrl ? "Rasmni olib tashlash" : "Rasm qo'yish (varaq, kitob sahifasi)"}>
+                {imageUrl ? <X className="h-4 w-4" aria-hidden /> : <ImagePlus className="h-4 w-4" aria-hidden />}<span className="hidden lg:inline">{imageUrl ? "Rasmni olish" : "Rasm"}</span>
+              </button>
+              <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Rasm tanlash" tabIndex={-1} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onPickImage(f); }} />
+            </>
+          )}
+          <button type="button" className={pill(false)} onClick={() => void savePng()} aria-label="Doskani rasmga saqlash" title="Rasmga saqlash (PNG)"><Download className="h-4 w-4" aria-hidden /><span className="hidden lg:inline">Saqlash</span></button>
+          <button type="button" className={tb(false)} onClick={toggleFs} aria-label={fs ? "To'liq ekrandan chiqish" : "To'liq ekran"} title={fs ? "To'liq ekrandan chiqish" : "To'liq ekran"}>{fs ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}</button>
+        </div>
+      </div>
 
-      {!canDraw && store.strokes.length === 0 && !imageUrl && <p className={cn("pointer-events-none absolute inset-0 grid place-items-center px-4 text-center text-sm font-semibold", bg === "dark" ? "text-white/50" : "text-slate-400")}>Doska bo&apos;sh. Ustoz yozishni boshlaganda shu yerda ko&apos;rinadi.</p>}
-      {hint && <p role="status" className="absolute left-1/2 top-12 -translate-x-1/2 rounded-lg bg-amber px-2.5 py-1 text-xs font-bold text-white">{hint}</p>}
-
-      {text && (
-        <div className="absolute z-10" style={{ left: `${(text.x / BOARD_X) * 100}%`, top: `${(text.y / BOARD_Y) * 100}%` }}>
-          <textarea autoFocus value={text.v} onChange={(e) => setText({ ...text, v: e.target.value })} onBlur={commitText} maxLength={MAX_TEXT} rows={2} aria-label="Doskaga matn"
-            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setText(null); } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitText(); } }}
-            placeholder="Matn yozing..." style={{ fontSize: fontPx, lineHeight: 1.2, color: COLORS[color] }}
-            className="min-w-48 resize-none rounded border-2 border-dashed border-primary bg-white/70 px-1 font-bold outline-none placeholder:text-slate-400" />
-          <div className="mt-1 flex gap-1.5 text-[11px] font-semibold text-slate-700">
-            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={commitText} className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-white"><Check className="h-3.5 w-3.5" aria-hidden />Qo&apos;yish</button>
-            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setText(null)} className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1"><X className="h-3.5 w-3.5" aria-hidden />Bekor</button>
+      <div className="flex min-h-0 flex-1">
+        {/* Chap qator: asboblar (kompyuterda) */}
+        {drawTools && open && (
+          <div className="hidden w-[3.25rem] shrink-0 flex-col items-center gap-1 overflow-y-auto bg-slate-900 px-1 py-2 md:flex" role="toolbar" aria-label="Doska asboblari" aria-orientation="vertical">
+            {toolList}
+            {actionList && <><span className="flex-1" />{sep}{actionList}</>}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Yuqori chap: sahifalar */}
-      {(isHost || multi) && (
-        <div className="absolute left-2 top-2 flex items-center gap-1 rounded-xl bg-slate-900/80 p-1 text-white backdrop-blur" role="group" aria-label="Sahifalar">
-          {isHost && <button type="button" className={btn(false)} onClick={() => page({ t: "pg", i: store.cur - 1 })} disabled={store.cur === 0} aria-label="Oldingi sahifa"><ChevronLeft className="h-4 w-4" aria-hidden /></button>}
-          <span className="min-w-12 px-1 text-center text-xs font-bold tabular-nums" aria-live="polite" aria-label="Joriy sahifa">{store.cur + 1} / {store.pages.length}</span>
-          {isHost && <button type="button" className={btn(false)} onClick={() => page({ t: "pg", i: store.cur + 1 })} disabled={store.cur >= store.pages.length - 1} aria-label="Keyingi sahifa"><ChevronRight className="h-4 w-4" aria-hidden /></button>}
-          {isHost && <button type="button" className={btn(false)} onClick={() => page({ t: "pa" })} aria-label="Yangi sahifa qo'shish" title="Yangi sahifa"><Plus className="h-4 w-4" aria-hidden /></button>}
-          {isHost && multi && <button type="button" className={btn(false)} onClick={() => { if (store.strokes.length === 0 || window.confirm("Bu sahifa o'chirilsinmi?")) page({ t: "pd" }); }} aria-label="Sahifani o'chirish" title="Sahifani o'chirish"><Trash2 className="h-4 w-4" aria-hidden /></button>}
-        </div>
-      )}
-
-      {/* Yuqori o'ng: fon, rasm, saqlash (to'liq ekran tugmasi uchun joy qoldirilgan) */}
-      <div className="absolute right-14 top-2 flex items-center gap-1 rounded-xl bg-slate-900/80 p-1 text-white backdrop-blur">
-        {isHost && onBg && (
-          <div className="relative">
-            <button type="button" className={btn(bgOpen)} onClick={() => setBgOpen((v) => !v)} aria-label="Doska foni" aria-expanded={bgOpen} title="Doska foni"><Palette className="h-4 w-4" aria-hidden /></button>
-            {bgOpen && (
-              <div className="absolute right-0 top-10 z-20 w-44 rounded-xl bg-slate-900/95 p-1.5 shadow-lg" role="menu" aria-label="Doska foni">
-                {BGS.map((b) => (
-                  <button key={b} type="button" role="menuitemradio" aria-checked={bg === b} onClick={() => { onBg(b); setBgOpen(false); }} className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold", bg === b ? "bg-white text-slate-900" : "text-white hover:bg-white/10")}>
-                    <span className="h-5 w-7 shrink-0 rounded border border-white/30" style={{ ...bgStyle(b), backgroundSize: b === "grid" || b === "dots" || b === "axes" ? "25% 33%" : bgStyle(b).backgroundSize }} />{BG_NAMES[b]}
-                  </button>
-                ))}
+        {/* Doska maydoni (16:9) */}
+        <div className="relative flex min-w-0 flex-1 items-center justify-center bg-slate-800 p-1.5 md:p-2.5">
+          <div className="relative aspect-video overflow-hidden rounded-lg shadow-lg ring-1 ring-black/20" style={{ ...bs, containerType: "inline-size", width: fs ? "min(100%, calc((100vh - 9rem) * 16 / 9))" : "100%" }}>
+            {imageUrl && /* eslint-disable-next-line @next/next/no-img-element */ <img src={imageUrl} alt="Doskadagi rasm" className="pointer-events-none absolute inset-0 h-full w-full object-contain" draggable={false} />}
+            <canvas ref={ref} width={W} height={H} className={cn("absolute inset-0 h-full w-full touch-none", cursor)} aria-label="Doska"
+              onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={leave} onLostPointerCapture={() => { if (st.current.tool !== "laser") finish(); }} />
+            <canvas ref={laserRef} width={W} height={H} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
+            {selBox && canDraw && tool === "select" && (
+              <div className="pointer-events-none absolute rounded border-2 border-dashed border-sky-500 bg-sky-500/10" data-testid="selection"
+                style={{ left: `${(selBox.x1 / BOARD_X) * 100 - 0.4}%`, top: `${(selBox.y1 / BOARD_Y) * 100 - 0.7}%`, width: `${((selBox.x2 - selBox.x1) / BOARD_X) * 100 + 0.8}%`, height: `${((selBox.y2 - selBox.y1) / BOARD_Y) * 100 + 1.4}%` }} />
+            )}
+            {!canDraw && store.strokes.length === 0 && !imageUrl && <p className={cn("pointer-events-none absolute inset-0 grid place-items-center px-4 text-center text-sm font-semibold", bg === "dark" ? "text-white/50" : "text-slate-400")}>Doska bo&apos;sh. Ustoz yozishni boshlaganda shu yerda ko&apos;rinadi.</p>}
+            {hint && <p role="status" className="absolute left-1/2 top-2 -translate-x-1/2 rounded-lg bg-amber px-2.5 py-1 text-xs font-bold text-white">{hint}</p>}
+            {text && (
+              <div className="absolute z-10" style={{ left: `${(text.x / BOARD_X) * 100}%`, top: `${(text.y / BOARD_Y) * 100}%` }}>
+                <textarea ref={taRef} autoFocus value={text.v} onChange={(e) => setText({ ...text, v: e.target.value })} onBlur={commitText} maxLength={MAX_TEXT} rows={2} aria-label="Doskaga matn"
+                  onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setText(null); } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitText(); } }}
+                  placeholder="Matn yozing..." style={{ fontSize: fontPx, lineHeight: 1.2, color: COLORS[color] === "#ffffff" && bg !== "dark" ? "#111827" : COLORS[color] }}
+                  className="min-w-48 resize-none rounded border-2 border-dashed border-primary bg-white/75 px-1 font-bold outline-none placeholder:text-slate-400" />
+                <div className="mt-1 flex max-w-[22rem] flex-wrap gap-1 rounded-lg bg-slate-900/90 p-1" role="group" aria-label="Belgilar">
+                  {SYMBOLS.map((s) => <button key={s} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => insertSymbol(s)} className="grid h-7 w-7 place-items-center rounded bg-white/10 text-sm font-bold text-white hover:bg-white/25" aria-label={`Belgi ${s}`}>{s}</button>)}
+                </div>
+                <div className="mt-1 flex gap-1.5 text-[11px] font-semibold text-slate-700">
+                  <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={commitText} className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-white"><Check className="h-3.5 w-3.5" aria-hidden />Qo&apos;yish</button>
+                  <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setText(null)} className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1"><X className="h-3.5 w-3.5" aria-hidden />Bekor</button>
+                </div>
               </div>
             )}
           </div>
-        )}
-        {isHost && onPickImage && (
-          <>
-            <button type="button" className={btn(!!imageUrl)} onClick={() => (imageUrl && onClearImage ? onClearImage() : fileRef.current?.click())} aria-label={imageUrl ? "Rasmni olib tashlash" : "Rasm qo'yish"} title={imageUrl ? "Rasmni olib tashlash" : "Rasm qo'yish (varaq, kitob sahifasi)"}>
-              {imageUrl ? <X className="h-4 w-4" aria-hidden /> : <ImagePlus className="h-4 w-4" aria-hidden />}
-            </button>
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Rasm tanlash" tabIndex={-1} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onPickImage(f); }} />
-          </>
-        )}
-        <button type="button" className={btn(false)} onClick={() => void savePng()} aria-label="Doskani rasmga saqlash" title="Rasmga saqlash (PNG)"><Download className="h-4 w-4" aria-hidden /></button>
+        </div>
       </div>
 
-      {/* Pastki: asboblar (faqat chizish huquqi bor ishtirokchiga) */}
-      {canDraw && (
-        <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-1 p-1.5">
+      {/* Pastki qator: telefonda asboblar, hamma joyda rang va qalinlik */}
+      {drawTools && (
+        <div className={cn("flex flex-col gap-1 bg-gradient-to-r from-slate-900 to-slate-800 px-2 py-1.5", !fs && "rounded-b-2xl")}>
           {open && (
-            <div className="flex max-w-full flex-col gap-1 rounded-2xl bg-slate-900/85 p-1.5 text-white shadow-lg backdrop-blur sm:items-center sm:gap-1.5" role="toolbar" aria-label="Doska asboblari">
-              <div className="flex max-w-full items-center gap-1 overflow-x-auto sm:flex-wrap sm:justify-center sm:overflow-visible">
-                {TOOLS.map((t) => (
-                  <button key={t.id} type="button" className={btn(tool === t.id)} onClick={() => setTool(t.id)} aria-label={t.label} aria-pressed={tool === t.id} title={`${t.label} (${t.key})`}><t.icon className="h-4 w-4" aria-hidden /></button>
-                ))}
-                {isHost && (
-                  <>
-                    <span className="mx-0.5 h-5 w-px bg-white/30" aria-hidden />
-                    <button type="button" className={btn(false)} onClick={undo} aria-label="Oxirgi chiziqni bekor qilish" title="Bekor qilish (Ctrl+Z)"><Undo2 className="h-4 w-4" aria-hidden /></button>
-                    <button type="button" className={cn(btn(false), redoN === 0 && "opacity-40")} onClick={redoIt} disabled={redoN === 0} aria-label="Qaytarish" title="Qaytarish (Ctrl+Y)"><Redo2 className="h-4 w-4" aria-hidden /></button>
-                    <button type="button" className={btn(false)} onClick={clear} aria-label="Sahifani tozalash" title="Sahifani tozalash"><Trash2 className="h-4 w-4" aria-hidden /></button>
-                  </>
-                )}
-              </div>
-              {showStyle && (
-                <div className="flex max-w-full items-center gap-1 overflow-x-auto sm:flex-wrap sm:justify-center sm:overflow-visible">
-                  {tool !== "eraser" && COLORS.map((c, i) => (
-                    <button key={c} type="button" onClick={() => setColor(i)} aria-label={COLOR_NAMES[i]} aria-pressed={color === i}
-                      className={cn("h-6 w-6 shrink-0 rounded-full border-2 sm:h-7 sm:w-7", color === i ? "border-sky-300 ring-2 ring-white" : "border-white/40")} style={{ backgroundColor: c }} />
+            <div className="flex items-center gap-1 overflow-x-auto md:hidden" role="toolbar" aria-label="Doska asboblari (telefon)">
+              {toolList}{actionList && <>{sep}{actionList}</>}
+            </div>
+          )}
+          {open && (
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 md:justify-start">
+              {showColors && (
+                <div className="flex max-w-full items-center gap-1 overflow-x-auto" role="group" aria-label="Rang">
+                  {COLORS.map((c, i) => (
+                    <button key={c} type="button" onClick={() => setColor(i)} aria-label={COLOR_NAMES[i]} aria-pressed={color === i} title={COLOR_NAMES[i]}
+                      className={cn("h-6 w-6 shrink-0 rounded-full border-2 transition-transform sm:h-7 sm:w-7", color === i ? "scale-110 border-sky-300 ring-2 ring-white" : "border-white/40 hover:scale-105")} style={{ backgroundColor: c }} />
                   ))}
-                  {tool !== "eraser" && <span className="mx-0.5 h-5 w-px bg-white/30" aria-hidden />}
+                </div>
+              )}
+              {showWidth && (
+                <div className="flex items-center gap-1" role="group" aria-label="Qalinlik">
                   {WIDTHS.map((w, i) => (
-                    <button key={w} type="button" className={btn(width === i)} onClick={() => setWidth(i)} aria-label={tool === "text" ? `Matn o'lchami ${i + 1}` : tool === "eraser" ? `O'chirg'ich ${WIDTH_NAMES[i]}` : WIDTH_NAMES[i]} aria-pressed={width === i}>
-                      {tool === "text" ? <span className="font-extrabold" style={{ fontSize: 9 + i * 3 }}>A</span> : <span className={cn("rounded-full", width === i ? "bg-slate-900" : "bg-white")} style={{ width: 3 + i * 3 + (tool === "eraser" ? 4 : 0), height: 3 + i * 3 + (tool === "eraser" ? 4 : 0) }} />}
+                    <button key={w} type="button" className={tb(width === i, "h-8 w-8")} onClick={() => setWidth(i)} aria-label={tool === "text" || tool === "sticker" ? `${i === 0 ? "Kichik" : i === 1 ? "O'rta" : i === 2 ? "Katta" : "Juda katta"} o'lcham` : tool === "eraser" ? `O'chirg'ich: ${WIDTH_NAMES[i]}` : WIDTH_NAMES[i]} aria-pressed={width === i}>
+                      {tool === "text" || tool === "sticker" ? <span className="font-extrabold" style={{ fontSize: 9 + i * 3 }}>A</span> : <span className={cn("rounded-full", width === i ? "bg-slate-900" : "bg-white")} style={{ width: 3 + i * 3 + (tool === "eraser" ? 4 : 0), height: 3 + i * 3 + (tool === "eraser" ? 4 : 0) }} />}
                     </button>
                   ))}
                 </div>
               )}
+              {tool === "shape" && (
+                <div className="flex items-center gap-1" role="group" aria-label="Shakl uslubi">
+                  {isClosed(shapeKind) && <button type="button" className={pill(fill)} onClick={() => setFill((v) => !v)} aria-pressed={fill}>To&apos;ldirish</button>}
+                  <button type="button" className={pill(dash)} onClick={() => setDash((v) => !v)} aria-pressed={dash}>Punktir</button>
+                </div>
+              )}
+              {tool === "select" && selStroke && isHost && <button type="button" className={pill(false)} onClick={removeSelected}><Trash2 className="h-4 w-4" aria-hidden />O&apos;chirish</button>}
+              {HINTS[tool] && <p className="hidden min-w-0 flex-1 truncate text-[11px] font-semibold text-white/60 md:block">{HINTS[tool]}</p>}
             </div>
           )}
-          <button type="button" onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1 rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur" aria-expanded={open} aria-label={open ? "Asboblarni yig'ish" : "Asboblarni ochish"}>
-            <ChevronsUpDown className="h-3 w-3" aria-hidden />{open ? "Yig'ish" : "Asboblar"}
+          <button type="button" onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1 self-center rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-bold text-white/80 hover:bg-white/20 md:hidden" aria-expanded={open} aria-label={open ? "Asboblarni yig'ish" : "Asboblarni ochish"}>
+            <Pencil className="h-3 w-3" aria-hidden />{open ? "Asboblarni yig'ish" : "Asboblar"}
           </button>
+        </div>
+      )}
+
+      {/* Ochiladigan oynalar: shakllar, stikerlar, shablonlar, fon */}
+      {pop && (
+        <div ref={popRef} role="dialog" aria-label={pop.id === "shape" ? "Shakllar" : pop.id === "sticker" ? "Stikerlar" : pop.id === "tpl" ? "Shablonlar" : "Doska foni"}
+          className="absolute z-30 max-h-[70%] w-60 overflow-y-auto rounded-2xl bg-slate-950/95 p-2 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur"
+          style={pop.id === "bg"
+            ? { right: 8, top: pop.y + pop.h + 6 }
+            : typeof window !== "undefined" && window.innerWidth >= 768
+              ? { left: pop.x + pop.w + 8, top: Math.max(8, pop.y - 6) }
+              : { left: Math.max(8, Math.min(pop.x, (frameRef.current?.clientWidth ?? 320) - 248)), bottom: (frameRef.current?.clientHeight ?? 0) - pop.y + 8 }}>
+          {pop.id === "shape" && (
+            <div className="grid grid-cols-3 gap-1.5">
+              {SHAPES.map((s) => (
+                <button key={s.k} type="button" onClick={() => { setShapeKind(s.k); setTool("shape"); setPop(null); }} aria-label={s.name} aria-pressed={shapeKind === s.k} title={s.name}
+                  className={cn("grid h-14 place-items-center rounded-xl transition-colors", shapeKind === s.k ? "bg-white text-slate-900" : "bg-white/10 hover:bg-white/20")}><ShapeIcon k={s.k} className="h-7 w-7" /></button>
+              ))}
+            </div>
+          )}
+          {pop.id === "sticker" && (
+            <div className="grid grid-cols-6 gap-1">
+              {STICKERS.map((s) => (
+                <button key={s} type="button" onClick={() => { setSticker(s); setTool("sticker"); setPop(null); }} aria-label={`Stiker ${s}`} aria-pressed={sticker === s}
+                  className={cn("grid h-9 place-items-center rounded-lg text-xl transition-colors", sticker === s ? "bg-white/30" : "hover:bg-white/15")}>{s}</button>
+              ))}
+            </div>
+          )}
+          {pop.id === "tpl" && (
+            <div className="space-y-1">
+              {TEMPLATES.map((t) => (
+                <button key={t.id} type="button" onClick={() => { setTpl(t.id); setTool("tpl"); setPop(null); }} aria-label={`Shablon: ${t.name}`}
+                  className={cn("flex w-full items-center rounded-xl px-3 py-2 text-left text-sm font-bold transition-colors", tpl === t.id && tool === "tpl" ? "bg-white text-slate-900" : "bg-white/10 hover:bg-white/20")}>{t.name}</button>
+              ))}
+              <p className="px-1 pt-1 text-[11px] text-white/60">Tanlang, keyin doskada joyni bosing.</p>
+            </div>
+          )}
+          {pop.id === "bg" && (
+            <div role="menu" aria-label="Doska foni" className="space-y-0.5">
+              {BGS.map((b) => (
+                <button key={b} type="button" role="menuitemradio" aria-checked={bg === b} onClick={() => { onBg?.(b); setPop(null); }} className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-semibold", bg === b ? "bg-white text-slate-900" : "text-white hover:bg-white/10")}>
+                  <span className="h-5 w-8 shrink-0 rounded border border-white/30" style={{ ...bgStyle(b), backgroundSize: b === "grid" || b === "dots" || b === "axes" ? "25% 33%" : bgStyle(b).backgroundSize }} />{BG_NAMES[b]}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-
