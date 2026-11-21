@@ -15,7 +15,7 @@ describe("cleanUrl", () => {
 describe("makePoll", () => {
   it("savol va variantlarni tozalaydi", () => {
     const p = makePoll(1, "  2+2=?  ", ["3", " 4 ", "5"], 1)!;
-    expect(p).toMatchObject({ id: 1, q: "2+2=?", opts: ["3", "4", "5"], open: true, show: false, correct: 1, counts: null });
+    expect(p).toMatchObject({ id: 1, q: "2+2=?", opts: ["3", "4", "5"], open: true, show: false, correct: 1, counts: null, file: null });
   });
   it("bo'sh variantlar olib tashlanadi, to'g'ri javob o'z variantida qoladi", () => {
     const p = makePoll(1, "Q", ["", "A", "", "B", "C"], 3)!;
@@ -48,7 +48,7 @@ describe("pollCounts", () => {
 
 describe("parseClass", () => {
   const good = { lock: true, stage: "board", note: "Vazifa: 12-bet", plan: { items: ["Takrorlash", "Yangi mavzu"], at: 1 }, stars: { "o-1": 3 }, bg: "grid", draw: ["o-1", "o-2"], timer: { left: 60, total: 120 }, pick: { id: 3, name: "Ali", who: "o-1" }, mats: [{ id: 1, title: "Video", url: "https://youtu.be/x.y" }],
-    poll: { id: 2, q: "Q?", opts: ["A", "B"], open: true, show: false, correct: 1, counts: null }, pulse: { id: 4 } };
+    poll: { id: 2, q: "Q?", opts: ["A", "B"], open: true, show: false, correct: 1, counts: null, file: null }, pulse: { id: 4 } };
   it("to'g'ri holat o'zgarmasdan o'tadi", () => {
     expect(parseClass(JSON.parse(JSON.stringify(good)))).toEqual({ ...good, mats: [{ id: 1, title: "Video", url: "https://youtu.be/x.y" }] });
   });
@@ -72,6 +72,15 @@ describe("parseClass", () => {
     const evil = JSON.parse('{"__proto__": 5, "a": 1}');
     expect(parseClass({ stars: evil })!.stars).toEqual({ a: 1 });
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+  it("so'rovnomaga biriktirilgan fayl: yaroqli saqlanadi, yaroqsizi tashlanadi (so'rovnoma qoladi)", () => {
+    const base = { id: 1, q: "Q", opts: ["A", "B"] };
+    const f = { id: 9, name: "../topshiriq.pdf", mime: "application/pdf", size: 5000 };
+    expect(parseClass({ poll: { ...base, file: f } })!.poll!.file).toEqual({ id: 9, name: "topshiriq.pdf", mime: "application/pdf", size: 5000, kind: "pdf" });
+    for (const bad of [{ ...f, mime: "text/html" }, { ...f, size: 99_000_000 }, "x", 5, {}]) expect(parseClass({ poll: { ...base, file: bad } })!.poll!.file).toBeNull();
+    expect(parseClass({ poll: base })!.poll!.file).toBeNull();
+    const withFile = makePoll(1, "Q", ["A", "B"], null, { id: 9, name: "a.pdf", mime: "application/pdf", size: 10, kind: "pdf" })!;
+    expect(withFile.file!.name).toBe("a.pdf");
   });
   it("e'lon: tozalanadi va uzunligi cheklanadi", () => {
     expect(parseClass({ note: "  Muhim:   test\nertaga  " })!.note).toBe("Muhim: test ertaga");

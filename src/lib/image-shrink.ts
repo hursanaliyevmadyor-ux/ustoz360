@@ -1,4 +1,4 @@
-import { MAX_BLOB_BYTES } from "./blob-chunks";
+import { MAX_IMAGE_BYTES } from "./blob-chunks";
 
 /**
  * Doskaga qo'yiladigan rasmni kichraytiradi: eng uzun tomoni 1600 piksel, JPEG; hajmi chegaradan oshmaguncha sifat va o'lcham pasaytiriladi.
@@ -18,7 +18,7 @@ export async function shrinkImage(file: File): Promise<Uint8Array | null> {
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); // shaffof PNG oq fonda
       ctx.drawImage(bmp, 0, 0, c.width, c.height);
       const blob = await new Promise<Blob | null>((r) => c.toBlob(r, "image/jpeg", q));
-      if (blob && blob.size <= MAX_BLOB_BYTES) return new Uint8Array(await blob.arrayBuffer());
+      if (blob && blob.size <= MAX_IMAGE_BYTES) return new Uint8Array(await blob.arrayBuffer());
     }
     return null;
   } finally {

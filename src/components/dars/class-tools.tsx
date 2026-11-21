@@ -1,12 +1,14 @@
 "use client";
 import * as React from "react";
-import { BarChart3, Check, ClipboardList, Copy, Download, Link2, ListChecks, Lock, LockOpen, Megaphone, PenLine, Pin, Play, Plus, Shuffle, Square, ThumbsUp, Timer as TimerIcon, Trash2, X } from "lucide-react";
+import { BarChart3, Check, ClipboardList, Copy, Download, ExternalLink, FileSpreadsheet, FileText, Link2, ListChecks, Lock, LockOpen, Megaphone, PenLine, Paperclip, Pin, Play, Plus, Presentation, Shuffle, Square, ThumbsUp, Timer as TimerIcon, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import { DEFAULT_PLAN, MAX_NOTE, MAX_OPT, MAX_OPTS, MAX_Q, MIN_OPTS, OPT_LETTERS, PULSE, attendanceCsv, attendanceText, fmtClock, fmtTimer } from "@/lib/class-tools";
 import { REACTIONS } from "@/lib/reactions";
+import { FILE_ACCEPT, FILE_LABEL, fmtSize, type PollFile } from "@/lib/poll-file";
+import { preparePollFile, type PreparedFile } from "@/lib/poll-file-client";
 import type { ClassApi } from "./use-class";
 import type { ClassState } from "@/lib/class-tools";
 
@@ -118,6 +120,36 @@ function Bars({ labels, counts, correct, mine, total }: { labels: string[]; coun
   );
 }
 
+/** So'rovnomaga biriktirilgan fayl: rasm to'g'ridan-to'g'ri ko'rinadi, hujjat ochiladi yoki yuklab olinadi. Fayl baytlari kelguncha "yuklanmoqda". */
+export function PollFileView({ file, url }: { file: PollFile; url: string | null }) {
+  const Icon = file.kind === "excel" ? FileSpreadsheet : file.kind === "ppt" ? Presentation : FileText;
+  if (file.kind === "image") {
+    return url ? (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-border bg-muted" aria-label={`Rasmni katta ochish: ${file.name}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={file.name} className="max-h-72 w-full object-contain" />
+      </a>
+    ) : <p role="status" className="rounded-xl bg-muted p-3 text-center text-sm text-muted-foreground">Rasm yuklanmoqda...</p>;
+  }
+  return (
+    <div className="space-y-2.5 rounded-xl border border-border bg-muted/60 p-3">
+      <div className="flex items-center gap-3">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Icon className="h-6 w-6" aria-hidden /></span>
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-sm font-bold leading-snug" title={file.name}>{file.name}</p>
+          <p className="text-xs text-muted-foreground">{FILE_LABEL[file.kind]} · {fmtSize(file.size)}</p>
+        </div>
+      </div>
+      {url ? (
+        <div className="flex gap-1.5">
+          {file.kind === "pdf" && <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-bold text-white"><ExternalLink className="h-3.5 w-3.5" aria-hidden />Ochish</a>}
+          <a href={url} download={file.name} className={cn("inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-bold", file.kind === "pdf" ? "border border-border bg-card" : "bg-primary text-white")}><Download className="h-3.5 w-3.5" aria-hidden />Yuklab olish</a>
+        </div>
+      ) : <p role="status" className="text-xs font-semibold text-muted-foreground">Yuklanmoqda...</p>}
+    </div>
+  );
+}
+
 /** Hamma uchun: taymer, tanlangan o'quvchi, "tushundingizmi?", so'rovnoma va materiallar. Ustoz bularni o'zining asboblar panelidan boshqaradi. */
 export function ClassBar({ api, meId }: { api: ClassApi; meId: string }) {
   const { cls, isHost, timerEnd, guest } = api;
@@ -171,6 +203,7 @@ export function ClassBar({ api, meId }: { api: ClassApi; meId: string }) {
         <Card className="p-4">
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">So&apos;rovnoma</p>
           <p className="mt-1 text-lg font-extrabold leading-snug">{poll.q}</p>
+          {poll.file && <div className="mt-3"><PollFileView file={poll.file} url={api.fileUrl(poll.file)} /></div>}
           {poll.open ? (
             <>
               <div className="mt-3 grid gap-2">
@@ -311,17 +344,28 @@ function PollPanel({ api, counts, voters }: { api: ClassApi; counts: number[]; v
   const [opts, setOpts] = React.useState(["", ""]);
   const [correct, setCorrect] = React.useState<number | null>(null);
   const [err, setErr] = React.useState("");
+  const [prep, setPrep] = React.useState<PreparedFile | null>(null);
+  const [fileBusy, setFileBusy] = React.useState(false);
+  const fileRef = React.useRef<HTMLInputElement>(null);
   const poll = cls.poll;
   const total = counts.reduce((a, b) => a + b, 0);
   function start(e: React.FormEvent) {
     e.preventDefault();
-    if (!host.startPoll(q, opts, correct)) setErr(`Savolni va kamida ${MIN_OPTS} ta variantni yozing.`);
-    else { setErr(""); setQ(""); setOpts(["", ""]); setCorrect(null); }
+    if (!host.startPoll(q, opts, correct, prep)) setErr(`Savolni va kamida ${MIN_OPTS} ta variantni yozing.`);
+    else { setErr(""); setQ(""); setOpts(["", ""]); setCorrect(null); setPrep(null); }
+  }
+  async function pick(f: File | undefined) {
+    if (!f) return;
+    setErr(""); setFileBusy(true);
+    const r = await preparePollFile(f);
+    setFileBusy(false);
+    if (r.ok) setPrep(r.value); else { setPrep(null); setErr(r.error); }
   }
   if (poll) {
     return (
       <div className="mt-4 space-y-3 border-t border-border pt-4">
         <p className="font-extrabold">{poll.q}</p>
+        {poll.file && <PollFileView file={poll.file} url={api.fileUrl(poll.file)} />}
         <Bars labels={poll.opts} counts={counts} correct={poll.correct} total={total} />
         <p className="text-xs text-muted-foreground">Javob berdi: {voters}. {poll.open ? "Ovoz berish ochiq." : poll.show ? "Natija o'quvchilarga ko'rsatilgan." : "Ovoz berish yopilgan."}</p>
         <div className="flex flex-wrap gap-2">
@@ -346,6 +390,20 @@ function PollPanel({ api, counts, voters }: { api: ClassApi; counts: number[]; v
           </li>
         ))}
       </ul>
+      <div className="space-y-1.5 rounded-xl border border-dashed border-border p-2.5">
+        <input ref={fileRef} type="file" accept={FILE_ACCEPT} className="sr-only" aria-label="Fayl tanlash" tabIndex={-1} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; void pick(f); }} />
+        {prep ? (
+          <div className="flex items-center gap-2 text-sm">
+            <Paperclip className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+            <span className="min-w-0 flex-1 truncate font-semibold" title={prep.file.name}>{prep.file.name}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{FILE_LABEL[prep.file.kind]} · {fmtSize(prep.file.size)}</span>
+            <Button type="button" size="icon" variant="ghost" aria-label="Faylni olib tashlash" onClick={() => setPrep(null)}><X className="h-4 w-4" aria-hidden /></Button>
+          </div>
+        ) : (
+          <Button type="button" variant="outline" size="sm" loading={fileBusy} onClick={() => fileRef.current?.click()}><Paperclip className="h-4 w-4" aria-hidden />Fayl biriktirish</Button>
+        )}
+        <p className="text-[11px] text-muted-foreground">Rasm, PDF, Word, Excel yoki PowerPoint. Savol shu faylga tayansa qulay: o&apos;quvchilar ekranida ko&apos;rinadi yoki yuklab olinadi. Hujjat 2 MB gacha, rasm o&apos;zi kichrayadi.</p>
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         {opts.length < MAX_OPTS && <Button type="button" variant="outline" size="sm" onClick={() => setOpts((a) => [...a, ""])}><Plus className="h-4 w-4" aria-hidden />Variant qo&apos;shish</Button>}
         {correct !== null && <button type="button" className="text-xs font-semibold text-primary underline" onClick={() => setCorrect(null)}>To&apos;g&apos;ri javobni olib tashlash</button>}
