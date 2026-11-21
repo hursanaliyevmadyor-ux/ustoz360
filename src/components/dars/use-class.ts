@@ -3,6 +3,8 @@ import * as React from "react";
 import { BoardStore, type BoardMsg, parseBoard } from "@/lib/board";
 import { BlobAssembler, parseBlobChunk, splitBlob } from "@/lib/blob-chunks";
 import { shrinkImage } from "@/lib/image-shrink";
+import type { PollFile } from "@/lib/poll-file";
+import type { PreparedFile } from "@/lib/poll-file-client";
 import { MAX_DRAWERS, MAX_MATS, MAX_PLAN, MAX_PLAN_ITEM, MAX_STAR, MAX_TIMER_SEC, type ClassState, type Material, type Seen, cleanUrl, emptyClass, makePoll, parseAct, parseClass, pickRandom, pollCounts } from "@/lib/class-tools";
 import type { VEngine, VEvent, VPerson, VSession } from "./voice-engine";
 
@@ -22,11 +24,19 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   const [myVote, setMyVote] = React.useState<{ poll: number; o: number } | null>(null);
   const [myPulse, setMyPulse] = React.useState<{ id: number; v: number } | null>(null);
   const board = React.useMemo(() => new BoardStore(), []);
-  const [images, setImages] = React.useState<ReadonlyMap<number, string>>(new Map());
-  const imgBytes = React.useRef(new Map<number, Uint8Array>()); // ustozda: yangi kirganga qayta yuborish uchun
-  const imgAsm = React.useMemo(() => new BlobAssembler(), []);
-  const imgRef = React.useRef(images);
-  imgRef.current = images;
+  // Katta ma'lumotlar (doskadagi rasm, so'rovnoma fayli): raqam bo'yicha baytlar; havola faqat kerak bo'lganda hosil qilinadi
+  const [blobs, setBlobs] = React.useState<ReadonlyMap<number, Uint8Array>>(new Map());
+  const blobBytes = React.useRef(new Map<number, Uint8Array>()); // ustozda: yangi kirganga qayta yuborish uchun
+  const blobAsm = React.useMemo(() => new BlobAssembler(), []);
+  const urls = React.useRef(new Map<string, string>());
+  const urlOf = (id: number, mime: string): string | null => {
+    const b = blobs.get(id);
+    if (!b) return null;
+    const key = `${id}:${mime}`;
+    let u = urls.current.get(key);
+    if (!u) { u = URL.createObjectURL(new Blob([b as BlobPart], { type: mime })); urls.current.set(key, u); }
+    return u;
+  };
   const clsRef = React.useRef(cls);
   const hostRef = React.useRef(isHost);
   const endRef = React.useRef<number | null>(null);
@@ -44,6 +54,19 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   hostIdRef.current = hostId;
   const sessionRef = React.useRef(session);
   sessionRef.current = session;
+
+  /** Katta ma'lumotni bo'laklab yuboradi (hammaga yoki `to` ga). Xato bo'lsa false. */
+  const sendBlob = React.useCallback(async (id: number, bytes: Uint8Array, to?: string[]): Promise<boolean> => {
+    const parts = splitBlob(id, bytes);
+    if (!parts) return false;
+    try {
+      for (let i = 0; i < parts.length; i++) {
+        await engine.sendBin(parts[i]!, to);
+        if (i % 12 === 11) await new Promise((r) => setTimeout(r, 0)); // tarmoq to'lib ketmasin
+      }
+      return true;
+    } catch { return false; }
+  }, [engine]);
 
   const wire = React.useCallback((c: ClassState): ClassState => {
     const left = endRef.current ? Math.max(0, Math.ceil((endRef.current - Date.now()) / 1000)) : 0;
@@ -63,10 +86,9 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
     if (e.type === "bin") {
       if (!e.from.host || hostRef.current) return; // rasm faqat ustozdan qabul qilinadi
       const c = parseBlobChunk(e.chunk);
-      const done = c && imgAsm.add(c);
+      const done = c && blobAsm.add(c);
       if (!done) return;
-      const url = URL.createObjectURL(new Blob([done.bytes as BlobPart], { type: "image/jpeg" }));
-      setImages((m) => new Map(m).set(done.id, url));
+      setBlobs((m) => new Map(m).set(done.id, done.bytes));
       return;
     }
     if (e.type !== "json") return;
@@ -98,10 +120,10 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
       const t = c.timer;
       setTimerEnd(t ? Date.now() + t.left * 1000 : null);
     }
-  }), [engine, board, imgAsm]);
+  }), [engine, board, blobAsm]);
 
   // Chiqishda rasmlarning vaqtinchalik havolalari bo'shatiladi
-  React.useEffect(() => () => { imgRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
+  React.useEffect(() => { const m = urls.current; return () => { m.forEach((u) => URL.revokeObjectURL(u)); }; }, []);
 
   // Ustoz: yangi kirgan ishtirokchiga hozirgi holat va doskani yuboradi (qayta kirganga ham)
   React.useEffect(() => {
@@ -113,13 +135,13 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
     fresh.forEach((id) => known.current.add(id));
     void (async () => {
       await engine.sendJson("class", wire(clsRef.current), fresh).catch(() => {});
-      for (const id of new Set(board.pages.map((p) => p.img).filter(Boolean))) {
-        const b = imgBytes.current.get(id);
-        for (const part of (b && splitBlob(id, b)) || []) await engine.sendBin(part, fresh).catch(() => {});
-      }
+      const ids = new Set(board.pages.map((p) => p.img).filter(Boolean));
+      const pf = clsRef.current.poll?.file;
+      if (pf) ids.add(pf.id);
+      for (const id of ids) { const b = blobBytes.current.get(id); if (b) await sendBlob(id, b, fresh); }
       for (const m of board.snapshot()) await engine.sendJson("board", m, fresh).catch(() => {});
     })();
-  }, [isHost, people, engine, board, wire]);
+  }, [isHost, people, engine, board, wire, sendBlob]);
 
   // Doskaga chaqirilgan o'quvchi xonadan chiqsa, ro'yxatdan olib tashlanadi
   React.useEffect(() => {
@@ -146,13 +168,15 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   }, [isHost, people]);
 
   // ---- Ustoz amallari
-  const startPoll = React.useCallback((q: string, opts: string[], correct: number | null) => {
-    const poll = makePoll(rid(), q, opts, correct);
+  const startPoll = React.useCallback((q: string, opts: string[], correct: number | null, prepared?: PreparedFile | null) => {
+    const poll = makePoll(rid(), q, opts, correct, prepared?.file ?? null);
     if (!poll) return false;
     votes.current.clear();
-    publish({ ...clsRef.current, poll });
+    if (prepared) { blobBytes.current.set(prepared.file.id, prepared.bytes); setBlobs((m) => new Map(m).set(prepared.file.id, prepared.bytes)); }
+    publish({ ...clsRef.current, poll }); // avval so'rovnoma (fayl ma'lumoti bilan), keyin fayl baytlari
+    if (prepared) void sendBlob(prepared.file.id, prepared.bytes);
     return true;
-  }, [publish]);
+  }, [publish, sendBlob]);
   const closePoll = React.useCallback(() => { const p = clsRef.current.poll; if (p) publish({ ...clsRef.current, poll: { ...p, open: false } }); }, [publish]);
   const showPoll = React.useCallback((show: boolean) => {
     const p = clsRef.current.poll;
@@ -160,7 +184,7 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
     const present = new Set(peopleRef.current.map((x) => x.identity));
     publish({ ...clsRef.current, poll: { ...p, open: false, show, counts: show ? pollCounts(p.opts.length, votes.current, present) : null } });
   }, [publish]);
-  const clearPoll = React.useCallback(() => { votes.current.clear(); publish({ ...clsRef.current, poll: null }); }, [publish]);
+  const clearPoll = React.useCallback(() => { votes.current.clear(); const f = clsRef.current.poll?.file; if (f) blobBytes.current.delete(f.id); publish({ ...clsRef.current, poll: null }); }, [publish]);
   const startPulse = React.useCallback(() => { pulses.current.clear(); publish({ ...clsRef.current, pulse: { id: rid() } }); }, [publish]);
   const stopPulse = React.useCallback(() => publish({ ...clsRef.current, pulse: null }), [publish]);
   const startTimer = React.useCallback((sec: number) => {
@@ -204,15 +228,14 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
     const bytes = await shrinkImage(file);
     if (!bytes) return "Rasm ochilmadi yoki juda katta. PNG, JPG yoki WebP rasm tanlang.";
     const id = rid();
-    const parts = splitBlob(id, bytes);
-    if (!parts) return "Rasm juda katta. Kichikroq rasm tanlang.";
-    imgBytes.current.set(id, bytes);
-    setImages((m) => new Map(m).set(id, URL.createObjectURL(new Blob([bytes as BlobPart], { type: "image/jpeg" }))));
-    try { for (const part of parts) await engine.sendBin(part); } catch { return "Rasm yuborilmadi. Aloqani tekshiring."; }
+    if (!splitBlob(id, bytes)) return "Rasm juda katta. Kichikroq rasm tanlang.";
+    blobBytes.current.set(id, bytes);
+    setBlobs((m) => new Map(m).set(id, bytes));
+    if (!(await sendBlob(id, bytes))) return "Rasm yuborilmadi. Aloqani tekshiring.";
     const m: BoardMsg = { t: "im", id };
     if (board.apply(m)) { void engine.sendJson("board", m).catch(() => {}); setBoardVer((v) => v + 1); }
     return null;
-  }, [engine, board]);
+  }, [engine, board, sendBlob]);
   const clearImage = React.useCallback(() => {
     const m: BoardMsg = { t: "im", id: 0 };
     if (board.apply(m)) { void engine.sendJson("board", m).catch(() => {}); setBoardVer((v) => v + 1); }
@@ -242,7 +265,8 @@ export function useClassTools(engine: VEngine, session: VSession | null, people:
   void tick;
 
   return {
-    imageUrl: images.get(board.image) ?? null, placeImage, clearImage,
+    imageUrl: board.image ? urlOf(board.image, "image/jpeg") : null, placeImage, clearImage,
+    fileUrl: (f: PollFile) => urlOf(f.id, f.mime), fileReady: (f: PollFile) => blobs.has(f.id),
     cls, isHost, canDraw: isHost || (!!session && cls.draw.includes(session.identity)), timerEnd, board, boardVer, boardChanged, boardNet, patch,
     host: {
       setPlan: (items: string[]) => { const it = items.map((x) => x.replace(/\s+/g, " ").trim().slice(0, MAX_PLAN_ITEM)).filter(Boolean).slice(0, MAX_PLAN); publish({ ...clsRef.current, plan: it.length ? { items: it, at: 0 } : null }); },

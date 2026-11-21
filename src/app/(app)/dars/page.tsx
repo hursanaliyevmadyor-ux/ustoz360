@@ -37,7 +37,7 @@ const DURING = [
   ["Doska", "pastdagi «Doska» tugmasi. Chapda asboblar: tanlash va ko'chirish, qalam, marker, o'chirg'ich (hudud belgilab birdan o'chirish, erkin hudud, surtib, chiziqni butunlay), 9 xil shakl, matn (fanga mos belgilar: ², √, H₂O, →, transkripsiya), stikerlar, shablonlar (fanlar bo'yicha), grafik chizish (y = x², sin x), lazer. Yuqorida sahifalar, 8 xil fon (katak, koordinata, yozuv chiziqlari, nota yo'li...), rasm qo'yish va saqlash"],
   ["Dars rejasi va yulduzchalar", "«Asboblar» → «Dars rejasi»: bosqichlarni yozasiz, hamma hozirgi bosqichni ko'radi. O'quvchi yonidagi «⭐ Yulduz» bilan faol o'quvchini rag'batlantirasiz; davomatda ham ko'rinadi"],
   ["Doskaga chiqarish", "«Ishtirokchilar» bo'limida o'quvchi yonidagi «Doskaga chiqarish»: u ham chiza oladi, keyin «Doskadan qaytarish»"],
-  ["So'rovnoma / mini-test", "savol va variantlarni yozasiz, o'quvchilar bosadi, natijani siz ko'rasiz va xohlasangiz hammaga ko'rsatasiz"],
+  ["So'rovnoma / mini-test", "savol va variantlarni yozasiz (kerak bo'lsa rasm, PDF, Word, Excel yoki PowerPoint faylini biriktirasiz), o'quvchilar bosadi, natijani siz ko'rasiz va xohlasangiz hammaga ko'rsatasiz"],
   ["Tushundingizmi?", "o'quvchilarga «Tushundim / Sekinroq / Tushunmadim» tugmalari chiqadi, javobni faqat siz ko'rasiz"],
   ["E'lon va reaksiyalar", "«Asboblar» → «E'lon»: muhim gap hamma ekranida yorqin lavha bo'lib turadi (uyga vazifa, test sanasi). O'quvchilar 👏 ❤️ 😂 🤔 👍 🎉 bosib, ekranda emoji ko'tarishi mumkin"],
   ["Taymer, tasodifiy o'quvchi, materiallar", "mustaqil ish vaqti, navbat bilan javob berdirish, video yoki hujjat havolasini yuborish"],

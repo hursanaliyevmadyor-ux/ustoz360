@@ -5,7 +5,8 @@
  * Bo'lak tuzilishi (katta-endian): 0 sehrli bayt 0x49, 1..4 rasm raqami (u32), 5..6 tartib (u16), 7..8 bo'laklar soni (u16), 9.. baytlar.
  */
 export const BLOB_CHUNK = 12000; // LiveKit ishonchli paketi uchun 15 KiB dan past
-export const MAX_BLOB_BYTES = 480_000;
+export const MAX_BLOB_BYTES = 2_000_000; // eng katta fayl (so'rovnomaga biriktirilgan hujjat)
+export const MAX_IMAGE_BYTES = 480_000; // doskaga qo'yiladigan rasm (kichraytirilgan)
 export const MAX_BLOB_CHUNKS = Math.ceil(MAX_BLOB_BYTES / BLOB_CHUNK);
 const HEAD = 9;
 const MAGIC = 0x49;

@@ -4,6 +4,7 @@
  * Bu fayl toza funksiyalar: shakllarni tekshirish, hisoblash, matn tayyorlash. Tarmoqqa va brauzerga tegmaydi.
  */
 import { isBg, type Bg } from "./board";
+import { parsePollFile, type PollFile } from "./poll-file";
 
 export const MAX_Q = 200;
 export const MAX_OPT = 80;
@@ -23,7 +24,7 @@ export const MAX_STAR_PEOPLE = 80;
 export const DEFAULT_PLAN = ["Salomlashish va takrorlash", "Yangi mavzu", "Mashq", "Mustahkamlash", "Uyga vazifa"] as const;
 export const OPT_LETTERS = ["A", "B", "C", "D", "E"] as const;
 
-export type Poll = { id: number; q: string; opts: string[]; open: boolean; show: boolean; correct: number | null; counts: number[] | null };
+export type Poll = { id: number; q: string; opts: string[]; open: boolean; show: boolean; correct: number | null; counts: number[] | null; file: PollFile | null };
 export type Material = { id: number; title: string; url: string };
 export type ClassState = {
   lock: boolean; // chat o'quvchilar uchun to'xtatilgan
@@ -71,13 +72,13 @@ export function cleanUrl(input: unknown): string | null {
 }
 
 /** Ustoz yaratgan so'rovnomani tekshiradi; yaroqsiz bo'lsa null. */
-export function makePoll(id: number, q: string, opts: string[], correct: number | null): Poll | null {
+export function makePoll(id: number, q: string, opts: string[], correct: number | null, file: PollFile | null = null): Poll | null {
   const question = text(q, MAX_Q);
   // To'g'ri javob indeksi bo'sh variantlar olib tashlangandan keyin ham o'sha variantga ishora qilsin.
   const keep = opts.map((o, i) => ({ o: text(o, MAX_OPT), i })).filter((x) => x.o);
   if (!question || keep.length < MIN_OPTS || keep.length > MAX_OPTS) return null;
   const c = correct === null ? null : keep.findIndex((x) => x.i === correct);
-  return { id, q: question, opts: keep.map((x) => x.o), open: true, show: false, correct: c === null || c < 0 ? null : c, counts: null };
+  return { id, q: question, opts: keep.map((x) => x.o), open: true, show: false, correct: c === null || c < 0 ? null : c, counts: null, file };
 }
 
 /** Ovozlarni sanaydi (har bir ishtirokchining oxirgi ovozi); xonada yo'q bo'lganlar sanalmaydi (`present` berilsa). */
@@ -95,7 +96,7 @@ function parsePoll(v: unknown): Poll | null {
   if (opts.length < MIN_OPTS || opts.some((o) => !o)) return null;
   const correct = v.correct === null || v.correct === undefined ? null : int(v.correct, 0, opts.length - 1);
   const counts = Array.isArray(v.counts) && v.counts.length === opts.length && v.counts.every((n) => int(n, 0, 100000) !== null) ? (v.counts as number[]) : null;
-  return { id, q, opts, open: v.open === true, show: v.show === true, correct, counts };
+  return { id, q, opts, open: v.open === true, show: v.show === true, correct, counts, file: parsePollFile(v.file) };
 }
 
 function parsePlan(v: unknown): ClassState["plan"] {
